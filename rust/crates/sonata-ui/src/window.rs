@@ -477,7 +477,7 @@ fn remember_size_with(win: &gtk::Window, key: &str, w: i32, h: i32, roomy: bool)
     let pending: Rc<Cell<Option<glib::SourceId>>> = Rc::default();
     let soon: Rc<dyn Fn(&gtk::Window)> = Rc::new(move |win: &gtk::Window| {
         if let Some(id) = pending.take() {
-            id.remove();
+            crate::cancel(id);
         }
         let (weak, k, p) = (win.downgrade(), keep.clone(), pending.clone());
         pending.set(Some(glib::timeout_add_local_once(Duration::from_millis(SAVE_SIZE_MS), move || {

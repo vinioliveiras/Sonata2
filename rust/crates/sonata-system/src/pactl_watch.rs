@@ -123,7 +123,7 @@ impl PactlWatch {
     pub fn stop(&self) {
         self.0.stopped.set(true);
         if let Some(src) = self.0.src.borrow_mut().take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         self.end_proc();
     }

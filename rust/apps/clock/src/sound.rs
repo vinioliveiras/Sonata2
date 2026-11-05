@@ -108,7 +108,11 @@ impl Ringer {
                     libc::kill(-(c.id() as i32), libc::SIGTERM);
                 }
             }
-            let _ = c.try_wait();
+            // waited for in a thread: try_wait right after the signal came
+            // too soon, and the player stayed a zombie
+            std::thread::spawn(move || {
+                let _ = c.wait();
+            });
         }
     }
 }
@@ -122,6 +126,30 @@ impl Drop for Ringer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// True once `pid` is gone, false while it is a zombie or still runs
+    /// (waits up to 3 s).
+    fn reaped(pid: u32) -> bool {
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < end {
+            if !std::path::Path::new(&format!("/proc/{pid}")).exists() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        false
+    }
+
+    #[test]
+    fn test_stopped_sound_stayed_a_zombie() {
+        //! A sound stopped while playing stayed a defunct player for as
+        //! long as the app (the menu bar's alarms) ran.
+        let child = Command::new("sleep").arg("30").process_group(0).spawn().unwrap();
+        let pid = child.id();
+        let mut r = Ringer { child: Some(child) };
+        r.stop();
+        assert!(reaped(pid), "the stopped player is reaped");
+    }
 
     #[test]
     fn every_sound_exists() {

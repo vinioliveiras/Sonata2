@@ -252,7 +252,7 @@ impl VramWatch {
 impl Drop for VramWatch {
     fn drop(&mut self) {
         if let Some(id) = self.timer.borrow_mut().take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 }

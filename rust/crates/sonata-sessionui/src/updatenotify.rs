@@ -70,6 +70,7 @@ impl UpdateNotifier {
         let w = self.me.clone();
         let id = glib::timeout_add_seconds_local_once(secs, move || {
             if let Some(me) = w.upgrade() {
+                me.timer.take(); // (fired: stop() never removes it again)
                 me.tick();
             }
         });
@@ -121,7 +122,7 @@ impl UpdateNotifier {
 
     pub fn stop(&self) {
         if let Some(id) = self.timer.borrow_mut().take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 }

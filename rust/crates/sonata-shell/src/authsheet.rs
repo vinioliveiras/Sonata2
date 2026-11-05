@@ -176,7 +176,7 @@ impl PasswordSheet {
 
     fn submit(&self) {
         let pw = self.entry.text().to_string();
-        if pw.is_empty() || self.finished.get() || !self.entry.is_sensitive() {
+        if pw.is_empty() || self.finished.get() || !self.entry.get_sensitive() {
             return;
         }
         self.ok.set_sensitive(false);
@@ -198,7 +198,7 @@ impl PasswordSheet {
             return;
         }
         self.ok.set_sensitive(true);
-        if text.is_some() || !self.error.is_visible() {
+        if text.is_some() || !self.error.get_visible() {
             self.say(&text.map(String::from).unwrap_or_else(|| tr!("Wrong password")));
         }
         loginui::shake(&self.entry);

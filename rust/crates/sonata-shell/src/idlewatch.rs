@@ -149,7 +149,7 @@ struct Inner {
 impl Drop for Inner {
     fn drop(&mut self) {
         if let Some(src) = self.src.take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
     }
 }
@@ -383,7 +383,7 @@ impl IdleWatch {
 
     fn hang_up(&self) {
         if let Some(src) = self.0.src.take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         self.0.stream.replace(None);
         self.0.watches.borrow_mut().clear();

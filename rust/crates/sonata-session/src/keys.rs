@@ -150,7 +150,9 @@ pub fn screenshot(mode: &str) -> i32 {
     if mode == "edit" {
         // Print Screen without the menu bar: still the editor
         let argv = crate::keep::command_for(&["preview".into(), "--markup".into(), path]);
-        let _ = std::process::Command::new(&argv[0]).args(&argv[1..]).spawn();
+        if let Ok(c) = std::process::Command::new(&argv[0]).args(&argv[1..]).spawn() {
+            sonata_backend::run::reap(c);
+        }
         return 0;
     }
     if let Some(bus) = session_bus() {

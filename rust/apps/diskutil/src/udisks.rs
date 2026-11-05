@@ -109,7 +109,7 @@ impl Client {
             }
         }
         if let Some(id) = self.pending.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 

@@ -122,7 +122,7 @@ fn kept(pop: &gtk::Popover) -> bool {
 /// A panel made with `keep` shown again, as a new one would open: its
 /// opening animation (CSS plays an animation once: its name alternates).
 pub fn reopen(pop: &gtk::Popover) -> gtk::Popover {
-    if !pop.is_visible() {
+    if !pop.get_visible() {
         if pop.has_css_class("reopen") {
             pop.remove_css_class("reopen");
         } else {
@@ -168,7 +168,7 @@ fn show(pop: &gtk::Popover) -> gtk::Popover {
             // button's list inside it: their own surfaces)
             let (Some(p), Some(r)) = (p.upgrade(), r.upgrade()) else { return };
             let surface = g.current_event().and_then(|e| e.surface());
-            if p.is_visible() && surface.is_some() && surface == r.surface() {
+            if p.get_visible() && surface.is_some() && surface == r.surface() {
                 p.popdown();
             }
         });

@@ -43,6 +43,31 @@ pub struct TopBarWindow {
     inside: Cell<bool>,
     hide_timer: RefCell<Option<glib::SourceId>>,
     slide: RefCell<Option<glib::SourceId>>,
+    /// sonata_ui::menu::on_closed's id: let go with the window (a list
+    /// holding every unplugged display's bar was a leak per hotplug)
+    menu_closed: Cell<u64>,
+}
+
+impl Drop for TopBarWindow {
+    fn drop(&mut self) {
+        if self.menu_closed.get() != 0 {
+            sonata_ui::menu::off_closed(self.menu_closed.get());
+        }
+    }
+}
+
+/// Auto-hide's next move for the pointer `inside` or not: Some(hide) after
+/// its delay, None to stay as it is. Any menu or panel open in this
+/// process keeps a shown bar down (topbar.py: `not ui.menu.OPEN`), not
+/// only the bar's own and the tray's.
+pub fn autohide_step(inside: bool, hidden: bool, menu_open: bool) -> Option<bool> {
+    if inside && hidden {
+        Some(false)
+    } else if !inside && !hidden && !menu_open {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 impl TopBarWindow {
@@ -58,7 +83,7 @@ impl TopBarWindow {
         let h = bar::bar_h();
         win.set_size_request(-1, h);
         let layered = !preview && layer::available();
-        let me = Rc::new(TopBarWindow { win, bar, layered, hidden: Cell::new(false), inside: Cell::new(false), hide_timer: RefCell::default(), slide: RefCell::default() });
+        let me = Rc::new(TopBarWindow { win, bar, layered, hidden: Cell::new(false), inside: Cell::new(false), hide_timer: RefCell::default(), slide: RefCell::default(), menu_closed: Cell::new(0) });
         remember(&me);
         if preview {
             me.preview();
@@ -125,6 +150,14 @@ impl TopBarWindow {
                 m.pointer(m.inside.get());
             }
         })));
+        // any menu of this process closing: the pointer looked at again
+        // (topbar.py: ui.menu.on_closed) -- it may have left meanwhile
+        let w = Rc::downgrade(self);
+        self.menu_closed.set(sonata_ui::menu::on_closed(move || {
+            if let Some(m) = w.upgrade() {
+                m.pointer(m.inside.get());
+            }
+        }));
         let w = Rc::downgrade(self);
         self.bar.on_autohide.replace(Some(Rc::new(move || w.upgrade().iter().for_each(|m| m.apply_autohide()))));
         let w = Rc::downgrade(self);
@@ -158,18 +191,16 @@ impl TopBarWindow {
     fn pointer(&self, inside: bool) {
         self.inside.set(inside);
         if let Some(t) = self.hide_timer.take() {
-            t.remove();
+            sonata_ui::cancel(t);
         }
         if !self.bar.cfg_bool("autohide", false) {
             return;
         }
-        let hide = if inside && self.hidden.get() {
-            false
-        } else if !inside && !self.hidden.get() && self.bar.open_menus.get() == 0 {
-            true // (a menu open: it stays)
-        } else {
-            return;
-        };
+        // (a menu open: it stays) -- the bar's own and the tray's are
+        // counted; any other of this process (Control Center's, the
+        // capture toolbar's, Mission Control's...) is in menu::any_open
+        let menu_open = self.bar.open_menus.get() > 0 || sonata_ui::menu::any_open();
+        let Some(hide) = autohide_step(inside, self.hidden.get(), menu_open) else { return };
         let me = first_window_of(&self.bar);
         let delay = if hide { 400 } else { REVEAL_MS };
         self.hide_timer.replace(Some(glib::timeout_add_local_once(Duration::from_millis(delay), move || {
@@ -189,7 +220,7 @@ impl TopBarWindow {
     /// The bar's drawing eased to `target` (a cubic ease-out).
     fn slide_to(&self, target: f64, ms: u64) {
         if let Some(s) = self.slide.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         let (root, start, t0) = (self.bar.root.clone(), self.bar.root.offset(), Instant::now());
         let ms = sonata_ui::tokens::ms(ms as f64).max(1) as f64;
@@ -351,6 +382,24 @@ pub fn slide_all_away() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An auto-hidden menu bar slid away from under an open menu that
+    /// wasn't its own (Control Center's mixer menu, the capture toolbar's
+    /// Options, Mission Control's window menu): only the bar's own menus
+    /// and the tray's were counted, and a menu closing elsewhere never had
+    /// it look at the pointer again (Python: ui.menu.OPEN / on_closed).
+    #[test]
+    fn test_menu_bar_hid_under_an_open_menu() {
+        assert_eq!(autohide_step(false, false, true), None, "hid under an open menu");
+        assert_eq!(autohide_step(false, false, false), Some(true));
+        assert_eq!(autohide_step(true, true, true), Some(false), "a hidden bar comes down for the pointer");
+        assert_eq!(autohide_step(true, false, false), None);
+        let src = include_str!("window.rs");
+        let pointer = &src[src.find("    fn pointer(").unwrap()..src.find("    fn slide(").unwrap()];
+        assert!(pointer.contains("sonata_ui::menu::any_open()"), "only its own menus counted");
+        let init = &src[src.find("    fn init_autohide(").unwrap()..src.find("    fn apply_autohide(").unwrap()];
+        assert!(init.contains("sonata_ui::menu::on_closed("), "a menu closing elsewhere never re-checked the pointer");
+    }
 
     fn spin_until(done: impl Fn() -> bool, secs: u64) {
         let ctx = glib::MainContext::default();

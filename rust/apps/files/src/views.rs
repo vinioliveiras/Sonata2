@@ -102,9 +102,12 @@ pub fn tags_menu_row(states: &HashMap<String, &'static str>, pick: Rc<dyn Fn(&st
             d.append(&gtk::Image::builder().icon_name(if st == "all" { "object-select-symbolic" } else { "list-remove-symbolic" }).hexpand(true).halign(gtk::Align::Center).build());
         }
         b.set_child(Some(&d));
-        let p = pick.clone();
-        b.connect_clicked(move |b| {
-            if let Some(pop) = b.ancestor(gtk::Popover::static_type()).and_downcast::<gtk::Popover>() {
+        // (one_click, as menu.py's _one_click: inside the menu a plain
+        // "clicked" took two clicks, the menu's own gestures seeing the
+        // press first)
+        let (p, b2) = (pick.clone(), b.downgrade());
+        sonata_ui::menu::one_click(&b, move || {
+            if let Some(pop) = b2.upgrade().and_then(|b| b.ancestor(gtk::Popover::static_type())).and_downcast::<gtk::Popover>() {
                 pop.popdown();
             }
             p(name, st != "all");
@@ -223,7 +226,7 @@ fn launcher(info: &gio::FileInfo) -> (Option<gio::Icon>, Option<String>) {
         }
     }
     let app = gio::DesktopAppInfo::from_filename(&path);
-    let got = (app.as_ref().map(|a| sonata_ui::icons::app_icon(a.upcast_ref())), app.as_ref().map(|a| a.display_name().to_string()));
+    let got = (app.as_ref().map(|a| sonata_ui::icons::app_icon(a.upcast_ref())), app.as_ref().map(sonata_ui::apps::display_name));
     LAUNCHERS.with(|l| l.borrow_mut().insert(key, (stamp, got.0.clone(), got.1.clone())));
     got
 }
@@ -466,7 +469,7 @@ impl Cells {
             }
         });
         if let Some(old) = p.spring.replace(Some(src)) {
-            old.remove();
+            sonata_ui::cancel(old);
         }
         gdk::DragAction::MOVE
     }
@@ -554,7 +557,7 @@ fn drag_leave(b: &gtk::Widget) {
     b.remove_css_class("drop-target");
     if let Some(p) = parts(b) {
         if let Some(s) = p.spring.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
     }
 }
@@ -1012,7 +1015,7 @@ fn save_column_width(title: &str, width: i32) {
     let t = title.to_string();
     WIDTH_SAVE.with(|w| {
         if let Some(s) = w.borrow_mut().remove(&t) {
-            s.remove();
+            sonata_ui::cancel(s);
         }
     });
     let t2 = t.clone();

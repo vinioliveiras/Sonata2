@@ -96,7 +96,8 @@ impl Ringer {
             if matches!(c.try_wait(), Ok(None)) {
                 unsafe { libc::kill(-(c.id() as i32), libc::SIGTERM) };
             }
-            let _ = c.try_wait();
+            // (try_wait right after the signal came too soon: a zombie per alarm)
+            sonata_backend::run::reap(c);
         }
     }
 
@@ -306,7 +307,7 @@ impl AlarmService {
             return;
         }
         if let Some(id) = self.st.borrow_mut().timer.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let secs = {
             let st = self.st.borrow();
@@ -426,7 +427,7 @@ impl AlarmService {
         self.ui.dismiss(sound);
         let quiet = self.st.borrow_mut().quiet.take();
         if let Some(id) = quiet {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         self.st.borrow_mut().current = None;
     }
@@ -453,6 +454,30 @@ impl AlarmService {
 mod tests {
     use super::*;
     use chrono::Timelike;
+
+    /// True once `pid` is gone, false while it is a zombie or still runs
+    /// (waits up to 3 s).
+    fn reaped(pid: u32) -> bool {
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < end {
+            if !std::path::Path::new(&format!("/proc/{pid}")).exists() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        false
+    }
+
+    #[test]
+    fn test_stopped_alarm_stayed_a_zombie() {
+        //! The menu bar kept a defunct player for every alarm stopped
+        //! while ringing.
+        let child = Command::new("sleep").arg("30").process_group(0).spawn().unwrap();
+        let pid = child.id();
+        let mut r = Ringer { child: Some(child) };
+        r.stop();
+        assert!(reaped(pid), "the stopped player is reaped");
+    }
 
     fn mon() -> NaiveDateTime {
         crate::nightshift::parse_iso("2026-09-28T06:00").unwrap() // a Monday

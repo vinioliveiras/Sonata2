@@ -324,7 +324,7 @@ impl Equalizer {
 
     pub fn sync_soon(&self) {
         if let Some(s) = self.0.src.borrow_mut().take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         let w = Rc::downgrade(&self.0);
         *self.0.src.borrow_mut() = Some(glib::timeout_add_local_once(Duration::from_millis(250), move || {

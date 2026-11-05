@@ -122,8 +122,10 @@ fn python_steps() {
 
 /// Started and left to run on its own (GLib.spawn_async).
 fn spawn(argv: &[String], what: &str) {
-    if let Err(e) = Command::new(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).spawn() {
-        println!("sonata2-autostart: {what}: {e}");
+    // reaped when it ends (GLib.spawn_async did): a zombie otherwise
+    match Command::new(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).spawn() {
+        Ok(c) => sonata_backend::run::reap(c),
+        Err(e) => println!("sonata2-autostart: {what}: {e}"),
     }
 }
 
@@ -182,8 +184,9 @@ pub fn run_with(launch: &dyn Fn(&str, &gio::DesktopAppInfo) -> Result<(), glib::
                 Ok(())
             });
         }
-        if let Err(e) = c.spawn() {
-            println!("sonata2-autostart: crash report: {e}");
+        match c.spawn() {
+            Ok(c) => sonata_backend::run::reap(c),
+            Err(e) => println!("sonata2-autostart: crash report: {e}"),
         }
     }
     let running = procs::running();

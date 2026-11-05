@@ -273,7 +273,7 @@ impl NightShift {
     /// A one-shot timer at manual_until (Turn On Until Tomorrow ending).
     fn expire_at(&self, cfg: &Map<String, Value>) {
         if let Some(id) = self.st.borrow_mut().expiry.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let now = now_local().0;
         let Some(until) = manual_until(cfg).filter(|u| now < *u) else { return };
@@ -291,7 +291,7 @@ impl NightShift {
     /// Debounced: the warmth slider saves on every step.
     fn later(&self) {
         if let Some(id) = self.st.borrow_mut().pending.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let w = self.me.clone();
         let id = glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || {

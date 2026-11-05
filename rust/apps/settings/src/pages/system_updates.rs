@@ -259,7 +259,7 @@ impl UpdatesPage {
             return;
         };
         if let Some(id) = self.pulse.borrow_mut().take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         self.bar.set_fraction(f);
     }

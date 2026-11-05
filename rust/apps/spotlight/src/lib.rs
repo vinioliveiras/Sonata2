@@ -208,7 +208,7 @@ impl Spotlight {
         let prev = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(6).css_classes(["sp-preview"]).hexpand(true).valign(gtk::Align::Fill).build();
         body.append(&prev);
         results.append(&body);
-        let reveal = gtk::Revealer::builder().child(&results).transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(REVEAL_MS).reveal_child(false).build();
+        let reveal = gtk::Revealer::builder().child(&results).transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(sonata_ui::tokens::ms(REVEAL_MS as f64)).reveal_child(false).build();
         panel.append(&reveal);
         // one width: a long file name in the results never widens Search
         let fixed = sonata_ui::fixed::FixedWidth::new(&panel, WIDTH);
@@ -350,7 +350,7 @@ impl Spotlight {
         let apps: Vec<gio::AppInfo> = gio::AppInfo::all().into_iter().filter(|a| sonata_ui::apps::should_show(a) && a.id().is_some_and(|id| !hidden.contains(&id.to_string()))).collect();
         self.apps.replace(apps);
         if let Some(id) = self.close_src.take() {
-            id.remove(); // reopened while fading out
+            sonata_ui::cancel(id); // reopened while fading out
         }
         self.panel.remove_css_class("closing");
         self.entry.set_text("");
@@ -406,7 +406,7 @@ impl Spotlight {
     // -- results ------------------------------------------------------------------------------------
     fn search_soon(self: &Rc<Self>) {
         if let Some(id) = self.search_src.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let weak = Rc::downgrade(self);
         let id = glib::timeout_add_local_once(Duration::from_millis(SEARCH_DELAY_MS), move || {

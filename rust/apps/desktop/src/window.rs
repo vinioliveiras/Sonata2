@@ -170,7 +170,7 @@ impl WallpaperWindow {
         // two pictures in a cross-fading stack: a new wallpaper (or the dark
         // variant on Dark Mode) fades in instead of cutting
         let pics = [0, 1].map(|_| gtk::Picture::builder().content_fit(gtk::ContentFit::Cover).hexpand(true).vexpand(true).can_target(false).build());
-        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(450).can_target(false).build();
+        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(450.0)).can_target(false).build();
         for (i, p) in pics.iter().enumerate() {
             stack.add_named(p, Some(&i.to_string()));
         }

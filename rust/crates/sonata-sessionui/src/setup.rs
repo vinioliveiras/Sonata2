@@ -228,7 +228,7 @@ impl SetupAssistant {
         css();
         let tex = sonata_shell::loginui::wallpaper_texture(1600);
         let win = gtk::Window::builder().application(app).decorated(false).title(tr!("Setup Assistant").as_str()).css_classes(["sonata-lock"]).build();
-        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::SlideLeftRight).transition_duration(420).hexpand(true).vexpand(true).build();
+        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::SlideLeftRight).transition_duration(sonata_ui::tokens::ms(420.0)).hexpand(true).vexpand(true).build();
         let me = Rc::new_cyclic(|w| SetupAssistant { win: win.clone(), stack: stack.clone(), cards: RefCell::default(), dots: RefCell::default(), app_cards: RefCell::default(), hooks, on_done: Box::new(on_done), me: w.clone() });
         let small = Rc::new(sonata_shell::loginui::wallpaper_texture(480).as_ref().and_then(surface_of));
         let over = gtk::Overlay::new();
@@ -300,7 +300,7 @@ impl SetupAssistant {
 
     fn hello(&self) -> gtk::Box {
         let col = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(6).halign(gtk::Align::Center).valign(gtk::Align::Center).css_classes(["gr-fade-in"]).build();
-        let words = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(700).hhomogeneous(false).interpolate_size(true).build();
+        let words = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(700.0)).hhomogeneous(false).interpolate_size(true).build();
         for (i, w) in HELLOS.iter().enumerate() {
             words.add_named(&gtk::Label::builder().label(*w).css_classes(["su-hello"]).build(), Some(&i.to_string()));
         }

@@ -703,7 +703,8 @@ pub fn shot_opens_editor(edit: bool, kept: bool) -> bool {
 pub fn open_shot(path: &str) -> bool {
     if path.to_lowercase().ends_with(".png") && Path::new(path).is_file() {
         let argv = sonata_session::keep::command_for(&["preview".into(), "--markup".into(), path.into()]);
-        return Command::new(&argv[0]).args(&argv[1..]).spawn().is_ok();
+        // reaped once Preview quits: the menu bar kept a zombie per shot opened
+        return Command::new(&argv[0]).args(&argv[1..]).spawn().map(sonata_backend::run::reap).is_ok();
     }
     sonata_ui::apps::launch_default_for_uri(&gio::File::for_path(path).uri(), None).is_ok()
 }
@@ -729,7 +730,7 @@ impl Thumbnail {
         win.add_css_class("sonata-shot");
         // the shadow needs room: margins inside the transparent window
         let pic = gtk::Picture::builder().css_classes(["shot-thumb"]).margin_start(24).margin_top(24).margin_end(4).margin_bottom(4).overflow(gtk::Overflow::Hidden).build();
-        let rev = gtk::Revealer::builder().child(&pic).transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(250).build();
+        let rev = gtk::Revealer::builder().child(&pic).transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(sonata_ui::tokens::ms(250.0)).build();
         win.set_child(Some(&rev));
         if layer_ok() {
             win.init_layer_shell();
@@ -762,7 +763,7 @@ impl Thumbnail {
         self.win.present();
         self.rev.set_reveal_child(true);
         if let Some(src) = self.src.borrow_mut().take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         let w = Rc::downgrade(self);
         let src = glib::timeout_add_local_once(Duration::from_millis(THUMB_MS), move || {
@@ -776,7 +777,7 @@ impl Thumbnail {
 
     fn hide(&self) {
         if let Some(src) = self.src.borrow_mut().take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         self.rev.set_reveal_child(false);
         let win = self.win.clone();
@@ -916,7 +917,7 @@ impl RecordingControl {
 
     fn stop(&self) {
         if let Some(src) = self.src.borrow_mut().take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         self.pill.win.set_visible(false);
         // the recording ended: the drawing goes too

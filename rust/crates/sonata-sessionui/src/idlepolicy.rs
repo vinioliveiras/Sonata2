@@ -64,7 +64,7 @@ pub fn glib_later() -> Later {
         *id.borrow_mut() = Some(src);
         Box::new(move || {
             if let Some(s) = id.borrow_mut().take() {
-                s.remove();
+                sonata_ui::cancel(s);
             }
         })
     })

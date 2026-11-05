@@ -196,7 +196,7 @@ pub fn launch(aid: &str) -> bool {
             Ok(())
         });
     }
-    cmd.spawn().is_ok()
+    cmd.spawn().map(sonata_backend::run::reap).is_ok() // (reaped: no zombie in the Dock)
 }
 
 /// (name, icon) of a Steam game's window, None for other app_ids -- one

@@ -840,7 +840,7 @@ impl Video {
         self.mute_btn.set_tooltip_text(Some(&if self.muted.get() { tr!("Unmute") } else { tr!("Mute") }));
         // saved once the slider rests: a drag would rewrite the file every step
         if let Some(id) = self.vol_src.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let (v, m) = (self.volume.get(), self.muted.get());
         let me = self.win.downgrade();
@@ -924,7 +924,7 @@ impl Video {
 
     fn arm_hide(self: &Me) {
         if let Some(id) = self.hide_src.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         if self.stream().is_some_and(|s| s.is_playing()) && !self.audio.get() {
             // (a song: always there)
@@ -1108,10 +1108,10 @@ impl Video {
             e.cancel(); // closed while saving: stopped, nothing half-made left
         }
         if let Some(id) = self.hide_src.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         if let Some(id) = self.vol_src.take() {
-            id.remove(); // closed right after a change: still saved
+            sonata_ui::cancel(id); // closed right after a change: still saved
             save_volume(self.volume.get(), self.muted.get());
         }
         self.release();

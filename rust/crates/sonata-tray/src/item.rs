@@ -250,7 +250,7 @@ impl TrayItem {
             self.conn.signal_unsubscribe(s);
         }
         if let Some(id) = self.refresh_id.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         if let Some(m) = self.menu.take() {
             m.close();

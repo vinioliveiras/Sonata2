@@ -58,6 +58,13 @@ pub fn popup_menu(widget: &impl IsA<gtk::Widget>, sections: Vec<Vec<menu::Item>>
     pop
 }
 
+/// Where Notes' right-click menus open, as reminders.py / window.py's
+/// (passthrough=True): a click elsewhere in the window closes the menu and
+/// does its own thing too -- without it the first click only closed it.
+pub fn menu_at(x: f64, y: f64) -> menu::Options {
+    menu::Options::at(x, y).passthrough()
+}
+
 pub fn menu_open() -> bool {
     MENUS_OPEN.with(|c| c.get() > 0)
 }
@@ -309,7 +316,7 @@ impl RemindersView {
             st.rlist(S::s(r, "list")).map(|l| S::s(l, "color").to_string()).filter(|c| !c.is_empty()).unwrap_or_else(|| "blue".into())
         };
         let row = gtk::ListBoxRow::builder().activatable(false).build();
-        let revealer = gtk::Revealer::builder().reveal_child(true).transition_type(gtk::RevealerTransitionType::SlideUp).transition_duration(200).build();
+        let revealer = gtk::Revealer::builder().reveal_child(true).transition_type(gtk::RevealerTransitionType::SlideUp).transition_duration(sonata_ui::tokens::ms(200.0)).build();
         let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         box_.add_css_class("nt-rem-row");
         let check = gtk::CheckButton::builder().valign(gtk::Align::Start).active(S::b(r, "completed")).can_focus(false).build();
@@ -535,7 +542,7 @@ impl RemindersView {
         let flagged = S::b(&r, "flagged");
         let done = S::b(&r, "completed");
         let (v1, v2, v3, id1, id2, id3, w) = (self.me.clone(), self.me.clone(), self.me.clone(), rr.id.clone(), rr.id.clone(), rr.id.clone(), Rc::downgrade(rr));
-        let anchor: gtk::Widget = if rr.due.is_visible() { rr.due.clone().upcast() } else { rr.row.clone().upcast() };
+        let anchor: gtk::Widget = if rr.due.get_visible() { rr.due.clone().upcast() } else { rr.row.clone().upcast() };
         popup_menu(
             &rr.row,
             vec![
@@ -564,7 +571,7 @@ impl RemindersView {
                     }
                 })],
             ],
-            menu::Options::at(x, y),
+            crate::reminders::menu_at(x, y),
         );
     }
 
@@ -743,6 +750,16 @@ fn obj(v: Value) -> Rec {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A right-click menu in Notes (a note, a folder, a reminder) swallowed
+    /// the next click elsewhere: it only closed the menu. Python's menus
+    /// pass that click on (passthrough=True).
+    #[test]
+    fn test_notes_menus_swallowed_the_next_click() {
+        let o = menu_at(3.0, 4.0);
+        assert!(o.passthrough);
+        assert_eq!(o.at, Some((3.0, 4.0)));
+    }
 
     fn r(due: &str) -> Rec {
         obj(json!({"due": due}))

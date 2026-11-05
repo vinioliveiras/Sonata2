@@ -72,12 +72,19 @@ pub fn spawn(cmd: &[&str]) {
         // waited for off the main loop: a child nobody waits for stays a
         // zombie as long as the process lives -- the menu bar gathered one
         // per sound and per lights lock (GLib.spawn_async reaps its own)
-        if let Ok(mut child) = Command::new(cmd[0]).args(&cmd[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn() {
-            let _ = std::thread::Builder::new().name("reap".into()).spawn(move || {
-                let _ = child.wait();
-            });
+        if let Ok(child) = Command::new(cmd[0]).args(&cmd[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn() {
+            reap(child);
         }
     }
+}
+
+/// `child` waited for in a thread of its own, so it never stays a zombie:
+/// a `Child` dropped unwaited keeps its process-table entry as long as
+/// this process lives (the menu bar gathered defunct flock and sonata2-rs).
+pub fn reap(mut child: std::process::Child) {
+    let _ = std::thread::Builder::new().name("reap".into()).spawn(move || {
+        let _ = child.wait();
+    });
 }
 
 /// A small file's text, trimmed ("" when it can't be read).
@@ -102,6 +109,19 @@ mod tests {
             f.next() == Some("Z") && f.next() == Some(me.as_str())
         }).count();
         assert_eq!(zombies, 0);
+    }
+
+    /// A child handed to reap is waited for: no zombie once it ends.
+    #[test]
+    fn test_reaped_child_leaves_no_zombie() {
+        let child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        super::reap(child);
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::path::Path::new(&format!("/proc/{pid}")).exists() && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists(), "a zombie stays in /proc");
     }
 
     #[test]

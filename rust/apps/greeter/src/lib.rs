@@ -235,7 +235,7 @@ impl Greeter {
         backdrop.set_video(self.video_cover().as_ref());
         over.set_child(Some(&backdrop));
         over.add_overlay(&loginui::top_clock(None)); // like the lock screen: top, centred (Vini)
-        let center = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(220).halign(gtk::Align::Center).valign(gtk::Align::Center).build();
+        let center = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(220.0)).halign(gtk::Align::Center).valign(gtk::Align::Center).build();
         loginui::lift(&center, Some(monitor));
         over.add_overlay(&center);
         let fake = self.fake;
@@ -352,7 +352,7 @@ impl Greeter {
     /// Every display's page again (a user picked, or "Other Users").
     fn show(self: &Rc<Self>) {
         if let Some(id) = self.countdown.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         for p in self.parts.borrow_mut().iter_mut() {
             p.page = None;
@@ -465,7 +465,7 @@ impl Greeter {
         spinner.add_css_class("gr-spinner");
         spinner.set_halign(gtk::Align::Center);
         spinner.set_valign(gtk::Align::Center);
-        let slot = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(220).halign(gtk::Align::Center).build();
+        let slot = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(220.0)).halign(gtk::Align::Center).build();
         slot.add_named(&entry, Some("field"));
         slot.add_named(&spinner, Some("progress"));
         column.append(&slot);
@@ -488,8 +488,8 @@ impl Greeter {
         // another display's page: the same text, state and hint
         if let Some(first) = self.parts.borrow().iter().find_map(|p| p.page.as_ref()) {
             entry.set_text(&first.entry.text());
-            entry.set_sensitive(first.entry.is_sensitive());
-            links.set_sensitive(first.links.is_sensitive());
+            entry.set_sensitive(first.entry.get_sensitive());
+            links.set_sensitive(first.links.get_sensitive());
             slot.set_visible_child_name(first.slot.visible_child_name().as_deref().unwrap_or("field"));
             spinner.set_spinning(first.spinner.spinning());
             hint.set_label(&first.hint.label());
@@ -602,7 +602,7 @@ impl Greeter {
             let (timer, done, weak, name) = (timer.clone(), done.clone(), Rc::downgrade(self), o.name.clone());
             Rc::new(move |ok: bool| {
                 if let Some(id) = timer.take() {
-                    id.remove();
+                    sonata_ui::cancel(id);
                 } else if done.get() {
                     return;
                 }
@@ -671,7 +671,7 @@ impl Greeter {
     fn input(self: &Rc<Self>) {
         self.wake();
         if let Some(id) = self.idle.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         if self.off_after <= 0 || self.fake || self.watch.borrow().is_some() {
             return;

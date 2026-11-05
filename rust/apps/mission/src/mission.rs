@@ -214,7 +214,8 @@ pub struct MissionBackdrop {
     app: gtk::Application,
     /// connector -> its dark layer
     windows: RefCell<HashMap<String, gtk::Window>>,
-    fades: RefCell<HashMap<String, glib::SourceId>>,
+    /// connector -> its running fade; each fade takes itself out when it ends
+    fades: Fades,
     /// (plugin, connector)
     active: RefCell<HashSet<(String, String)>>,
     ipc: Rc<dyn Ipc>,
@@ -233,7 +234,7 @@ impl MissionBackdrop {
         let me = Rc::new(MissionBackdrop {
             app: app.clone(),
             windows: RefCell::default(),
-            fades: RefCell::default(),
+            fades: Rc::default(),
             active: RefCell::default(),
             ipc: Rc::new(Wayfire),
             texture: RefCell::default(),
@@ -423,25 +424,40 @@ impl MissionBackdrop {
     // a new fade replaces the running one: scale off then on again within
     // FADE_MS, the old fade-out's done() hid the backdrop while scale was on
     fn fade(&self, name: &str, win: &gtk::Window, to: f64, done: Option<Box<dyn FnOnce()>>) {
-        if let Some(old) = self.fades.borrow_mut().remove(name) {
-            old.remove();
-        }
-        let (start, from) = (Instant::now(), win.opacity());
-        let (w, done) = (win.downgrade(), RefCell::new(done));
-        let id = glib::timeout_add_local(Duration::from_millis(16), move || {
-            let Some(win) = w.upgrade() else { return glib::ControlFlow::Break };
-            let t = (start.elapsed().as_secs_f64() * 1000.0 / FADE_MS).min(1.0);
-            win.set_opacity(from + (to - from) * (1.0 - (1.0 - t).powi(3)));
-            if t >= 1.0 {
-                if let Some(f) = done.take() {
-                    f();
-                }
-                return glib::ControlFlow::Break;
-            }
-            glib::ControlFlow::Continue
-        });
-        self.fades.borrow_mut().insert(name.to_string(), id);
+        let w = win.downgrade();
+        fade(&self.fades, name, win.opacity(), to, move |o| w.upgrade().map(|w| w.set_opacity(o)).is_some(), done);
     }
+}
+
+/// connector -> its running fade
+type Fades = Rc<RefCell<HashMap<String, glib::SourceId>>>;
+
+/// `set(opacity)` eased from `from` to `to` over FADE_MS (false: the window
+/// is gone, the fade ends), then `done`. A fade that ends takes its id out
+/// of `fades` itself: the menu bar crashed closing Mission Control, the
+/// finished fade-in's id removed again ("Source ID ... was not found").
+fn fade(fades: &Fades, name: &str, from: f64, to: f64, set: impl Fn(f64) -> bool + 'static, done: Option<Box<dyn FnOnce()>>) {
+    if let Some(old) = fades.borrow_mut().remove(name) {
+        sonata_ui::cancel(old);
+    }
+    let start = Instant::now();
+    let (all, key, done) = (Rc::downgrade(fades), name.to_string(), RefCell::new(done));
+    let id = glib::timeout_add_local(Duration::from_millis(16), move || {
+        let t = (start.elapsed().as_secs_f64() * 1000.0 / FADE_MS).min(1.0);
+        let alive = set(from + (to - from) * (1.0 - (1.0 - t).powi(3)));
+        if alive && t < 1.0 {
+            return glib::ControlFlow::Continue;
+        }
+        // (only this fade can be under the name: a newer one removed it first)
+        if let Some(all) = all.upgrade() {
+            all.borrow_mut().remove(&key);
+        }
+        if let Some(f) = done.take().filter(|_| alive) {
+            f();
+        }
+        glib::ControlFlow::Break
+    });
+    fades.borrow_mut().insert(name.to_string(), id);
 }
 
 /// Desktops for the preview: three of them, a few windows, in memory --
@@ -503,6 +519,29 @@ impl Ipc for SampleDesktops {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_closing_mission_control_crashed_the_menu_bar() {
+        //! The menu bar died closing Mission Control ("Source ID ... was
+        //! not found when attempting to remove it"): the fade-in had ended
+        //! and the fade-out removed its id again.
+        let ctx = glib::MainContext::default();
+        let _owner = ctx.acquire().expect("default main context");
+        let fades: Fades = Rc::default();
+        let shown = Rc::new(Cell::new(0.0));
+        let ended = Rc::new(Cell::new(false));
+        let (s, e) = (shown.clone(), ended.clone());
+        fade(&fades, "DP-1", 0.0, 1.0, move |o| { s.set(o); true }, Some(Box::new(move || e.set(true))));
+        let t = Instant::now();
+        while !ended.get() && t.elapsed() < Duration::from_secs(5) {
+            ctx.iteration(true);
+        }
+        assert!(ended.get() && shown.get() == 1.0);
+        assert!(fades.borrow().is_empty(), "an ended fade keeps no id");
+        let s = shown.clone();
+        fade(&fades, "DP-1", 1.0, 0.0, move |o| { s.set(o); true }, None); // closing: no panic
+        assert_eq!(fades.borrow().len(), 1);
+    }
 
     /// tests/test_mission_mem.py: test_size.
     #[test]

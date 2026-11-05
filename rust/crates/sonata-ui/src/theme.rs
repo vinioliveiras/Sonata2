@@ -557,7 +557,7 @@ pub fn settled(owner: &impl gtk::prelude::IsA<gtk::glib::Object>, ms: u64, callb
     const KEY: &str = "sonata-settle-src";
     let owner = owner.as_ref();
     if let Some(src) = unsafe { owner.steal_data::<gtk::glib::SourceId>(KEY) } {
-        src.remove();
+        crate::cancel(src);
     }
     let weak = owner.downgrade();
     let src = gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || {

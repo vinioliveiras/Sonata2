@@ -70,7 +70,7 @@ impl Osd {
             bar.append(b);
         }
         card.append(&bar);
-        let rev = gtk::Revealer::builder().child(&card).transition_type(gtk::RevealerTransitionType::Crossfade).transition_duration(FADE_MS).build();
+        let rev = gtk::Revealer::builder().child(&card).transition_type(gtk::RevealerTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(FADE_MS as f64)).build();
         window.set_child(Some(&rev));
         if sonata_shell::layer::available() {
             use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
@@ -100,7 +100,7 @@ impl Osd {
         self.window.present();
         self.rev.set_reveal_child(true);
         if let Some(s) = self.src.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         let weak = Rc::downgrade(self);
         let id = glib::timeout_add_local_once(Duration::from_millis(SHOW_MS), move || {
@@ -154,17 +154,54 @@ fn glass_class(w: &gtk::Box) {
 /// icon follows: topbar.py's `_poll_soon`).
 pub fn install_action<F: Fn(&str, i32, bool) + 'static>(app: &gtk::Application, shown: F) -> Rc<RefCell<Option<Rc<Osd>>>> {
     let hud: Rc<RefCell<Option<Rc<Osd>>>> = Rc::default();
+    HUD.with(|h| h.replace(Some(hud.clone()))); // (the login's warm-up makes it there)
     let act = gio::SimpleAction::new("osd", Some(glib::VariantTy::STRING));
     let (h, weak_app) = (hud.clone(), app.downgrade());
     act.connect_activate(move |_, param| {
         let Some(param) = param.and_then(|p| p.str().map(str::to_string)) else { return };
         let (kind, level, muted) = parse(&param);
         let osd = h.borrow_mut().get_or_insert_with(|| Osd::new(weak_app.upgrade().as_ref())).clone();
+        // a key pressed while it drew itself unseen: the warm-up ends first
+        sonata_shell::layer::end_prewarm(&osd.window);
         osd.show_level(&kind, level, muted);
         shown(&kind, level, muted);
     });
     app.add_action(&act);
     hud
+}
+
+thread_local! {
+    /// install_action's HUD, for the login's warm-up.
+    static HUD: RefCell<Option<Rc<RefCell<Option<Rc<Osd>>>>>> = const { RefCell::new(None) };
+}
+
+/// The login's warm-up (__main__.py's warm(), step 1): the HUD made and
+/// drawn once unseen -- the first volume key after login lagged. Shown
+/// at once with a level for those frames, so its glass, symbol and blocks
+/// are what's drawn. Nothing if it was made already (a key came first) or
+/// install_action never ran.
+pub fn prewarm(app: &gtk::Application) {
+    let Some(cell) = HUD.with(|h| h.borrow().clone()) else { return };
+    if cell.borrow().is_some() {
+        return;
+    }
+    let osd = Osd::new(Some(app));
+    cell.replace(Some(osd.clone()));
+    let (a, b) = (Rc::downgrade(&osd), Rc::downgrade(&osd));
+    let before: Box<dyn FnOnce()> = Box::new(move || {
+        if let Some(o) = a.upgrade() {
+            o.icon.set_icon_name(Some(icons("volume").0));
+            o.rev.set_transition_duration(0);
+            o.rev.set_reveal_child(true);
+        }
+    });
+    let after: Box<dyn FnOnce()> = Box::new(move || {
+        if let Some(o) = b.upgrade() {
+            o.rev.set_reveal_child(false);
+            o.rev.set_transition_duration(sonata_ui::tokens::ms(FADE_MS as f64));
+        }
+    });
+    sonata_shell::layer::prewarm(&osd.window, 1, 3, Some(before), Some(after));
 }
 
 #[cfg(test)]

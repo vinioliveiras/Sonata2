@@ -134,3 +134,52 @@ fn test_floats_read_back_exactly() {
         assert_eq!(to_python_json(&v), format!("{want:?}"));
     }
 }
+
+/// Notes and calendars kept in the old ~/.local/share/sonata2/<app> (where
+/// install.sh puts Sonata itself) never moved to sonata2-data in the Rust
+/// apps: they opened empty. Python moves them over the first time.
+#[test]
+fn test_old_data_folder_was_not_moved_over() {
+    let d = tempfile::tempdir().unwrap();
+    let old = d.path().join("sonata2").join("notes");
+    fs::create_dir_all(old.join("sub")).unwrap();
+    fs::write(old.join("notes.json"), "[1]").unwrap();
+    fs::write(old.join("sub").join("a"), "x").unwrap();
+    assert!(migrate_data(d.path(), "notes"));
+    let new = d.path().join("sonata2-data").join("notes");
+    assert_eq!(fs::read_to_string(new.join("notes.json")).unwrap(), "[1]");
+    assert_eq!(fs::read_to_string(new.join("sub").join("a")).unwrap(), "x");
+    assert!(!old.exists());
+    // only once: a new folder that exists already is kept as it is
+    fs::create_dir_all(&old).unwrap();
+    fs::write(old.join("notes.json"), "[2]").unwrap();
+    assert!(!migrate_data(d.path(), "notes"));
+    assert_eq!(fs::read_to_string(new.join("notes.json")).unwrap(), "[1]");
+    // nothing old: nothing to do
+    assert!(!migrate_data(d.path(), "calendar"));
+    // a dev install's link: what it points to moves
+    let clone = d.path().join("clone-notes");
+    fs::create_dir_all(&clone).unwrap();
+    fs::write(clone.join("t"), "y").unwrap();
+    std::os::unix::fs::symlink(&clone, d.path().join("sonata2").join("textedit")).unwrap();
+    assert!(migrate_data(d.path(), "textedit"));
+    assert_eq!(fs::read_to_string(d.path().join("sonata2-data").join("textedit").join("t")).unwrap(), "y");
+}
+
+/// data_dir does the move itself, the first time.
+#[test]
+fn test_data_dir_left_the_old_folder_behind() {
+    let _e = env(false);
+    let d = tempfile::tempdir().unwrap();
+    let prev = std::env::var_os("XDG_DATA_HOME");
+    std::env::set_var("XDG_DATA_HOME", d.path());
+    fs::create_dir_all(d.path().join("sonata2").join("calendar")).unwrap();
+    fs::write(d.path().join("sonata2").join("calendar").join("c.ics"), "z").unwrap();
+    let got = data_dir("calendar");
+    match prev {
+        Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+        None => std::env::remove_var("XDG_DATA_HOME"),
+    }
+    assert_eq!(got, d.path().join("sonata2-data").join("calendar"));
+    assert_eq!(fs::read_to_string(got.join("c.ics")).unwrap(), "z");
+}

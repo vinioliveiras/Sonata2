@@ -2,7 +2,8 @@
 //! from sections of items, its CSS menu.py's own. Items can carry a check
 //! (shown after the text, at the right edge, as menu.py does) or a submenu
 //! (opening to the side), or a small x at the right edge that does
-//! something else (`Item::on_close`: the Dock closes that window).
+//! something else (`Item::on_close`: the Dock closes that window), or be
+//! a widget of their own (`Item::widget`: Files' tag colours).
 //! Options::passthrough: a click elsewhere in the window closes the menu
 //! and does its own thing too (Files' right-click).
 //!
@@ -27,6 +28,7 @@ pub struct Item {
     pub enabled: bool,
     submenu: Vec<Vec<Item>>,
     on_close: Option<Rc<dyn Fn()>>,
+    widget: Option<Box<dyn FnOnce(&gtk::PopoverMenu) -> gtk::Widget>>,
 }
 
 /// A row's text is at most this many characters wide (~320 px at 13 px),
@@ -37,17 +39,17 @@ pub const LABEL_CHARS: i32 = 40;
 impl Item {
     /// A plain item.
     pub fn new<F: Fn() + 'static>(label: &str, action: F) -> Self {
-        Item { label: label.to_string(), action: Some(Rc::new(action)), toggle: None, checked: None, enabled: true, submenu: Vec::new(), on_close: None }
+        Item { label: label.to_string(), action: Some(Rc::new(action)), toggle: None, checked: None, enabled: true, submenu: Vec::new(), on_close: None, widget: None }
     }
 
     /// A checkmark item; `action` gets the new state.
     pub fn check<F: Fn(bool) + 'static>(label: &str, checked: bool, action: F) -> Self {
-        Item { label: label.to_string(), action: None, toggle: Some(Rc::new(action)), checked: Some(checked), enabled: true, submenu: Vec::new(), on_close: None }
+        Item { label: label.to_string(), action: None, toggle: Some(Rc::new(action)), checked: Some(checked), enabled: true, submenu: Vec::new(), on_close: None, widget: None }
     }
 
     /// An item opening a submenu (sections of items) to the side.
     pub fn submenu(label: &str, sections: Vec<Vec<Item>>) -> Self {
-        Item { label: label.to_string(), action: None, toggle: None, checked: None, enabled: true, submenu: sections, on_close: None }
+        Item { label: label.to_string(), action: None, toggle: None, checked: None, enabled: true, submenu: sections, on_close: None, widget: None }
     }
 
     /// A small x at the right of a plain item's row: `f` runs and the row
@@ -55,6 +57,13 @@ impl Item {
     pub fn on_close<F: Fn() + 'static>(mut self, f: F) -> Self {
         self.on_close = Some(Rc::new(f));
         self
+    }
+
+    /// A row that is a widget of its own (menu.py's Item(widget=)): Files'
+    /// row of tag colours. `make` gets the menu, to close it from a click;
+    /// buttons in it want `one_click`, or they take two clicks.
+    pub fn widget<F: FnOnce(&gtk::PopoverMenu) -> gtk::Widget + 'static>(label: &str, make: F) -> Self {
+        Item { label: label.to_string(), action: None, toggle: None, checked: None, enabled: true, submenu: Vec::new(), on_close: None, widget: Some(Box::new(make)) }
     }
 
     pub fn enabled(mut self, on: bool) -> Self {
@@ -112,7 +121,7 @@ thread_local! {
 pub fn any_open() -> bool {
     OPEN.with(|o| {
         let mut o = o.borrow_mut();
-        o.retain(|w| w.upgrade().is_some_and(|p| p.is_visible()));
+        o.retain(|w| w.upgrade().is_some_and(|p| p.get_visible()));
         !o.is_empty()
     })
 }
@@ -170,7 +179,7 @@ pub fn watch_shown(pop: &impl IsA<gtk::Popover>) {
     let w = pop.as_ref().downgrade();
     glib::timeout_add_local_once(std::time::Duration::from_millis(SHOWN_WITHIN_MS), move || {
         if let Some(p) = w.upgrade() {
-            if p.is_visible() && !p.is_mapped() {
+            if p.get_visible() && !p.is_mapped() {
                 eprintln!("sonata2: a menu that couldn't show was closed");
                 p.popdown();
             }
@@ -354,7 +363,7 @@ fn pass_clicks(pop: &gtk::PopoverMenu, root: Option<gtk::Root>) {
         let (p, w, inside) = (p.clone(), w.downgrade(), inside.clone());
         glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
             if let (Some(pop), Some(w)) = (p.upgrade(), w.upgrade()) {
-                if !w.is_active() && !inside.get() && pop.is_visible() {
+                if !w.is_active() && !inside.get() && pop.get_visible() {
                     pop.popdown();
                 }
             }
@@ -396,8 +405,10 @@ fn build(sections: Vec<Vec<Item>>, group: &gio::SimpleActionGroup, prefix: &str,
                 part.append_item(&mi);
                 continue;
             }
-            if item.on_close.is_some() {
-                // a row with its own x: a widget of its own in the menu
+            if item.on_close.is_some() || item.widget.is_some() {
+                // a row with its own x, or a custom row: a widget of its own
+                // in the menu, its place named in the model (added without
+                // one, GTK dropped it)
                 let mi = gio::MenuItem::new(None, None);
                 mi.set_attribute_value("custom", Some(&name.to_variant()));
                 part.append_item(&mi);
@@ -465,14 +476,14 @@ fn closable_row(pop: &gtk::PopoverMenu, item: Item) -> gtk::Widget {
 /// Inside a PopoverMenu the menu's own gestures see the press first, so a
 /// plain "clicked" needed a second click: take the click in the capture
 /// phase and act on release over the button.
-fn one_click(button: &gtk::Button, action: impl Fn() + 'static) {
+pub fn one_click(button: &gtk::Button, action: impl Fn() + 'static) {
     let g = gtk::GestureClick::builder().button(1).propagation_phase(gtk::PropagationPhase::Capture).build();
     g.connect_pressed(|g, _, _, _| {
         g.set_state(gtk::EventSequenceState::Claimed);
     });
     let b = button.downgrade();
     g.connect_released(move |_, _, x, y| {
-        if b.upgrade().is_some_and(|b| b.is_sensitive() && b.contains(x, y)) {
+        if b.upgrade().is_some_and(|b| b.get_sensitive() && b.contains(x, y)) {
             action();
         }
     });
@@ -544,8 +555,11 @@ pub fn popup(widget: &impl IsA<gtk::Widget>, sections: Vec<Vec<Item>>, opts: Opt
     let pop = gtk::PopoverMenu::from_model_full(&model, gtk::PopoverMenuFlags::NESTED);
     // on the menu, not the anchor: two menus on one anchor would clash
     pop.insert_action_group("m", Some(&group));
-    for (name, item) in customs {
-        let row = closable_row(&pop, item);
+    for (name, mut item) in customs {
+        let row = match item.widget.take() {
+            Some(make) => make(&pop),
+            None => closable_row(&pop, item),
+        };
         pop.add_child(&row, &name);
     }
     pop.set_has_arrow(false);
@@ -578,4 +592,35 @@ pub fn popup(widget: &impl IsA<gtk::Widget>, sections: Vec<Vec<Item>>, opts: Opt
     track(&pop);
     pop.popup();
     pop
+}
+
+#[cfg(test)]
+mod visible_tests {
+    use super::*;
+
+    /// A menu still open whose button sat in a hidden box counted as
+    /// closed (is_visible: the popover and every parent), so the menu bar
+    /// and the Dock could hide under it. Python asks the menu itself.
+    #[test]
+    fn test_menu_over_a_hidden_box_counted_as_closed() {
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        let win = gtk::Window::new();
+        let hidden = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let button = gtk::Button::new();
+        hidden.append(&button);
+        win.set_child(Some(&hidden));
+        win.present();
+        let pop = gtk::Popover::new();
+        pop.set_parent(&button);
+        track(&pop);
+        pop.popup();
+        hidden.set_visible(false); // (the menu stays up: GTK leaves it to its owner)
+        assert!(pop.get_visible());
+        assert!(any_open());
+        pop.popdown();
+        pop.unparent();
+        win.destroy();
+    }
 }

@@ -199,7 +199,7 @@ impl VideoNodes {
 
     pub fn close(&mut self) {
         if let Some(s) = self.src.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         if self.fd >= 0 {
             unsafe { libc::close(self.fd) };

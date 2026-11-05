@@ -272,12 +272,12 @@ impl Folder {
         let mut out = Vec::new();
         for info in sonata_ui::apps::scan().into_values() {
             let Some(path) = sonata_ui::apps::app_filename(&info) else { continue };
-            if !info.should_show() {
+            if !sonata_ui::apps::should_show(&info) {
                 continue;
             }
             let f = gio::File::for_path(&path);
             let Some(fi) = query(&f) else { continue };
-            fi.set_display_name(&info.display_name());
+            fi.set_display_name(&sonata_ui::apps::display_name(&info));
             fi.set_attribute_object("sonata::app", &info);
             // the icon Sonata draws for the app everywhere (the one chosen in
             // Settings > App Icons, on its plate), as Python's icons.app_icon
@@ -305,7 +305,7 @@ impl Folder {
                     return;
                 }
                 if let Some(id) = fo.app_reload.take() {
-                    id.remove();
+                    sonata_ui::cancel(id);
                 }
                 let me = fo.me.clone();
                 let id = glib::timeout_add_local_once(std::time::Duration::from_millis(APPS_RELOAD_MS), move || {
@@ -327,7 +327,7 @@ impl Folder {
             m.cancel();
         }
         if let Some(id) = self.app_reload.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 

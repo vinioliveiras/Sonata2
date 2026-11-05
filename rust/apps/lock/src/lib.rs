@@ -156,7 +156,7 @@ impl Lock {
             }
         } else {
             if let Some(id) = self.idle.take() {
-                id.remove();
+                sonata_ui::cancel(id);
             }
             self.wake(); // (through the watch, before it closes)
             if let Some(w) = self.watch.take() {
@@ -237,7 +237,7 @@ impl Lock {
     fn input(self: &Rc<Self>) {
         self.wake();
         if let Some(id) = self.idle.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         if self.watch.borrow().is_some() {
             return;
@@ -338,7 +338,7 @@ impl Lock {
         let entry = loginui::password_field(None);
         if let Some(first) = self.parts.borrow().first() {
             entry.set_text(&first.entry.text());
-            entry.set_sensitive(first.entry.is_sensitive());
+            entry.set_sensitive(first.entry.get_sensitive());
         }
         let weak = Rc::downgrade(self);
         entry.connect_activate(move |_| {
@@ -365,7 +365,7 @@ impl Lock {
         spinner.add_css_class("gr-spinner");
         spinner.set_halign(gtk::Align::Center);
         spinner.set_valign(gtk::Align::Center);
-        let slot = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(220).halign(gtk::Align::Center).build();
+        let slot = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(220.0)).halign(gtk::Align::Center).build();
         slot.add_named(&entry, Some("field"));
         slot.add_named(&spinner, Some("spinner"));
         if let Some(first) = self.parts.borrow().first() {

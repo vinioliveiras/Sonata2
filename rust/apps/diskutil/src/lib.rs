@@ -682,7 +682,7 @@ impl DiskUtility {
 
     fn toggle_sidebar(&self) {
         if self.available.get() {
-            self.sidebar.set_visible(!self.sidebar.is_visible());
+            self.sidebar.set_visible(!self.sidebar.get_visible());
         }
     }
 
@@ -1292,7 +1292,7 @@ mod tests {
             settle(20);
         }
         assert_eq!(win.stack.visible_child_name().as_deref(), Some("missing"));
-        assert!(!win.sidebar.is_visible());
+        assert!(!win.sidebar.get_visible());
         assert!(["erase", "mount", "eject", "info", "partition"].iter().all(|k| !win.btn[k].is_sensitive()));
         win.win.destroy();
 

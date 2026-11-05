@@ -171,7 +171,9 @@ pub fn serial(cmd: &str) -> String {
 /// Runs on its own: it outlives the lock screen, which quits right after unlocking.
 fn detached(cmd: &str) {
     use std::os::unix::process::CommandExt;
-    let _ = std::process::Command::new("sh").args(["-c", cmd]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).process_group(0).spawn();
+    if let Ok(c) = std::process::Command::new("sh").args(["-c", cmd]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).process_group(0).spawn() {
+        sonata_backend::run::reap(c); // (a zombie in this process otherwise)
+    }
 }
 
 /// A built-in panel whose backlight can go to zero (a laptop).

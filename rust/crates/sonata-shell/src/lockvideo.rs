@@ -439,7 +439,13 @@ impl LockVideo {
         })));
         let w = Rc::downgrade(&v);
         v.watch.replace(Some(glib::timeout_add_local(Duration::from_millis(WATCH_MS), move || match w.upgrade() {
-            Some(v) => v.check(),
+            Some(v) => {
+                let go = v.check();
+                if go == glib::ControlFlow::Break {
+                    v.watch.take(); // (ends here: close() never removes it again)
+                }
+                go
+            }
             None => glib::ControlFlow::Break,
         })));
         let m = Self::player(&v.path);
@@ -612,7 +618,7 @@ impl LockVideo {
     pub fn close(&self) {
         self.gate.take();
         if let Some(s) = self.watch.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         if let Some((nxt, id)) = self.next.take() {
             Self::drop_player(nxt, vec![id]);

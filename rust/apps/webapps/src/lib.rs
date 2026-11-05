@@ -1066,7 +1066,9 @@ fn spawn(args: &[&str]) {
             Ok(())
         });
     }
-    let _ = cmd.spawn();
+    if let Ok(c) = cmd.spawn() {
+        sonata_backend::run::reap(c); // (else a zombie in the Dock once it quits)
+    }
 }
 
 /// The "New Web App" form, in a process of its own (it takes the keyboard;
@@ -1340,7 +1342,7 @@ pub fn run_chromium(app: &str) -> i32 {
     let (ml, l, c, key3) = (main_loop.clone(), last.clone(), code.clone(), key.clone());
     glib::child_watch_add_local(glib::Pid(pid), move |_, status| {
         if let Some(p) = poll.borrow_mut().take() {
-            p.remove();
+            sonata_ui::cancel(p);
         }
         sonata_desktop::badges::publish_page_title(&wm, None, None);
         if let Some((w, h)) = l.get() {

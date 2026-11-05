@@ -80,8 +80,27 @@ def open(info, launch, tries: int = 0, already_open=None) -> bool:      # noqa: 
         failed(info, e.message)
         return False
     if not already_open:
-        GLib.timeout_add_seconds(wait_s(info), lambda: (_check(info, launch, tries), False)[1])
+        # a window seen at any point of the wait means it opened: looked at
+        # only once the wait was over, an app closed before then (Vini closed
+        # the Assistant within 30 s) was killed and opened again, three times
+        waited = {"s": 0}
+
+        def second():
+            waited["s"] += 1
+            step = tick(has_window(info), waited["s"], wait_s(info))
+            if step == "check":
+                _check(info, launch, tries)
+            return step == "wait"
+        GLib.timeout_add_seconds(1, second)
     return True
+
+
+def tick(has_window_now: bool, waited_s: int, wait: int) -> str:
+    """One second of the wait for an app's window: "opened", "wait", or
+    "check" (the wait is over without one: the last look, the next try)."""
+    if has_window_now:
+        return "opened"
+    return "check" if waited_s >= wait else "wait"
 
 
 def _check(info, launch, tries: int) -> None:

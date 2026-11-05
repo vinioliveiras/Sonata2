@@ -395,7 +395,7 @@ impl StackRow {
             m.cancel();
         }
         if let Some(s) = tile.stack.src.borrow_mut().take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
     }
 

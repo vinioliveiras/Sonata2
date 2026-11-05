@@ -422,8 +422,9 @@ mod tests {
         assert_eq!(color_mode(&jpeg(4)), Some("CMYK"));
         assert_eq!(color_mode(b"GIF89a\x01\0\x01\0"), Some("P"));
         assert_eq!(color_mode(b"RIFF....WEBP"), None);
-        assert_eq!(mode_label("L"), "Gray");
-        assert_eq!(mode_label("P"), "Indexed");
+        // (in the language the tests run in)
+        assert_eq!(mode_label("L"), sonata_i18n::gettext("Gray"));
+        assert_eq!(mode_label("P"), sonata_i18n::gettext("Indexed"));
         assert_eq!(mode_label("RGBA"), "RGB");
         assert_eq!(mode_label("CMYK"), "CMYK");
     }

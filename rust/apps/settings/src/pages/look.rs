@@ -141,7 +141,7 @@ fn look(ctx: &Ctx) -> Rc<Look> {
 
 fn cancel(slot: &RefCell<Option<glib::SourceId>>) {
     if let Some(id) = slot.borrow_mut().take() {
-        id.remove();
+        sonata_ui::cancel(id);
     }
 }
 

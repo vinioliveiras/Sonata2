@@ -79,7 +79,7 @@ impl Reader {
         self.listeners.borrow_mut().retain(|l| l.0 != id);
         if self.listeners.borrow().is_empty() {
             if let Some(t) = self.timer.take() {
-                t.remove();
+                sonata_ui::cancel(t);
             }
         }
     }

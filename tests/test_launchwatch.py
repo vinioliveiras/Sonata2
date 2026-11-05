@@ -57,8 +57,9 @@ class OpenTest(unittest.TestCase):
             while timers or later:
                 if timers:
                     s, f = timers.pop(0)
-                    self.assertEqual(s, W.wait_s(info))
-                    f()
+                    self.assertEqual(s, 1)                      # looked at every second
+                    if f():
+                        timers.insert(0, (s, f))
                 while later:
                     later.pop(0)()
         return n, kill, send
@@ -70,9 +71,32 @@ class OpenTest(unittest.TestCase):
         send.assert_called_once()
 
     def test_stops_when_a_window_comes(self):
-        n, kill, send = self.drive(Info(), windows_from=2)
+        # none for the first launch's whole wait (and its last look), one at
+        # the second launch's first second
+        n, kill, send = self.drive(Info(), windows_from=W.wait_s(Info()) + 2)
         self.assertEqual(n["launch"], 2)
         send.assert_not_called()
+
+    def test_assistant_reopened_after_closing_it(self):
+        """Vini: the Assistant kept opening again after he closed it -- its
+        window came at once, but it was looked for only after 30 s, when he
+        had closed it. A window seen during the wait ends the watch."""
+        seen = {"n": 0}
+
+        def has(_info, views=None, unit=None):
+            seen["n"] += 1
+            return seen["n"] == 3                               # shown in the 2nd second, closed after
+        timers = []
+        with mock.patch.object(W, "has_window", side_effect=has), \
+                mock.patch.object(W.GLib, "timeout_add_seconds", side_effect=lambda s, f: timers.append(f)), \
+                mock.patch("sonata2.appscope.kill") as kill:
+            W.open(Info(), lambda: None)
+            for _ in range(60):
+                if not timers or not timers[0]():
+                    break
+        kill.assert_not_called()
+        self.assertEqual(W.tick(False, 30, 30), "check")
+        self.assertEqual(W.tick(True, 1, 30), "opened")
 
     def test_already_open_not_watched(self):
         with mock.patch.object(W, "has_window", return_value=True), \

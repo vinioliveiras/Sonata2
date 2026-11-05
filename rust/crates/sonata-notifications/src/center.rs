@@ -112,7 +112,7 @@ impl FrostBox {
         while let Some(first) = stack.pop() {
             let mut w = Some(first);
             while let Some(x) = w {
-                if x.is_visible() {
+                if x.get_visible() {
                     match PANELS.iter().find(|(c, _)| x.has_css_class(c)) {
                         Some((_, k)) => out.push((x.clone(), *k)),
                         None => {
@@ -313,8 +313,10 @@ impl Center {
     /// Open it -- on `monitor`, the display of the menu bar whose clock was
     /// clicked (Vini: every display's clock opens the same one).
     pub fn show_center(self: &Rc<Self>, monitor: Option<&gtk::gdk::Monitor>) {
+        // opened while it drew itself unseen: the warm-up ends, then it opens as ever
+        sonata_shell::layer::end_prewarm(&self.win);
         if let Some(src) = self.hiding.take() {
-            src.remove(); // opened again while sliding out
+            sonata_ui::cancel(src); // opened again while sliding out
         }
         if let Some(m) = monitor {
             if self.monitor.borrow().as_ref() != Some(m) {
@@ -405,10 +407,28 @@ impl Center {
         }
     }
 
-    /// Built and laid out once, unseen, so its first opening slides in
-    /// without a hitch.
+    /// Built, laid out and drawn once, unseen, so its first opening slides
+    /// in without a hitch (notifications.py: layer.prewarm with the column
+    /// shown at once, hidden again after).
     pub fn prewarm(self: &Rc<Self>) {
         self.rebuild();
+        if !sonata_shell::layer::available() {
+            return;
+        }
+        let (a, b) = (Rc::downgrade(self), Rc::downgrade(self));
+        let before: Box<dyn FnOnce()> = Box::new(move || {
+            if let Some(c) = a.upgrade() {
+                c.slide.add_css_class("instant");
+                c.set_revealed(true);
+            }
+        });
+        let after: Box<dyn FnOnce()> = Box::new(move || {
+            if let Some(c) = b.upgrade() {
+                c.set_revealed(false);
+                c.slide.remove_css_class("instant");
+            }
+        });
+        sonata_shell::layer::prewarm(&self.win, 1, 3, Some(before), Some(after));
     }
 
     fn notes(&self) -> Vec<Note> {
@@ -453,7 +473,7 @@ impl Center {
             });
         }
         if let Some(src) = self.settle.take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         let wait = 120 + 260 + (gone.len() - 1).min(8) as u64 * 45 + 20;
         let w = Rc::downgrade(self);
@@ -520,7 +540,7 @@ impl Center {
                         .reveal_child(true)
                         .css_classes(["nc-slot"])
                         .transition_type(gtk::RevealerTransitionType::SlideUp)
-                        .transition_duration(260)
+                        .transition_duration(sonata_ui::tokens::ms(260.0))
                         .build();
                     self.col.insert_child_after(&rev, Some(&prev));
                     slots.insert(n.id, Slot { rev: rev.clone(), when: c.when, made: n.clone() });

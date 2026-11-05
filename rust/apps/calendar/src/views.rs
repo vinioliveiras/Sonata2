@@ -414,7 +414,7 @@ impl Timeline {
         tl.root.connect_unmap(move |_| {
             if let Some(t) = w.upgrade() {
                 if let Some(id) = t.tick.take() {
-                    id.remove();
+                    sonata_ui::cancel(id);
                 }
             }
         });
@@ -584,7 +584,7 @@ impl Timeline {
     /// Repaint at the next minute (the current-time line), while shown.
     fn schedule_tick(self: &Rc<Self>) {
         if let Some(id) = self.tick.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let wait = (60 - crate::alerts::now().second()).max(1);
         let w = Rc::downgrade(self);

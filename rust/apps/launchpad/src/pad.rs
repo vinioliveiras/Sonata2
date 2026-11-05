@@ -140,7 +140,7 @@ impl Pad {
         let win = gtk::ApplicationWindow::builder().application(app).title(gettext(names::APPS)).css_classes(["sonata-launchpad"]).decorated(false).build();
         let search = gtk::SearchEntry::builder().placeholder_text(tr!("Search")).css_classes(["lp-search"]).halign(gtk::Align::Center).margin_top(40).build();
         let carousel = adw::Carousel::builder().hexpand(true).vexpand(true).allow_scroll_wheel(true).spacing(0).reveal_duration(300).build();
-        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(120).build();
+        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(120.0)).build();
         let dots = adw::CarouselIndicatorDots::builder().carousel(&carousel).css_classes(["lp-dots"]).margin_bottom(32).margin_top(12).build();
         let col = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["lp-col"]).build();
         let grid_area = gtk::Box::builder().hexpand(true).vexpand(true).build();
@@ -928,7 +928,7 @@ impl Pad {
                 b.set_progress(v);
             }
         });
-        let anim = adw::TimedAnimation::new(&self.bin, self.bin.progress(), to, ms, target);
+        let anim = adw::TimedAnimation::new(&self.bin, self.bin.progress(), to, sonata_ui::tokens::ms(ms as f64), target);
         // macOS: a quick start that settles softly, both ways
         anim.set_easing(if to > 0.0 { adw::Easing::EaseOutQuart } else { adw::Easing::EaseOutCubic });
         let bin = self.bin.downgrade();
@@ -1700,7 +1700,7 @@ impl Pad {
 
     fn cancel(&self, name: &str) {
         if let Some(id) = self.timers.borrow_mut().remove(name) {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 

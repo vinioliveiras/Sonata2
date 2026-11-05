@@ -383,7 +383,7 @@ fn equalizer(grp: &adw::PreferencesGroup, outputs: &[AudioDevice]) {
                 return;
             }
             if let Some(src) = e.pending.borrow_mut().take() {
-                src.remove();
+                sonata_ui::cancel(src);
             }
             let e2 = e.clone();
             // dragging: save (and apply) ~8x/s
@@ -1182,6 +1182,8 @@ mod tests {
     /// the subtitle says why; on again, the old crash is history.
     #[test]
     fn gpu_subtitle_says_why_it_is_off() {
+        // (the window test switches the language: not in the middle of these)
+        let _lock = crate::tests::CONFIG.lock().unwrap_or_else(|e| e.into_inner());
         let base = gpu_subtitle(None, false);
         let after = gpu_subtitle(Some(1000.0), false);
         assert_ne!(after, base);

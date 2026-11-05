@@ -56,7 +56,7 @@ pub struct Watch {
 impl Drop for Watch {
     fn drop(&mut self) {
         if let Some(s) = self.source.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
     }
 }

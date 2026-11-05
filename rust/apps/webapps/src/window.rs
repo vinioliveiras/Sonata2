@@ -371,7 +371,7 @@ impl WebAppWindow {
     /// Opened again (its icon) while closing or kept in the background.
     pub fn reopen(&self) {
         if let Some((src, guard)) = self.quitting.take() {
-            src.remove();
+            sonata_ui::cancel(src);
             drop(guard);
         }
         self.win.present();

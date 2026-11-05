@@ -43,7 +43,7 @@ mod imp {
 
         fn dispose(&self) {
             if let Some(id) = self.tick.take() {
-                id.remove();
+                crate::cancel(id);
             }
         }
     }
@@ -143,7 +143,7 @@ impl Spinner {
             imp.tick.replace(Some(id));
         } else if !run {
             if let Some(id) = imp.tick.take() {
-                id.remove();
+                crate::cancel(id);
             }
         }
         self.queue_draw();

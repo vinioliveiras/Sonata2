@@ -537,7 +537,7 @@ impl Bt {
 
     fn stop_polling(&self) {
         if let Some(src) = self.scan_src.borrow_mut().take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
     }
 

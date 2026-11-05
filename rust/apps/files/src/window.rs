@@ -27,9 +27,6 @@ use std::rc::{Rc, Weak};
 
 pub const VIEWS: [(&str, &str, &str); 3] = [("icons", "view-grid-symbolic", n_!("as Icons")), ("list", "view-list-symbolic", n_!("as List")), ("columns", "view-dual-symbolic", n_!("as Columns"))];
 const LOADING_MS: u64 = 400;
-/// where an item's menu shows the tag colours: after Open, Move to Trash,
-/// Get Info, Rename, Create Shortcut and Copy (window.py's order)
-const TAGS_SECTION: i32 = 6;
 const ENTER_TWICE_MS: u64 = 350;
 
 /// ~/Desktop, as shell/desktop.py's desktop_dir: the XDG desktop folder,
@@ -90,22 +87,25 @@ fn vault_reason(err: &str) -> String {
     }
 }
 
-/// A document window's first size (ui/window.py roomy_size): (w, h) grown
-/// to about two thirds of a `screen`-sized display, never smaller than the
-/// window's own default.
-fn roomy_size(w: i32, h: i32, screen: Option<(i32, i32)>) -> (i32, i32) {
-    match screen {
-        Some((sw, sh)) => (w.max((sw as f64 * 0.66) as i32), h.max((sh as f64 * 0.65) as i32)),
-        None => (w, h),
-    }
-}
-
 /// An app opened from Files, watched: killed and opened again if no
 /// window of it comes, then a notification (launchwatch; Vini: Steam). It
 /// also says so when the app can't be started at all.
 fn watched_launch(app: &gio::AppInfo, files: Vec<gio::File>, ctx: &gdk::AppLaunchContext) {
-    let (a, ctx) = (app.clone(), ctx.clone());
-    sonata_desktop::launchwatch::open(app, Rc::new(move || a.launch(&files, Some(&ctx))), 0, None);
+    sonata_desktop::launchwatch::open(app, launcher(app, files, Some(ctx.clone().upcast())), 0, None);
+}
+
+/// How Files starts an app: Sonata's launch path (apps.py's patched
+/// launch: app lock, limits, the GPU, its own scope), not GIO's own --
+/// an app opened from Files skipped all of that.
+fn launcher(app: &gio::AppInfo, files: Vec<gio::File>, ctx: Option<gio::AppLaunchContext>) -> sonata_desktop::launchwatch::Launch {
+    let a = app.clone();
+    Rc::new(move || sonata_ui::apps::launch(&a, &files, ctx.as_ref()))
+}
+
+/// Return empties, as macOS and window.py (default="empty"): an alert
+/// never makes a destructive button the default unless asked.
+fn empty_trash_options() -> sonata_ui::dialog::AlertOptions {
+    sonata_ui::dialog::AlertOptions { default: Some("empty".into()), ..Default::default() }
 }
 
 fn same_disk(a: &gio::File, b: &gio::File) -> bool {
@@ -185,7 +185,7 @@ impl Tab {
     /// A load began (shown after LOADING_MS) / ended (hidden at once).
     fn loading(&self, on: bool) {
         if let Some(s) = self.loading_src.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         if !on {
             self.loading_box.set_visible(false);
@@ -287,12 +287,11 @@ impl FilesWindow {
             // Files' first size, with none kept yet, is about two thirds of
             // the display (window.py ROOMY); the Open / Save panels keep
             // their own plain size
-            let (w0, h0) = if tabs && sonata_ui::window::saved_size(size.0).is_none() {
-                roomy_size(size.1, size.2, sonata_ui::window::screen_size_of(&window))
+            if tabs {
+                sonata_ui::window::remember_size_roomy(window.upcast_ref(), size.0, size.1, size.2);
             } else {
-                (size.1, size.2)
-            };
-            sonata_ui::window::remember_size(window.upcast_ref(), size.0, w0, h0);
+                sonata_ui::window::remember_size(window.upcast_ref(), size.0, size.1, size.2);
+            }
             for cl in ["sonata-files", "sonata-glass"] {
                 window.add_css_class(cl);
             }
@@ -374,7 +373,7 @@ impl FilesWindow {
             search.connect_search_changed(move |_| f());
             let f = call(|t| t.close_search());
             search.connect_stop_search(move |_| f());
-            let search_rev = gtk::Revealer::builder().child(&search).transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(150).build();
+            let search_rev = gtk::Revealer::builder().child(&search).transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(sonata_ui::tokens::ms(150.0)).build();
             let search_btn = icon_button("system-search-symbolic", &tr!("Search"), call(|t| t.open_search()));
             bar.append(&search_btn);
             bar.append(&search_rev);
@@ -418,7 +417,7 @@ impl FilesWindow {
             sb.append(&search_status);
             // the criteria never set the window's minimum width: a narrow window scrolls them
             let scroll = gtk::ScrolledWindow::builder().child(&sb).hscrollbar_policy(gtk::PolicyType::External).vscrollbar_policy(gtk::PolicyType::Never).propagate_natural_height(true).build();
-            let scope_rev = gtk::Revealer::builder().child(&scroll).transition_duration(150).build();
+            let scope_rev = gtk::Revealer::builder().child(&scroll).transition_duration(sonata_ui::tokens::ms(150.0)).build();
             content.append(&scope_rev);
             let tab_stack = gtk::Stack::builder().vexpand(true).transition_type(gtk::StackTransitionType::None).build();
             content.append(&tab_stack);
@@ -572,7 +571,6 @@ impl FilesWindow {
                 for tab in t.tabs.borrow().iter() {
                     tab.folder.cancel();
                 }
-                WINDOWS.with(|l| l.borrow_mut().retain(|x| !Rc::ptr_eq(x, &t)));
             }
             glib::Propagation::Proceed
         });
@@ -1030,7 +1028,7 @@ impl FilesWindow {
     fn search_changed(&self) {
         let q = self.search.text().trim().to_string();
         if let Some(s) = self.search_src.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         if q.is_empty() {
             self.leave_results();
@@ -1407,11 +1405,12 @@ impl FilesWindow {
 
     pub fn empty_trash(&self) {
         let w = self.me.clone();
-        sonata_ui::dialog::alert(
+        sonata_ui::dialog::alert_with(
             &tr!("Are you sure you want to permanently erase the items in the Trash?"),
             &tr!("You can’t undo this action."),
             &[("cancel", tr!("Cancel"), ""), ("empty", tr!("Empty Trash"), "destructive")],
-            move |rid| {
+            empty_trash_options(),
+            move |rid, _| {
                 let Some(t) = w.upgrade() else { return };
                 if rid != "empty" {
                     return;
@@ -1859,6 +1858,9 @@ impl FilesWindow {
                         Item::new(&tr!("Create Shortcut on Desktop"), act(|t| t.shortcut_selection(true))),
                     ]);
                     s.push(vec![Item::new(&fmt(&tr!("Copy {what}"), &[("what", &what)]), act(|t| t.copy_selection(false))), Item::new(&if n == 1 { tr!("Copy Path") } else { tr!("Copy Paths") }, act(|t| actions::copy_paths(&t.window, &t.selected_files())))]);
+                    if tags_offered(&sel, false) {
+                        s.push(vec![self.tags_item(&sel)]);
+                    }
                     let pics: Vec<(gio::File, String)> = sel.iter().filter_map(|i| Some((file_of(i)?, actions::picture_kind(&i.content_type().map(|c| c.to_string()).unwrap_or_default()).to_string()))).collect();
                     if pics.len() == n && pics.iter().all(|(_, k)| !k.is_empty()) && writable {
                         let (w1, w2, w3, w4) = (me.clone(), me.clone(), me.clone(), me.clone());
@@ -1904,7 +1906,7 @@ impl FilesWindow {
                     let w = me.clone();
                     Item::check(&sonata_i18n::gettext(label), vid == *v, move |_| if let Some(t) = w.upgrade() { t.set_view(v, true) })
                 }).collect();
-                let path_label = if self.pathbar.root.is_visible() { tr!("Hide Path Bar") } else { tr!("Show Path Bar") };
+                let path_label = if self.pathbar.root.get_visible() { tr!("Hide Path Bar") } else { tr!("Show Path Bar") };
                 let hidden_label = if tab.as_ref().is_some_and(|t| t.folder.show_hidden.get()) { tr!("Hide Hidden Files") } else { tr!("Show Hidden Files") };
                 let view_sections = vec![std::mem::take(&mut views), vec![Item::new(&path_label, act(|t| t.toggle_path_bar())), Item::new(&hidden_label, act(|t| t.toggle_hidden()))]];
                 // Sort By, Show Columns and Calculate All Sizes sit beside
@@ -1944,6 +1946,22 @@ impl FilesWindow {
         }
     }
 
+    /// The tag colours, a row of their own right after Copy (Finder,
+    /// window.py's Item(_("Tags"), widget=...)).
+    fn tags_item(self: &Rc<Self>, sel: &[gio::FileInfo]) -> sonata_ui::menu::Item {
+        let paths: Vec<std::path::PathBuf> = sel.iter().filter_map(|i| file_of(i).and_then(|f| f.path())).collect();
+        let states: HashMap<String, &'static str> = tags::COLORS.iter().map(|(n, _)| (n.to_string(), tags::state(&paths, n))).collect();
+        let w = self.me.clone();
+        sonata_ui::menu::Item::widget(&tr!("Tags"), move |_| {
+            crate::views::tags_menu_row(&states, Rc::new(move |t, on| {
+                if let Some(win) = w.upgrade() {
+                    win.tag_files(&paths, t, on);
+                }
+            }))
+            .upcast()
+        })
+    }
+
     fn context_menu(self: &Rc<Self>, view: &Rc<dyn View>, widget: &gtk::Widget, x: f64, y: f64) -> gtk::PopoverMenu {
         self.menu_at(view, widget, view.info_at(x, y), x, y)
     }
@@ -1951,30 +1969,7 @@ impl FilesWindow {
     /// The menu for `info` (None: the background), opened at (x, y).
     fn menu_at(self: &Rc<Self>, view: &Rc<dyn View>, widget: &gtk::Widget, info: Option<gio::FileInfo>, x: f64, y: f64) -> gtk::PopoverMenu {
         let sections = self.menu_sections(view, info);
-        let pop = sonata_ui::menu::popup(widget, sections, sonata_ui::menu::Options::at(x, y).passthrough());
-        // the tag colours, a row of their own after Copy (Finder)
-        let sel = view.selected();
-        if tags_offered(&sel, self.in_trash()) {
-            let paths: Vec<std::path::PathBuf> = sel.iter().filter_map(|i| file_of(i).and_then(|f| f.path())).collect();
-            let states: HashMap<String, &'static str> = tags::COLORS.iter().map(|(n, _)| (n.to_string(), tags::state(&paths, n))).collect();
-            let w = self.me.clone();
-            let row = crate::views::tags_menu_row(&states, Rc::new(move |t, on| {
-                if let Some(win) = w.upgrade() {
-                    win.tag_files(&paths, t, on);
-                }
-            }));
-            // (a custom row needs its place named in the menu first: added
-            // without one, GTK dropped it and the colours never showed)
-            if let Some(model) = pop.menu_model().and_downcast::<gio::Menu>() {
-                let item = gio::MenuItem::new(None, None);
-                item.set_attribute_value("custom", Some(&"tags".to_variant()));
-                let section = gio::Menu::new();
-                section.append_item(&item);
-                model.insert_section(TAGS_SECTION.min(model.n_items()), None, &section);
-                pop.add_child(&row, "tags");
-            }
-        }
-        pop
+        sonata_ui::menu::popup(widget, sections, sonata_ui::menu::Options::at(x, y).passthrough())
     }
 
     fn open_with_items(&self, info: &gio::FileInfo) -> Vec<sonata_ui::menu::Item> {
@@ -1986,7 +1981,7 @@ impl FilesWindow {
         gio::AppInfo::all_for_type(&ct)
             .into_iter()
             .map(|app| {
-                let name = app.display_name().to_string();
+                let name = sonata_ui::apps::display_name(&app);
                 let label = if default.as_ref().is_some_and(|d| d.equal(&app)) { fmt(&tr!("{app} (default)"), &[("app", &name)]) } else { name };
                 let (w, f) = (self.me.clone(), file_of(info));
                 sonata_ui::menu::Item::new(&label, move || {
@@ -2036,7 +2031,7 @@ impl FilesWindow {
         }
         for argv in cmds {
             use std::os::unix::process::CommandExt;
-            if std::process::Command::new(&argv[0]).args(&argv[1..]).current_dir(&path).process_group(0).spawn().is_ok() {
+            if std::process::Command::new(&argv[0]).args(&argv[1..]).current_dir(&path).process_group(0).spawn().map(sonata_backend::run::reap).is_ok() {
                 return;
             }
         }
@@ -2079,7 +2074,7 @@ impl FilesWindow {
     }
 
     fn toggle_path_bar(&self) {
-        let on = !self.pathbar.root.is_visible();
+        let on = !self.pathbar.root.get_visible();
         self.pathbar.root.set_visible(on);
         let _ = sonata_config::update("files", &json!({"path_bar": on}));
     }
@@ -2153,7 +2148,7 @@ impl FilesWindow {
     /// Ctrl+L, or a click on the path bar's empty part: type the address in
     /// the path bar; the Go to Folder dialog when the path bar is hidden.
     fn edit_address(&self) {
-        if !self.pathbar.root.is_visible() {
+        if !self.pathbar.root.get_visible() {
             self.go_to_folder();
             return;
         }
@@ -2393,7 +2388,7 @@ impl FilesWindow {
             return false;
         }
         if let Some(s) = self.enter_src.take() {
-            s.remove();
+            sonata_ui::cancel(s);
             if self.view().is_some_and(|v| v.selected().len() == 1) {
                 self.rename_selection();
             }
@@ -2414,7 +2409,7 @@ impl FilesWindow {
     /// on within a second extends the name ("do" -> "Documents").
     fn type_select(&self, ch: char) -> bool {
         if let Some(s) = self.typed_src.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         self.typed.borrow_mut().push(ch);
         let w = self.me.clone();
@@ -2525,7 +2520,7 @@ impl Dnd for FilesWindow {
 /// A Files window on `uri` (a new one; `fresh` false: the open one, brought forward).
 pub fn present(app: &gtk::Application, uri: Option<&str>, fresh: bool) -> Rc<FilesWindow> {
     if !fresh {
-        if let Some(w) = WINDOWS.with(|w| w.borrow().first().cloned()) {
+        if let Some(w) = open_windows().first().cloned() {
             if let Some(u) = uri {
                 w.go(u, true);
             }
@@ -2535,8 +2530,26 @@ pub fn present(app: &gtk::Application, uri: Option<&str>, fresh: bool) -> Rc<Fil
     }
     let w = FilesWindow::new(app, uri);
     WINDOWS.with(|l| l.borrow_mut().push(w.clone()));
+    // a window gone from the app (closed, or destroyed without a close
+    // request) leaves the list then, not only on a close request: Preview
+    // sent a picture opened again to its closed window and showed nothing
+    // (no notify::application then: unrealize follows the release)
+    w.window.connect_unrealize(|win| {
+        if win.application().is_none() {
+            WINDOWS.with(|l| l.borrow_mut().retain(|x| x.window != *win));
+        }
+    });
     w.window.present();
     w
+}
+
+/// The Files windows still open (one closed before it was ever shown never
+/// unrealized: dropped here too).
+fn open_windows() -> Vec<Rc<FilesWindow>> {
+    WINDOWS.with(|l| {
+        l.borrow_mut().retain(|w| w.window.application().is_some());
+        l.borrow().clone()
+    })
 }
 
 #[cfg(test)]
@@ -2607,9 +2620,36 @@ mod regressions {
     /// 1080p display; Python's opens at about two thirds of it.
     #[test]
     fn test_first_files_window_was_not_roomy() {
-        assert_eq!(roomy_size(920, 560, Some((1920, 1080))), (1267, 702));
-        assert_eq!(roomy_size(920, 560, Some((1280, 720))), (920, 560)); // never smaller than the default
-        assert_eq!(roomy_size(920, 560, None), (920, 560));
+        use sonata_ui::window::first_size;
+        assert_eq!(first_size(None, 920, 560, true, Some((1920, 1080))), (1267, 702, false));
+        assert_eq!(first_size(None, 920, 560, true, Some((1600, 900))), (1056, 585, false)); // never smaller than the default
+        assert_eq!(first_size(None, 920, 560, true, None), (920, 560, false));
+    }
+
+    /// Files' "Empty Trash?" alert: Return cancelled instead of emptying
+    /// (Python's, as macOS and the Dock's, has default="empty").
+    #[test]
+    fn test_return_did_not_empty_the_trash_in_files() {
+        assert_eq!(empty_trash_options().default.as_deref(), Some("empty"));
+    }
+
+    fn fake_launch(_: &gio::AppInfo, files: &[gio::File], _: Option<&gio::AppLaunchContext>) -> Result<(), glib::Error> {
+        Err(glib::Error::new(gio::IOErrorEnum::Cancelled, &format!("sonata's path: {}", files.len())))
+    }
+
+    /// An app or a document opened from Files (a double-click, Open With)
+    /// started through GIO's own launch: no app lock, no GPU choice, no
+    /// limits -- Steam on the integrated GPU again. (set_launcher holds
+    /// once per test binary: only this test sets it.)
+    #[test]
+    fn test_files_launched_apps_past_sonatas_launch_path() {
+        sonata_ui::apps::set_launcher(fake_launch);
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("x.desktop");
+        std::fs::write(&p, "[Desktop Entry]\nType=Application\nName=X\nExec=true\n").unwrap();
+        let app: gio::AppInfo = gio::DesktopAppInfo::from_filename(&p).unwrap().upcast();
+        let err = launcher(&app, vec![gio::File::for_path("/tmp/a")], None)().unwrap_err();
+        assert_eq!(err.message(), "sonata's path: 1");
     }
 
     /// A video's right-click had no "Use Video as Wallpaper", and an SVG or
@@ -2702,8 +2742,27 @@ mod regressions {
         test_sort_by_was_hidden_inside_view(&app, &uri);
         test_open_panel_offered_new_tabs_and_ctrl_w_left_it_open(&app, dir.path());
         test_tag_colours_never_showed_in_the_menu(&app, dir.path());
+        test_tags_were_not_right_after_copy_and_took_two_clicks(&app, dir.path());
         test_hidden_files_in_columns_kept_the_old_setting(&app, &uri);
         test_quick_look_and_get_info_had_no_window_buttons(&app, dir.path());
+        test_files_brought_forward_a_window_gone_without_a_close(&app, &uri);
+    }
+
+    /// A Files window destroyed without a close request stayed in the
+    /// window list: "bring Files forward" went to it, and nothing showed
+    /// (Preview's reopened picture, the same pattern).
+    fn test_files_brought_forward_a_window_gone_without_a_close(app: &gtk::Application, uri: &str) {
+        let first = present(app, Some(uri), true);
+        settle(100);
+        first.window.destroy();
+        settle(50);
+        assert!(open_windows().iter().all(|w| !Rc::ptr_eq(w, &first)));
+        let again = present(app, Some(uri), false);
+        assert!(!Rc::ptr_eq(&again, &first));
+        assert!(again.window.is_visible());
+        again.window.destroy();
+        settle(50);
+        assert!(open_windows().iter().all(|w| !Rc::ptr_eq(w, &again)));
     }
 
     /// The Rust Files window had no close / minimize / zoom buttons: the
@@ -2775,6 +2834,32 @@ mod regressions {
         pop.popdown();
         settle(200); // (the closed menu lets go of the view on idle)
         assert!(shown);
+        w.window.destroy();
+    }
+
+    /// The tag colours sat at a fixed place in the menu (after the sixth
+    /// section), not right after Copy as Python's, and a colour took two
+    /// clicks: the menu's own gestures saw the first one.
+    fn test_tags_were_not_right_after_copy_and_took_two_clicks(app: &gtk::Application, dir: &std::path::Path) {
+        let uri = gio::File::for_path(dir).uri().to_string();
+        let w = FilesWindow::new(app, Some(&uri));
+        w.window.present();
+        let tab = w.cur().unwrap();
+        assert!(until(3000, || tab.folder.store.n_items() >= 2));
+        let view = w.view().unwrap();
+        let s = labels(&w.menu_sections(&view, Some(info_of(&dir.join("note.txt")))));
+        let copy = s.iter().position(|sec| sec.first().is_some_and(|l| l.starts_with("Copy "))).expect("a Copy section");
+        assert_eq!(s.get(copy + 1).map(|v| v.as_slice()), Some(&["Tags".to_string()][..]), "{s:?}");
+        // each colour takes its click in the capture phase (menu::one_click)
+        let row = crate::views::tags_menu_row(&HashMap::new(), Rc::new(|_, _| {}));
+        let mut c = row.first_child();
+        let mut n = 0;
+        while let Some(b) = c {
+            assert!(b.observe_controllers().iter::<glib::Object>().flatten().filter_map(|g| g.downcast::<gtk::GestureClick>().ok()).any(|g| g.propagation_phase() == gtk::PropagationPhase::Capture));
+            n += 1;
+            c = b.next_sibling();
+        }
+        assert_eq!(n, tags::COLORS.len());
         w.window.destroy();
     }
 

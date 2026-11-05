@@ -447,7 +447,7 @@ pub fn menu_opened(pop: &impl IsA<gtk::Popover>) {
 }
 
 pub fn menus_open() -> bool {
-    OPEN_POPS.with(|o| o.borrow().iter().any(|w| w.upgrade().is_some_and(|p| p.is_visible())))
+    OPEN_POPS.with(|o| o.borrow().iter().any(|w| w.upgrade().is_some_and(|p| p.get_visible())))
 }
 
 fn on_menu_closed(id: u64, f: Rc<dyn Fn()>) {
@@ -551,7 +551,7 @@ fn glide_start(plate: &Plate, w: &gtk::Widget, dx: f64, dy: f64, ms: u32) {
     }
     plate.imp().glide.borrow_mut().insert(w.clone(), (dx, dy));
     let (p, w2) = (plate.downgrade(), w.clone());
-    let anim = adw::TimedAnimation::new(w, 1.0, 0.0, ms, adw::CallbackAnimationTarget::new(move |v| {
+    let anim = adw::TimedAnimation::new(w, 1.0, 0.0, sonata_ui::tokens::ms(ms as f64), adw::CallbackAnimationTarget::new(move |v| {
         if let Some(p) = p.upgrade() {
             if v <= 0.0 {
                 p.imp().glide.borrow_mut().remove(&w2);
@@ -755,7 +755,7 @@ impl DockIcon {
         self.imp().badge.replace(text.to_string());
         if grew && self.is_mapped() {
             let w = self.downgrade();
-            let anim = adw::TimedAnimation::new(self, 0.3, 1.0, BADGE_POP_MS, adw::CallbackAnimationTarget::new(move |v| {
+            let anim = adw::TimedAnimation::new(self, 0.3, 1.0, sonata_ui::tokens::ms(BADGE_POP_MS as f64), adw::CallbackAnimationTarget::new(move |v| {
                 if let Some(w) = w.upgrade() {
                     w.imp().badge_k.set(v);
                     w.queue_draw();
@@ -1109,7 +1109,7 @@ impl Tile {
     pub fn bounce(self: &Rc<Self>, ms: u32) {
         self.button.add_css_class("launching");
         if let Some(s) = self.bounce_src.borrow_mut().take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         let w = Rc::downgrade(self);
         let src = glib::timeout_add_local_once(Duration::from_millis(ms as u64), move || {
@@ -1123,7 +1123,7 @@ impl Tile {
 
     pub fn stop_bounce(&self) {
         if let Some(s) = self.bounce_src.borrow_mut().take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         self.button.remove_css_class("launching");
     }
@@ -1641,7 +1641,7 @@ impl Dock {
         }
         for src in [&self.gone_src, &self.apps_src, &self.refit_src, &self.sync_src] {
             if let Some(s) = src.borrow_mut().take() {
-                s.remove();
+                sonata_ui::cancel(s);
             }
         }
         for m in self.monitors.borrow_mut().drain(..) {
@@ -1846,7 +1846,7 @@ impl Dock {
     }
 
     fn fit(&self) -> i64 {
-        fit_size(self.span(), self.all_tiles().len(), self.user_size.get(), self.recent_sep.is_visible(), pad_side())
+        fit_size(self.span(), self.all_tiles().len(), self.user_size.get(), self.recent_sep.get_visible(), pad_side())
     }
 
     pub fn refit(&self) {
@@ -1899,7 +1899,7 @@ impl Dock {
             return true;
         }
         let fixed = self.stacks.tiles().len() + 1; // stacks + Trash
-        (self.pinned().len() + 1 + fixed) as f64 <= cells_room(self.span(), PIN_MIN_SIZE, self.recent_sep.is_visible(), pad_side()).floor()
+        (self.pinned().len() + 1 + fixed) as f64 <= cells_room(self.span(), PIN_MIN_SIZE, self.recent_sep.get_visible(), pad_side()).floor()
     }
 
     /// Resize the Dock (divider drag, settings). chosen=false: the fit
@@ -2039,7 +2039,7 @@ impl Dock {
             a.pause();
         }
         let w = self.weak();
-        let anim = adw::TimedAnimation::new(&self.plate, self.mag_strength.get(), to, ms, adw::CallbackAnimationTarget::new(move |v| {
+        let anim = adw::TimedAnimation::new(&self.plate, self.mag_strength.get(), to, sonata_ui::tokens::ms(ms as f64), adw::CallbackAnimationTarget::new(move |v| {
             if let Some(d) = w.upgrade() {
                 d.mag_strength.set(v);
                 d.apply_magnification();
@@ -2063,7 +2063,7 @@ impl Dock {
         };
         let first_extra = self.first_extra();
         let after_divider = self.stacks.tiles().first().cloned().unwrap_or_else(|| self.trash.clone());
-        let recent = self.recent_sep.is_visible();
+        let recent = self.recent_sep.get_visible();
         let lines: Vec<f64> = tiles
             .iter()
             .map(|t| {
@@ -2428,7 +2428,7 @@ impl Dock {
         };
         size(&slot, 1.0);
         let s2 = slot.clone();
-        let anim = adw::TimedAnimation::new(&slot, 1.0, 0.0, CLOSE_UP_MS, adw::CallbackAnimationTarget::new(move |v| size(&s2, v)));
+        let anim = adw::TimedAnimation::new(&slot, 1.0, 0.0, sonata_ui::tokens::ms(CLOSE_UP_MS as f64), adw::CallbackAnimationTarget::new(move |v| size(&s2, v)));
         anim.set_easing(adw::Easing::EaseOutCubic);
         let (plate, s3) = (self.plate.clone(), slot.clone());
         anim.connect_done(move |_| {
@@ -2473,7 +2473,7 @@ impl Dock {
         };
         size(&slot, 0.0);
         let s2 = slot.clone();
-        let grow = adw::TimedAnimation::new(&slot, 0.0, 1.0, OPEN_UP_MS, adw::CallbackAnimationTarget::new(move |v| size(&s2, v)));
+        let grow = adw::TimedAnimation::new(&slot, 0.0, 1.0, sonata_ui::tokens::ms(OPEN_UP_MS as f64), adw::CallbackAnimationTarget::new(move |v| size(&s2, v)));
         grow.set_easing(adw::Easing::EaseOutCubic);
         let (plate, s3, t) = (self.plate.clone(), slot.clone(), Rc::downgrade(tile));
         grow.connect_done(move |_| {
@@ -2484,7 +2484,7 @@ impl Dock {
             tile.button.set_opacity(0.0);
             tile.button.set_visible(true);
             let b = tile.button.clone();
-            let fade = adw::TimedAnimation::new(&tile.button, 0.0, 1.0, OPEN_UP_MS, adw::CallbackAnimationTarget::new(move |v| b.set_opacity(v)));
+            let fade = adw::TimedAnimation::new(&tile.button, 0.0, 1.0, sonata_ui::tokens::ms(OPEN_UP_MS as f64), adw::CallbackAnimationTarget::new(move |v| b.set_opacity(v)));
             let b = tile.button.clone();
             fade.connect_done(move |_| b.set_opacity(1.0));
             fade.play();
@@ -2611,7 +2611,7 @@ impl Dock {
 
     fn cancel_gap_hide(&self) {
         if let Some(s) = self.gap_hide.borrow_mut().take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
     }
 
@@ -3028,7 +3028,7 @@ impl Dock {
         let start = move || {
             let Some(tile) = t.upgrade() else { return };
             let t2 = Rc::downgrade(&tile);
-            let anim = adw::TimedAnimation::new(&tile.button, 0.0, 1.0, UNGROUP_MS, adw::CallbackAnimationTarget::new(move |v| {
+            let anim = adw::TimedAnimation::new(&tile.button, 0.0, 1.0, sonata_ui::tokens::ms(UNGROUP_MS as f64), adw::CallbackAnimationTarget::new(move |v| {
                 if let Some(t) = t2.upgrade() {
                     t.icon.set_pop(0.4 + 0.6 * v);
                     t.button.set_opacity((v * 1.6).clamp(0.0, 1.0));
@@ -3230,7 +3230,7 @@ impl Dock {
             d.key.clone()
         };
         let Some(tile) = self.tiles.borrow().get(&key).cloned() else { return gdk::DragAction::MOVE };
-        if !tile.button.is_visible() {
+        if !tile.button.get_visible() {
             self.set_tile_shown(&tile, true); // back over the Dock: its slot opens again
         }
         if self.over_trash(x, y) && Dock::can_uninstall(&tile) {
@@ -3346,7 +3346,7 @@ impl Dock {
             return;
         }
         if let Some(s) = d.hold_src.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         if let Some(old) = d.target.take() {
             old.button.remove_css_class("folder-target");
@@ -3546,7 +3546,7 @@ impl Dock {
         }
         // still in the Dock (dropped back, cancelled, or a running app that keeps its icon)
         let still = self.tiles.borrow().get(&key).is_some_and(|t| Rc::ptr_eq(t, tile));
-        if still && !tile.button.is_visible() {
+        if still && !tile.button.get_visible() {
             self.set_tile_shown(tile, true);
         }
     }
@@ -3709,7 +3709,7 @@ impl Dock {
             return;
         }
         if let Some(src) = self.rects_src.take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         let w = self.weak();
         let src = glib::timeout_add_local(Duration::from_millis(150), move || {
@@ -4701,7 +4701,7 @@ impl DockWindow {
             return;
         }
         if let Some(t) = self.timer.borrow_mut().take() {
-            t.remove();
+            sonata_ui::cancel(t);
         }
         // a menu, a drag from the Dock, or Launchpad open (dragging an app
         // out of it moves the pointer "out" of the Dock): it stays
@@ -4733,7 +4733,7 @@ impl DockWindow {
             a.pause();
         }
         let w = Rc::downgrade(&dock);
-        let anim = adw::TimedAnimation::new(&self.win, dock.hide_amount.get(), if hide { 1.0 } else { 0.0 }, HIDE_MS, adw::CallbackAnimationTarget::new(move |v| {
+        let anim = adw::TimedAnimation::new(&self.win, dock.hide_amount.get(), if hide { 1.0 } else { 0.0 }, sonata_ui::tokens::ms(HIDE_MS as f64), adw::CallbackAnimationTarget::new(move |v| {
             if let Some(d) = w.upgrade() {
                 d.hide_amount.set(v);
                 d.plate.queue_draw();

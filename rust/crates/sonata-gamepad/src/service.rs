@@ -258,7 +258,7 @@ fn wtype(name: &str) {
 
 fn cancel(src: &RefCell<Option<glib::SourceId>>) {
     if let Some(id) = src.take() {
-        id.remove();
+        sonata_ui::cancel(id);
     }
 }
 

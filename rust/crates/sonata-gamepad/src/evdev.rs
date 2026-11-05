@@ -240,7 +240,7 @@ impl Gamepad {
         if cond.intersects(glib::IOCondition::HUP | glib::IOCondition::ERR) {
             return gone();
         }
-        let Some(fd) = self.fd.get() else { return glib::ControlFlow::Break };
+        let Some(fd) = self.fd.get() else { return gone() };
         let mut buf = [0u8; EVENT_SIZE * 64];
         // SAFETY: reads at most buf.len() bytes into buf
         let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
@@ -275,7 +275,7 @@ impl Pad for Gamepad {
 
     fn close(&self) {
         if let Some(id) = self.watch.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let Some(fd) = self.fd.take() else { return };
         close_fd(fd);
@@ -286,7 +286,7 @@ impl Pad for Gamepad {
 impl Drop for Gamepad {
     fn drop(&mut self) {
         if let Some(id) = self.watch.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         if let Some(fd) = self.fd.take() {
             close_fd(fd);

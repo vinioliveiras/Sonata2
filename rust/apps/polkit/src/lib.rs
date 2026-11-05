@@ -168,7 +168,7 @@ impl AuthDialog {
                 d.finish(true);
             } else if let Some(sheet) = d.sheet() {
                 let again = tr!("Sorry, try again.");
-                sheet.wrong(if sheet.error.is_visible() { None } else { Some(&again) });
+                sheet.wrong(if sheet.error.get_visible() { None } else { Some(&again) });
             }
         };
         match Session::start(identity, &self.cookie, pw, say, completed) {

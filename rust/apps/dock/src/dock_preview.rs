@@ -218,7 +218,7 @@ impl WindowShots {
         let toplevel = view.get("type").and_then(Value::as_str).unwrap_or("toplevel") == "toplevel";
         if ev == "view-focused" && toplevel && !minimized && self.grim && self.compositor.get() == Some(false) {
             if let Some(p) = self.pending.borrow_mut().take() {
-                p.remove();
+                sonata_ui::cancel(p);
             }
             let w = Rc::downgrade(self);
             let src = glib::timeout_add_local_once(Duration::from_millis(CAPTURE_DELAY_MS), move || {
@@ -473,7 +473,7 @@ struct HoverState {
 impl HoverState {
     fn stop_refresh(&self) {
         if let Some(r) = self.refresh.borrow_mut().take() {
-            r.remove();
+            sonata_ui::cancel(r);
         }
     }
 }
@@ -486,7 +486,7 @@ pub fn attach(tile: &Rc<Tile>, dock: &Rc<Dock>) {
     // The pointer came onto the icon: the previews after HOVER_MS, if it stays.
     motion.connect_enter(move |_, _, _| {
         if let Some(src) = s.src.borrow_mut().take() {
-            src.remove(); // (back from the previews: they stay)
+            sonata_ui::cancel(src); // (back from the previews: they stay)
         }
         if s.pop.borrow().is_some() || s.wait.borrow().is_some() {
             return;
@@ -503,7 +503,7 @@ pub fn attach(tile: &Rc<Tile>, dock: &Rc<Dock>) {
     let s = st.clone();
     motion.connect_leave(move |_| {
         if let Some(w) = s.wait.borrow_mut().take() {
-            w.remove();
+            sonata_ui::cancel(w);
         }
         close_later(&s);
     });
@@ -512,7 +512,7 @@ pub fn attach(tile: &Rc<Tile>, dock: &Rc<Dock>) {
 
 fn close_later(s: &Rc<HoverState>) {
     if let Some(src) = s.src.borrow_mut().take() {
-        src.remove();
+        sonata_ui::cancel(src);
     }
     let s2 = s.clone();
     let src = glib::timeout_add_local_once(Duration::from_millis(300), move || {
@@ -552,7 +552,7 @@ fn enter(s: &Rc<HoverState>, tile: &Rc<Tile>, dock: &Rc<Dock>) {
         return; // (a single window gets its preview too: Vini)
     }
     if let Some(src) = s.src.borrow_mut().take() {
-        src.remove();
+        sonata_ui::cancel(src);
     }
     if s.pop.borrow().is_some() {
         return;

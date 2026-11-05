@@ -127,10 +127,45 @@ pub fn open(info: &gio::AppInfo, launch: Launch, tries: u32, already_open: Optio
         return false;
     }
     if !already_open {
+        // a window seen at any point of the wait means it opened: looked at
+        // only once the wait was over, an app closed before then -- Vini
+        // closed the Assistant within 30 s -- was killed and opened again,
+        // three times
         let info = info.clone();
-        glib::timeout_add_seconds_local_once(wait_s(Some(&info)), move || check(&info, launch, tries));
+        let (wait, waited) = (wait_s(Some(&info)), std::cell::Cell::new(0u32));
+        glib::timeout_add_seconds_local(1, move || {
+            waited.set(waited.get() + 1);
+            match tick(has_window(Some(&info), None, None), waited.get(), wait) {
+                Tick::Opened => glib::ControlFlow::Break,
+                Tick::Wait => glib::ControlFlow::Continue,
+                Tick::Check => {
+                    check(&info, launch.clone(), tries);
+                    glib::ControlFlow::Break
+                }
+            }
+        });
     }
     true
+}
+
+/// One second of the wait for an app's window.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Tick {
+    /// a window came: watched no more
+    Opened,
+    Wait,
+    /// the wait is over without a window: the last look (and the next try)
+    Check,
+}
+
+pub fn tick(has_window: bool, waited_s: u32, wait_s: u32) -> Tick {
+    if has_window {
+        Tick::Opened
+    } else if waited_s >= wait_s {
+        Tick::Check
+    } else {
+        Tick::Wait
+    }
 }
 
 fn check(info: &gio::AppInfo, launch: Launch, tries: u32) {
@@ -159,6 +194,16 @@ fn check(info: &gio::AppInfo, launch: Launch, tries: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Vini: the Assistant kept opening again after he closed it -- its
+    /// window came at once, but it was looked for only after 30 s, when he
+    /// had closed it. A window seen during the wait ends the watch.
+    #[test]
+    fn test_assistant_reopened_after_closing_it() {
+        assert_eq!(tick(true, 1, 30), Tick::Opened); // its window came at once
+        assert_eq!(tick(false, 5, 30), Tick::Wait);
+        assert_eq!(tick(false, 30, 30), Tick::Check); // never one: the next try
+    }
 
     fn by_name(a: &str) -> Option<String> {
         (a == "Steam").then(|| "steam".to_string())

@@ -93,7 +93,7 @@ impl Alerts {
 
     pub fn stop(&self) {
         if let Some(id) = self.src.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 }

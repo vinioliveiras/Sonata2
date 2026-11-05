@@ -257,7 +257,7 @@ impl DBusMenu {
             c.signal_unsubscribe(s);
         }
         if let Some(id) = self.pending.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 
@@ -356,7 +356,7 @@ impl DBusMenu {
     #[cfg(test)]
     pub(crate) fn flush(&self) {
         if let Some(id) = self.pending.take() {
-            id.remove();
+            sonata_ui::cancel(id);
             self.refetch();
         }
     }

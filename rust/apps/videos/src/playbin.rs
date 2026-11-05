@@ -129,7 +129,7 @@ impl PlaybinStream {
 
     fn stop_tick(&self) {
         if let Some(id) = self.imp().tick.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 

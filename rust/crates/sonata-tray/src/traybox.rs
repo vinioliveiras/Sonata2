@@ -37,7 +37,7 @@ impl Clicks {
             return; // the double-click's second release
         }
         if let Some(id) = self.single.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let w = Rc::downgrade(self);
         let id = glib::timeout_add_local_once(Duration::from_millis(ms as u64), move || {
@@ -52,7 +52,7 @@ impl Clicks {
     /// The second press of a double-click: the first click's action never runs.
     pub(crate) fn double(&self) {
         if let Some(id) = self.single.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         self.skip.set(true);
     }
@@ -433,7 +433,7 @@ pub(crate) fn show(menu: &Rc<DBusMenu>, btn: &gtk::Button, sections: Vec<Vec<Ent
     let token: Rc<Open> = {
         let (p1, p2, b, r, m, h) = (pop.downgrade(), pop.downgrade(), btn.downgrade(), replaced.clone(), mw.clone(), hook.clone());
         Rc::new(Open {
-            visible: Box::new(move || p1.upgrade().is_some_and(|p| p.is_visible())),
+            visible: Box::new(move || p1.upgrade().is_some_and(|p| p.get_visible())),
             redraw: Box::new(move |sections| {
                 let (Some(pop), Some(btn), Some(menu)) = (p2.upgrade(), b.upgrade(), m.upgrade()) else { return };
                 if !sections.is_empty() {

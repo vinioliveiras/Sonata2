@@ -34,7 +34,7 @@ struct TabButton {
 impl TabButton {
     fn cancel_spring(&self) {
         if let Some(s) = self.spring.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
     }
 }
@@ -50,7 +50,7 @@ pub struct TabStrip {
 impl TabStrip {
     pub fn new() -> Rc<Self> {
         sonata_ui::css::register_module("files/tabs.py");
-        let root = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(150).build();
+        let root = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(sonata_ui::tokens::ms(150.0)).build();
         let bar = gtk::Box::builder().css_classes(["fs-tabs"]).build();
         let row = gtk::Box::builder().homogeneous(true).hexpand(true).build();
         bar.append(&row);
@@ -251,7 +251,7 @@ mod tests {
     /// was being changed).
     #[test]
     fn test_files_and_videos_closed_as_they_opened() {
-        if (gtk::is_initialized() && !gtk::is_initialized_main_thread()) || gtk::init().is_err() {
+        if !crate::gtk_here() {
             return; // no display, or GTK is another test thread's
         }
         let strip = TabStrip::new();

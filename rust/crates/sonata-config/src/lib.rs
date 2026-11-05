@@ -280,8 +280,56 @@ pub fn data_dir(app: &str) -> PathBuf {
         _ => home().join(".local").join("share"),
     };
     let dir = base.join("sonata2-data").join(app);
+    if !dir.is_dir() {
+        migrate_data(&base, app);
+    }
     let _ = fs::create_dir_all(&dir);
     dir
+}
+
+/// The apps' data used to live in `<data>/sonata2/<app>`, the folder Sonata
+/// itself is installed in: install.sh replaced it on every update (notes
+/// and calendars went with it) and a dev install linked it to the git
+/// clone. The first time an app asks for its folder, the old one (or what
+/// it points to) moves over, unless the new one exists (userdata.migrate).
+fn migrate_data(base: &Path, app: &str) -> bool {
+    let (old, new) = (base.join("sonata2").join(app), base.join("sonata2-data").join(app));
+    if new.symlink_metadata().is_ok() || !old.is_dir() {
+        return false;
+    }
+    let Ok(from) = fs::canonicalize(&old) else { return false };
+    if fs::create_dir_all(base.join("sonata2-data")).is_err() {
+        return false;
+    }
+    match fs::rename(&from, &new) {
+        Ok(()) => true,
+        // another disk (shutil.move copies, then removes the old)
+        Err(_) => {
+            if copy_tree(&from, &new).is_err() {
+                let _ = fs::remove_dir_all(&new);
+                return false;
+            }
+            let _ = fs::remove_dir_all(&from);
+            true
+        }
+    }
+}
+
+fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir(to)?;
+    for e in fs::read_dir(from)? {
+        let e = e?;
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        let kind = e.file_type()?;
+        if kind.is_dir() {
+            copy_tree(&src, &dst)?;
+        } else if kind.is_symlink() {
+            std::os::unix::fs::symlink(fs::read_link(&src)?, &dst)?;
+        } else {
+            fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
 }
 
 /// An app's own data, never shared with the Python app on trial:
@@ -341,12 +389,23 @@ pub fn set_wallpaper(uri: &str) -> io::Result<()> {
         atomic_write(&path, to_python_json(&Value::Object(data)).as_bytes(), false)?;
     }
     for key in ["picture-uri", "picture-uri-dark"] {
-        let _ = std::process::Command::new("gsettings").args(["set", BG, key, &format!("'{}'", uri.replace('\'', "\\'"))]).spawn();
+        spawn_reaped(std::process::Command::new("gsettings").args(["set", BG, key, &format!("'{}'", uri.replace('\'', "\\'"))]));
     }
     // `sonata2 restart wallpaper`: the new one comes up under the old one
     let launcher = std::env::var("SONATA2_LAUNCHER").unwrap_or_else(|_| "sonata2".into());
-    let _ = std::process::Command::new(launcher).args(["restart", "wallpaper"]).spawn();
+    spawn_reaped(std::process::Command::new(launcher).args(["restart", "wallpaper"]));
     Ok(())
+}
+
+/// Started and waited for in a thread: a child left unwaited stays a
+/// zombie as long as this process lives (sonata-backend's run::reap; this
+/// crate comes before it).
+fn spawn_reaped(cmd: &mut std::process::Command) {
+    if let Ok(mut c) = cmd.spawn() {
+        let _ = std::thread::Builder::new().name("reap".into()).spawn(move || {
+            let _ = c.wait();
+        });
+    }
 }
 
 /// Follow one file (a data file, not a setting): `callback` when it

@@ -34,18 +34,6 @@ const SAVE_DELAY: u64 = 500;
 /// the apps' one sidebar width (ui/window.py)
 const SIDEBAR_W: i32 = 280;
 
-/// ui/window.py's ROOMY_W, ROOMY_H: a document window's first size.
-const ROOMY: (f64, f64) = (0.66, 0.65);
-
-/// (w, h) grown to about two thirds of a `screen`-sized display
-/// (ui/window.py's roomy_size): Notes opens roomy the first time.
-fn roomy_size(w: i32, h: i32, screen: Option<(i32, i32)>) -> (i32, i32) {
-    match screen {
-        None => (w, h),
-        Some((sw, sh)) => (w.max((sw as f64 * ROOMY.0) as i32), h.max((sh as f64 * ROOMY.1) as i32)),
-    }
-}
-
 fn defaults() -> Value {
     json!({"sidebar_width": 200, "list_width": 270, "selected": "n:all"})
 }
@@ -141,11 +129,7 @@ impl NotesWindow {
         let w = Rc::new_cyclic(|me: &Weak<NotesWindow>| {
             let window = gtk::ApplicationWindow::builder().application(app).title(tr!("Notes")).build();
             // its last size; the first time, roomy (never bigger than the display)
-            let (w0, h0) = match sonata_ui::window::saved_size("notes") {
-                Some(_) => (1060, 640),
-                None => roomy_size(1060, 640, sonata_ui::window::screen_size_of(&window)),
-            };
-            sonata_ui::window::remember_size(window.upcast_ref(), "notes", w0, h0);
+            sonata_ui::window::remember_size_roomy(window.upcast_ref(), "notes", 1060, 640);
             window.add_css_class("sonata-notes");
             window.set_size_request(640, 380);
             sonata_ui::window::standard(&window);
@@ -169,7 +153,7 @@ impl NotesWindow {
             );
             let side_btn = gtk::Button::builder().icon_name("sidebar-show-symbolic").tooltip_text(tr!("Show Sidebar")).can_focus(false).build();
             side_btn.add_css_class("tool");
-            let f = call(|t| t.sidebar.set_visible(!t.sidebar.is_visible()));
+            let f = call(|t| t.sidebar.set_visible(!t.sidebar.get_visible()));
             side_btn.connect_clicked(move |_| f());
             let start = gtk::Box::builder().spacing(2).valign(gtk::Align::Center).build();
             start.append(&side_btn);
@@ -243,7 +227,7 @@ impl NotesWindow {
             let inner = gtk::Paned::builder().start_child(&list_over).end_child(&ed_over).shrink_start_child(false).resize_start_child(false).shrink_end_child(false).build();
             inner.add_css_class("nt-paned");
             inner.set_position(cfg.get("list_width").and_then(Value::as_i64).unwrap_or(270) as i32);
-            let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(150).build();
+            let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(150.0)).build();
             stack.add_named(&inner, Some("notes"));
             let w = me.clone();
             let reminders = RemindersView::new(store.clone(), Box::new(move || {
@@ -600,7 +584,7 @@ impl NotesWindow {
             let today_idx = self.side_row("r:today").map(|r| r.row.index()).unwrap_or(i32::MAX);
             let in_notes = row.as_ref().is_none_or(|r| r.index() < today_idx);
             let sections = if in_notes { vec![vec![item(tr!("New Folder"), |t| t.new_folder())]] } else { vec![vec![item(tr!("Add List"), |t| t.new_list())]] };
-            crate::reminders::popup_menu(&self.side, sections, menu::Options::at(x, y));
+            crate::reminders::popup_menu(&self.side, sections, crate::reminders::menu_at(x, y));
             return;
         };
         let (kind, ident) = sr.key.split_once(':').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
@@ -648,7 +632,7 @@ impl NotesWindow {
                 ],
             ]
         };
-        crate::reminders::popup_menu(&self.side, sections, menu::Options::at(x, y));
+        crate::reminders::popup_menu(&self.side, sections, crate::reminders::menu_at(x, y));
     }
 
     fn renamed(&self, key: &str, label: &gtk::EditableLabel) {
@@ -888,7 +872,7 @@ impl NotesWindow {
                     }
                 })
                 .enabled(self.folder() != S::DELETED)]],
-                menu::Options::at(x, y),
+                crate::reminders::menu_at(x, y),
             );
             return;
         };
@@ -937,7 +921,7 @@ impl NotesWindow {
                 vec![act(tr!("Delete"), Box::new(move |t| t.delete_note(&b)))],
             ]
         };
-        crate::reminders::popup_menu(&self.listview, sections, menu::Options::at(x, y));
+        crate::reminders::popup_menu(&self.listview, sections, crate::reminders::menu_at(x, y));
     }
 
     // -- editor ------------------------------------------------------------------------------------------
@@ -947,7 +931,7 @@ impl NotesWindow {
             return;
         }
         if let Some(id) = self.save_id.borrow_mut().take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let w = self.me.clone();
         *self.save_id.borrow_mut() = Some(glib::timeout_add_local_once(Duration::from_millis(SAVE_DELAY), move || {
@@ -984,7 +968,7 @@ impl NotesWindow {
     fn flush(&self) {
         let pending = self.save_id.borrow_mut().take();
         if let Some(id) = pending {
-            id.remove();
+            sonata_ui::cancel(id);
             self.save();
         }
     }
@@ -1311,14 +1295,14 @@ pub fn run(args: &[String]) -> glib::ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::roomy_size;
 
     /// Notes opened at 1060 x 640 the first time even on a big display; the
     /// Python Notes opens roomy (remember_size(..., roomy=True)).
     #[test]
     fn test_first_window_was_not_roomy() {
-        assert_eq!(roomy_size(1060, 640, Some((2560, 1440))), (1689, 936));
-        assert_eq!(roomy_size(1060, 640, Some((1280, 800))), (1060, 640)); // never smaller than asked
-        assert_eq!(roomy_size(1060, 640, None), (1060, 640));
+        use sonata_ui::window::first_size;
+        assert_eq!(first_size(None, 1060, 640, true, Some((2560, 1440))), (1689, 936, false));
+        assert_eq!(first_size(None, 1060, 640, true, Some((1600, 900))), (1060, 640, false)); // never smaller than asked
+        assert_eq!(first_size(None, 1060, 640, true, None), (1060, 640, false));
     }
 }

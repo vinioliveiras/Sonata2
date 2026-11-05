@@ -274,7 +274,7 @@ impl Watch {
             let (src, run) = (src.clone(), run.clone());
             Rc::new(move |seconds: u32| {
                 if let Some(s) = src.borrow_mut().take() {
-                    s.remove();
+                    sonata_ui::cancel(s);
                 }
                 let (src2, run) = (src.clone(), run.clone());
                 *src.borrow_mut() = Some(glib::timeout_add_seconds_local_once(seconds, move || {

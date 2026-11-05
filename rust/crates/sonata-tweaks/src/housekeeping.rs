@@ -198,7 +198,7 @@ impl Housekeeping {
 
     pub fn stop(&self) {
         for s in self.srcs.borrow_mut().drain(..) {
-            s.remove();
+            sonata_ui::cancel(s);
         }
     }
 }

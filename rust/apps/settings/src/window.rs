@@ -412,13 +412,13 @@ impl Settings {
 
     fn open_first_match(&self) {
         let rows = self.rows.borrow().clone();
-        if let Some((_, r)) = rows.iter().find(|(_, r)| r.is_visible()) {
+        if let Some((_, r)) = rows.iter().find(|(_, r)| r.get_visible()) {
             self.listbox.select_row(Some(r));
             return;
         }
         // no section: the first setting found
         let first = self.hits.borrow().first().map(|(_, h)| h.clone());
-        if let Some(h) = first.filter(|_| self.results.is_visible()) {
+        if let Some(h) = first.filter(|_| self.results.get_visible()) {
             self.open_hit(&h);
         }
     }
@@ -727,7 +727,7 @@ impl Settings {
     /// Write the sliders' pending values now (also when Settings closes).
     pub fn flush_live(&self) {
         if let Some(src) = self.live_src.borrow_mut().take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         let pending = std::mem::take(&mut *self.live.borrow_mut());
         for (name, values) in pending {

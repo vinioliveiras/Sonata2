@@ -422,7 +422,7 @@ impl TaskManagerWindow {
             }
         } else if !run {
             if let Some(id) = self.timer.take() {
-                id.remove();
+                sonata_ui::cancel(id);
             }
         }
     }
@@ -538,7 +538,7 @@ impl TaskManagerWindow {
     fn destroyed(&self) {
         self.alive.set(false);
         if let Some(id) = self.timer.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         if self.samples.get() > 0 {
             self.save_history();

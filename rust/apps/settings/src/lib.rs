@@ -76,7 +76,7 @@ fn present(app: &adw::Application, state: &Rc<RefCell<State>>) {
                 w.set_visible(false);
                 let Some(st) = st.upgrade() else { return glib::Propagation::Proceed };
                 if let Some(src) = st.borrow_mut().linger.take() {
-                    src.remove();
+                    sonata_ui::cancel(src);
                 }
                 let st2 = Rc::downgrade(&st);
                 let src = glib::timeout_add_seconds_local_once(LINGER_S, move || {

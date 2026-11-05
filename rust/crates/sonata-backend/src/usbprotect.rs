@@ -132,7 +132,9 @@ impl StaleCheck {
     }
 
     pub fn stop(&self) {
-        if let Some(s) = self.src.borrow_mut().take() {
+        // (only if still there: SourceId::remove panics on an ended source,
+        // and this crate has no sonata_ui::cancel)
+        if let Some(s) = self.src.borrow_mut().take().filter(|s| glib::MainContext::default().find_source_by_id(s).is_some()) {
             s.remove();
         }
     }

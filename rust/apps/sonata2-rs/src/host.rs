@@ -206,6 +206,49 @@ fn built<T: Clone>(cell: &RefCell<Option<T>>, make: impl FnOnce() -> T) -> T {
     v
 }
 
+fn make_switcher(app: &gtk::Application) -> Rc<switcher::Switcher> {
+    sonata_ui::css::register_module("shell/switcher.py");
+    switcher::Switcher::new(app, Rc::new(switcher::IpcWindows(Wayfire)), true)
+}
+
+/// The login's warm-up starts this long after the menu bar's actions...
+pub const WARM_START_MS: u64 = 8000;
+/// ... and takes one step this often.
+pub const WARM_STEP_MS: u64 = 1500;
+
+/// Warm-up after login (__main__.py's warm(): Vini, no lag the first
+/// time): the app switcher, then the volume OSD made and drawn once
+/// unseen, then the Control Center built once (its icons and modules
+/// loaded), one step every 1.5 s so the login itself stays light. The
+/// emoji and clipboard pickers are not among them, as in Python: kept for
+/// the whole session they held the emoji font's glyphs and the
+/// clipboard's previews though most days neither is opened.
+fn warm_up(app: &gtk::Application, sw: Rc<RefCell<Option<Rc<switcher::Switcher>>>>) {
+    fn step(app: glib::WeakRef<gtk::Application>, sw: Rc<RefCell<Option<Rc<switcher::Switcher>>>>, n: u32) {
+        let Some(a) = app.upgrade() else { return };
+        match n {
+            // (one opened already -- an Alt+Tab came first -- is warm)
+            0 if sw.borrow().is_none() => {
+                let s = built(&sw, || make_switcher(&a));
+                sonata_shell::layer::prewarm(&s.win, 1, 3, None, None);
+            }
+            1 => sonata_topbar::osd::prewarm(&a),
+            // (kept by the menu bar: once, it may have made it already)
+            2 => {
+                if let Some(b) = sonata_topbar::window::first_bar() {
+                    b.prewarm_control_center();
+                }
+            }
+            _ => {}
+        }
+        if n < 2 {
+            glib::timeout_add_local_once(std::time::Duration::from_millis(WARM_STEP_MS), move || step(app, sw, n + 1));
+        }
+    }
+    let app = app.downgrade();
+    glib::timeout_add_local_once(std::time::Duration::from_millis(WARM_START_MS), move || step(app, sw, 0));
+}
+
 /// The menu bar's actions, each built on first use and kept after, as
 /// run_topbar does.
 pub fn install_actions(app: &gtk::Application, rules: Option<Rc<sonata_sessionui::fullscreen::Rules>>) {
@@ -220,7 +263,7 @@ pub fn install_actions(app: &gtk::Application, rules: Option<Rc<sonata_sessionui
 
     // App switcher: Alt+Tab -> "next", Alt+Shift+Tab -> "prev"
     let sw: Rc<RefCell<Option<Rc<switcher::Switcher>>>> = Rc::default();
-    let sw_pads = sw.clone();
+    let (sw_pads, sw_warm) = (sw.clone(), sw.clone());
     let act = gio::SimpleAction::new("switcher", Some(glib::VariantTy::STRING));
     let a = app.downgrade();
     act.connect_activate(move |_, param| {
@@ -229,14 +272,13 @@ pub fn install_actions(app: &gtk::Application, rules: Option<Rc<sonata_sessionui
         if switcher::mission_control_step(&Wayfire, back) {
             return; // Mission Control open: its highlight moved instead
         }
-        let s = built(&sw, || {
-            sonata_ui::css::register_module("shell/switcher.py");
-            let s = switcher::Switcher::new(&app, Rc::new(switcher::IpcWindows(Wayfire)), true);
-            s
-        });
+        let s = built(&sw, || make_switcher(&app));
+        // pressed while it drew itself unseen: the warm-up ends first
+        sonata_shell::layer::end_prewarm(&s.win);
         s.step(if back { -1 } else { 1 });
     });
     app.add_action(&act);
+    warm_up(app, sw_warm);
 
     // Screenshots and recording ("capture"), drawing ("draw"), the instant replay ("replay-save")
     let cap = sonata_capture::capture::Capture::new(app);
@@ -367,6 +409,25 @@ mod tests {
         let services = &src[src.find("fn start_services").unwrap()..src.find("#[cfg(test)]").unwrap()];
         assert!(services.contains("ReminderWatch::start()"));
         assert!(!services.contains("store::Store::new()"));
+    }
+
+    /// The first Alt+Tab and the first volume key after login lagged in
+    /// the Rust session: the switcher and the OSD were built and drawn the
+    /// first time they were used (Python's warm() draws them unseen from
+    /// 8 s on, then the Control Center). Not the emoji or clipboard
+    /// pickers: Python keeps them out of the warm-up on purpose.
+    #[test]
+    fn test_first_alt_tab_after_login_lagged() {
+        let src = include_str!("host.rs");
+        let actions = &src[src.find("pub fn install_actions").unwrap()..src.find("/// What the controllers drive").unwrap()];
+        assert!(actions.contains("warm_up(app, sw_warm)"), "no warm-up at login");
+        assert!(actions.contains("sonata_shell::layer::end_prewarm(&s.win)"), "Alt+Tab during the warm-up opened it see-through");
+        let warm = &src[src.find("fn warm_up(").unwrap()..src.find("pub fn install_actions").unwrap()];
+        for step in ["layer::prewarm(&s.win", "osd::prewarm(&a)", "prewarm_control_center()"] {
+            assert!(warm.contains(step), "{step} not warmed");
+        }
+        assert!(!warm.contains("emoji") && !warm.contains("clip_picker"), "the pickers are built on first use");
+        assert_eq!((WARM_START_MS, WARM_STEP_MS), (8000, 1500)); // __main__.py's
     }
 
     /// -- run_topbar's monitors.ensure_refresh() had no caller in Rust.

@@ -47,7 +47,8 @@ mod tests {
         //! stored id was removed afterwards.
         let _one = CONTEXT.lock().unwrap_or_else(|e| e.into_inner());
         let ctx = glib::MainContext::default();
-        let _owner = ctx.acquire().expect("default main context");
+        // (GTK started by another test thread owns it: run without a display)
+        let Ok(_owner) = ctx.acquire() else { return };
         let fired = Rc::new(Cell::new(false));
         let f = fired.clone();
         let stored: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
@@ -63,7 +64,8 @@ mod tests {
         //! said Break.
         let _one = CONTEXT.lock().unwrap_or_else(|e| e.into_inner());
         let ctx = glib::MainContext::default();
-        let _owner = ctx.acquire().expect("default main context");
+        // (GTK started by another test thread owns it: run without a display)
+        let Ok(_owner) = ctx.acquire() else { return };
         let runs = Rc::new(Cell::new(0));
         let r = runs.clone();
         let id = glib::idle_add_local(move || {
@@ -78,7 +80,8 @@ mod tests {
     fn cancel_still_stops_a_pending_timer() {
         let _one = CONTEXT.lock().unwrap_or_else(|e| e.into_inner());
         let ctx = glib::MainContext::default();
-        let _owner = ctx.acquire().expect("default main context");
+        // (GTK started by another test thread owns it: run without a display)
+        let Ok(_owner) = ctx.acquire() else { return };
         let fired = Rc::new(Cell::new(false));
         let f = fired.clone();
         let id = glib::timeout_add_local_once(Duration::from_millis(20), move || f.set(true));

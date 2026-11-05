@@ -156,16 +156,6 @@ fn thousands(n: i64) -> String {
     if n < 0 { format!("-{out}") } else { out }
 }
 
-/// A document window's first size (ui/window.py's roomy_size): (w, h) grown
-/// to about two thirds of a `screen`-sized display (Vini: on 1080p windows
-/// opened too small), never smaller than the app's own default.
-fn roomy_size(w: i32, h: i32, screen: Option<(i32, i32)>) -> (i32, i32) {
-    match screen {
-        Some((sw, sh)) => (w.max((sw as f64 * 0.66) as i32), h.max((sh as f64 * 0.65) as i32)),
-        None => (w, h),
-    }
-}
-
 /// Go to Line's field: "12" or "12:3" / "12,3" (window.py's
 /// `^\s*(\d+)\s*(?:[:,]\s*(\d+))?\s*$`); None for anything else -- a sign,
 /// a stray character, "12:" -- so the cursor stays put.
@@ -534,12 +524,7 @@ impl TeWindow {
             // a session window: its own size (restore); a document window's
             // first size, with no size kept yet, is about two thirds of the
             // display (window.py: remember_size(..., roomy=True))
-            let (w0, h0) = if sonata_ui::window::saved_size("textedit").is_none() {
-                roomy_size(760, 580, sonata_ui::window::screen_size_of(&window))
-            } else {
-                (760, 580)
-            };
-            sonata_ui::window::remember_size(window.upcast_ref(), "textedit", w0, h0);
+            sonata_ui::window::remember_size_roomy(window.upcast_ref(), "textedit", 760, 580);
             let call = |f: fn(&TeWindow)| -> Box<dyn Fn()> {
                 let w = me.clone();
                 Box::new(move || {
@@ -611,7 +596,7 @@ impl TeWindow {
             let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
             col.append(&handle);
             // -- tabs (filled in below, once the window exists)
-            let tabs_rev = gtk::Revealer::builder().reveal_child(false).transition_duration(150).transition_type(gtk::RevealerTransitionType::SlideDown).build();
+            let tabs_rev = gtk::Revealer::builder().reveal_child(false).transition_duration(sonata_ui::tokens::ms(150.0)).transition_type(gtk::RevealerTransitionType::SlideDown).build();
             col.append(&tabs_rev);
             // -- find bar
             let find_col = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -659,9 +644,9 @@ impl TeWindow {
             rrow.append(&controls::push_button(&tr!("Replace All"), call(|t| {
                 t.replace_all();
             }), ""));
-            let replace_rev = gtk::Revealer::builder().child(&rrow).reveal_child(false).transition_duration(120).transition_type(gtk::RevealerTransitionType::SlideDown).build();
+            let replace_rev = gtk::Revealer::builder().child(&rrow).reveal_child(false).transition_duration(sonata_ui::tokens::ms(120.0)).transition_type(gtk::RevealerTransitionType::SlideDown).build();
             find_col.append(&replace_rev);
-            let find_bar = gtk::Revealer::builder().child(&find_col).reveal_child(false).transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(180).build();
+            let find_bar = gtk::Revealer::builder().child(&find_col).reveal_child(false).transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(sonata_ui::tokens::ms(180.0)).build();
             col.append(&find_bar);
             let stack = gtk::Stack::builder().vexpand(true).hexpand(true).build();
             stack.add_css_class("te-stack");
@@ -1164,7 +1149,7 @@ impl TeWindow {
             self.nl_btn.set_sensitive(!doc.readonly.get());
         }
         if let Some(id) = self.stats_id.borrow_mut().take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let me = self.me.clone();
         let delay = if full { 1 } else { STATS_DELAY_MS };
@@ -1856,7 +1841,7 @@ pub fn schedule_save() {
 
 pub fn save_now() {
     if let Some(id) = S.with(|s| s.borrow_mut().timer.take()) {
-        id.remove();
+        sonata_ui::cancel(id);
     }
     ensure_loaded();
     let mut wins: Vec<Value> = windows().iter().filter(|w| !w.docs.borrow().is_empty() && !w.closing.get()).map(|w| w.state()).collect();
@@ -2000,9 +1985,10 @@ mod tests {
     fn test_first_window_was_not_roomy() {
         // A first TextEdit window (no size kept yet) opened at 760 x 580 on a
         // 1080p display; Python's opens at about two thirds of it.
-        assert_eq!(roomy_size(760, 580, Some((1920, 1080))), (1267, 702));
-        assert_eq!(roomy_size(760, 580, Some((1024, 600))), (760, 580)); // never smaller than the default
-        assert_eq!(roomy_size(760, 580, None), (760, 580));
+        use sonata_ui::window::first_size;
+        assert_eq!(first_size(None, 760, 580, true, Some((1920, 1080))), (1267, 702, false));
+        assert_eq!(first_size(None, 760, 580, true, Some((1024, 768))), (760, 580, false)); // never smaller than the default
+        assert_eq!(first_size(None, 760, 580, true, None), (760, 580, false));
     }
 
     // -- the window (tests/test_textedit.py's TextEditTest), where GTK can start

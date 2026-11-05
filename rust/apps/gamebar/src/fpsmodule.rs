@@ -404,7 +404,7 @@ impl FpsModule {
 
     fn stop(&self) {
         if let Some(id) = self.poll.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
     }
 

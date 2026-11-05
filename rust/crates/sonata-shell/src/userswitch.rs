@@ -170,7 +170,8 @@ impl System for Real {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
         let Some((cmd, args)) = argv.split_first() else { return false };
-        Command::new(cmd).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn().is_ok()
+        // reaped when it ends: the menu bar would keep a zombie otherwise
+        Command::new(cmd).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn().map(sonata_backend::run::reap).is_ok()
     }
 }
 

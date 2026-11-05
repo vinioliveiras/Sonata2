@@ -215,16 +215,15 @@ impl PreviewWindow {
             let crop_area = gtk::DrawingArea::builder().visible(false).can_target(true).build();
             overlay.add_overlay(&crop_area);
             let markup_rev = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(sonata_ui::tokens::ms(200.0)).reveal_child(false).build();
-            let dur = sonata_ui::tokens::ms(250.0);
             let w = me.clone();
             let thumbs = Thumbnails::new(move |p| {
                 if let Some(pw) = w.upgrade() {
                     pw.pick(p);
                 }
             });
-            let sidebar_rev = gtk::Revealer::builder().child(&thumbs.root).transition_type(gtk::RevealerTransitionType::SlideRight).transition_duration(dur).reveal_child(group.is_some()).build();
+            let sidebar_rev = gtk::Revealer::builder().child(&thumbs.root).transition_type(gtk::RevealerTransitionType::SlideRight).transition_duration(sonata_ui::tokens::ms(250.0)).reveal_child(group.is_some()).build();
             let info = InfoPanel::new();
-            let info_rev = gtk::Revealer::builder().child(&info.root).transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(dur).reveal_child(false).build();
+            let info_rev = gtk::Revealer::builder().child(&info.root).transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(sonata_ui::tokens::ms(250.0)).reveal_child(false).build();
             let body = gtk::Box::builder().vexpand(true).build();
             body.append(&sidebar_rev);
             body.append(&overlay);
@@ -574,7 +573,7 @@ impl PreviewWindow {
     fn arm_slides(&self) {
         let Some(s) = self.slides.get() else { return };
         if let Some(id) = self.slide_timer.borrow_mut().take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         if s.paused {
             return;
@@ -596,7 +595,7 @@ impl PreviewWindow {
     pub fn stop_slideshow(&self) {
         let Some(s) = self.slides.take() else { return };
         if let Some(id) = self.slide_timer.borrow_mut().take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         self.window.remove_css_class("pv-slideshow");
         self.toolbar.set_visible(true);
@@ -684,7 +683,7 @@ impl PreviewWindow {
         if !self.editor() {
             return;
         }
-        if self.crop_area.is_visible() {
+        if self.crop_area.get_visible() {
             self.end_crop();
         }
         self.set_zoom(None, None, false); // the whole picture
@@ -832,7 +831,7 @@ impl PreviewWindow {
 
     // crop: drag a selection over the picture, then Crop (or Return)
     pub fn crop_button(&self) {
-        if self.crop_area.is_visible() {
+        if self.crop_area.get_visible() {
             if self.crop.get().is_some() && self.crop_fraction().is_some() {
                 self.apply_crop();
             } else {
@@ -1555,7 +1554,7 @@ impl PreviewWindow {
             }
             return true;
         }
-        if self.crop_area.is_visible() && matches!(keyval, Key::Return | Key::KP_Enter | Key::Escape) {
+        if self.crop_area.get_visible() && matches!(keyval, Key::Return | Key::KP_Enter | Key::Escape) {
             if keyval == Key::Escape {
                 self.end_crop();
             } else {
@@ -1852,7 +1851,7 @@ mod tests {
         assert!(wait(|| w.pics.borrow().len() == 3, 3000)); // the folder's pictures
         assert!(w.key(Key::f, ModifierType::CONTROL_MASK | ModifierType::SHIFT_MASK));
         assert!(w.slides.get().is_some());
-        assert!(!w.toolbar.is_visible());
+        assert!(!w.toolbar.get_visible());
         assert!(w.slide_timer.borrow().is_some());
         w.key(Key::Right, ModifierType::empty());
         assert!(wait(|| w.cur().as_deref() == Some(b.as_str()), 3000));
@@ -1860,17 +1859,17 @@ mod tests {
         assert!(w.slide_timer.borrow().is_none());
         w.key(Key::Escape, ModifierType::empty());
         assert!(w.slides.get().is_none());
-        assert!(w.toolbar.is_visible());
+        assert!(w.toolbar.get_visible());
         done(&w);
 
         // crop still works
         let w = window(&app, &c, None, false);
         w.crop_button();
-        assert!(w.crop_area.is_visible());
+        assert!(w.crop_area.get_visible());
         let (x, y, cw, ch) = w.canvas.image_rect().unwrap();
         w.crop.set(Some((x, y, x + cw / 2.0, y + ch / 2.0)));
         w.crop_button(); // apply
-        assert!(!w.crop_area.is_visible());
+        assert!(!w.crop_area.get_visible());
         assert_eq!(w.edits.borrow().as_ref().unwrap().size(), (600, 400));
         // resize, and the save written off the main loop
         w.undo();

@@ -383,7 +383,7 @@ impl GlideBox {
                 me.queue_draw();
             }
         });
-        let anim = adw::TimedAnimation::new(child, 1.0, 0.0, ms, target);
+        let anim = adw::TimedAnimation::new(child, 1.0, 0.0, sonata_ui::tokens::ms(ms as f64), target);
         anim.set_easing(adw::Easing::EaseOutCubic);
         if let Some(e) = self.imp().offsets.borrow_mut().iter_mut().find(|(w, ..)| w == child) {
             e.3 = Some(anim.clone());
@@ -738,7 +738,7 @@ impl SpacesBar {
         let x = msg["x"].as_f64().unwrap_or(0.0) - g.map_or(0.0, |g| g.x() as f64);
         let y = msg["y"].as_f64().unwrap_or(0.0) - g.map_or(0.0, |g| g.y() as f64) - self.top.get() as f64;
         let picked = if (0.0..=self.win.height() as f64).contains(&y) { self.win.pick(x, y, gtk::PickFlags::DEFAULT) } else { None };
-        let on_add = picked.as_ref().is_some_and(|p| p == self.add.upcast_ref::<gtk::Widget>() || p.is_ancestor(&self.add)) && self.add.is_visible();
+        let on_add = picked.as_ref().is_some_and(|p| p == self.add.upcast_ref::<gtk::Widget>() || p.is_ancestor(&self.add)) && self.add.get_visible();
         let target = if on_add {
             Target::Add
         } else {
@@ -785,7 +785,7 @@ impl SpacesBar {
     /// bar, asking Wayfire twice): a new one starts the wait again.
     pub fn refresh_soon(self: &Rc<Self>, ms: u64) {
         if let Some(id) = self.soon.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let weak = Rc::downgrade(self);
         let id = glib::timeout_add_local_once(Duration::from_millis(ms), move || {

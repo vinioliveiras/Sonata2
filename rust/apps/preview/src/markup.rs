@@ -438,7 +438,7 @@ impl MarkupLayer {
             if self.items.borrow()[i].t == "text" {
                 // the clicks were to edit it, not to draw
                 for (src, _) in self.dots.borrow_mut().drain(..) {
-                    src.remove();
+                    sonata_ui::cancel(src);
                 }
                 if self.text_pop.borrow().is_none() {
                     self.edit_text_at(x, y);

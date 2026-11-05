@@ -52,7 +52,7 @@ impl Banners {
         let Some(server) = self.server.upgrade() else { return };
         self.hide(n.id, false);
         let c = card::card(n, &server);
-        let rev = gtk::Revealer::builder().child(&c.root).transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(250).build();
+        let rev = gtk::Revealer::builder().child(&c.root).transition_type(gtk::RevealerTransitionType::SlideLeft).transition_duration(sonata_ui::tokens::ms(250.0)).build();
         self.list.prepend(&rev);
         if !self.win.is_visible() {
             self.win.set_default_size(1, 1); // shrink to the content again
@@ -97,7 +97,7 @@ impl Banners {
             shown.remove(i)
         };
         if let Some(src) = entry.expiry {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         let rev = entry.rev;
         if animate {

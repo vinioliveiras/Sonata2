@@ -100,7 +100,7 @@ fn label(markup: &str, css: Option<&str>) -> gtk::Label {
 
 /// New messages fade and slide in (t_fast).
 fn appear(widget: &impl IsA<gtk::Widget>) -> gtk::Revealer {
-    let rev = gtk::Revealer::builder().child(widget).transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(150).reveal_child(false).build();
+    let rev = gtk::Revealer::builder().child(widget).transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(sonata_ui::tokens::ms(150.0)).reveal_child(false).build();
     let r = rev.downgrade();
     glib::idle_add_local_once(move || {
         if let Some(r) = r.upgrade() {
@@ -364,7 +364,7 @@ impl AssistantWindow {
             let (toolbar, bar, tools) = sonata_ui::window::glass_toolbar(&window, vec![("emblem-system-symbolic", tr!("Settings"), call(|t| t.show_settings())), ("document-edit-symbolic", tr!("New Chat"), call(|t| t.new_chat()))]);
             let side_btn = gtk::Button::builder().icon_name("sidebar-show-symbolic").tooltip_text(tr!("Show Sidebar")).can_focus(false).build();
             side_btn.add_css_class("tool");
-            let f = call(|t| t.sidebar.set_visible(!t.sidebar.is_visible()));
+            let f = call(|t| t.sidebar.set_visible(!t.sidebar.get_visible()));
             side_btn.connect_clicked(move |_| f());
             let start = gtk::Box::builder().spacing(2).valign(gtk::Align::Center).build();
             start.append(&side_btn);
@@ -1472,7 +1472,7 @@ impl AssistantWindow {
     fn close_request(&self) {
         self.stop(true);
         if let Some(id) = self.tick.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         let sel = self.chat_id().filter(|id| self.store.borrow().get(id).is_some()).unwrap_or_default();
         if sel != self.cfg_str("selected") {

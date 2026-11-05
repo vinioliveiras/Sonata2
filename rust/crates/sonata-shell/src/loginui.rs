@@ -157,7 +157,7 @@ mod imp {
     impl WidgetImpl for Balance {
         fn measure(&self, o: gtk::Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
             match self.other.borrow().as_ref() {
-                Some(w) if o == gtk::Orientation::Vertical && w.is_visible() => {
+                Some(w) if o == gtk::Orientation::Vertical && w.get_visible() => {
                     let (mn, nat, _, _) = w.measure(o, -1);
                     (mn, nat, -1, -1)
                 }
@@ -441,5 +441,25 @@ mod tests {
     fn power_methods_have_a_systemctl_fallback() {
         assert_eq!(systemctl_verb("Reboot"), Some("reboot"));
         assert_eq!(systemctl_verb("Nope"), None);
+    }
+
+    /// The balance above the login column read the rows below it as
+    /// hidden whenever its window wasn't on screen yet (is_visible: the
+    /// widget and every parent), so it measured 0 and the picture, name
+    /// and field sat off-centre. Python asks the rows' own visibility.
+    #[test]
+    fn test_balance_measured_flat_in_a_window_not_shown() {
+        if gtk::init().is_err() {
+            return; // (no display)
+        }
+        let win = gtk::Window::new();
+        let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        win.set_child(Some(&col));
+        let hint = gtk::Box::builder().height_request(40).build();
+        balanced(&col, &[hint.upcast()]);
+        let balance = col.first_child().unwrap();
+        assert!(!win.get_visible());
+        assert_eq!(balance.measure(gtk::Orientation::Vertical, -1).0, 40);
+        win.destroy();
     }
 }

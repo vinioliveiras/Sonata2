@@ -243,7 +243,7 @@ impl ScreenSharing {
 
     pub fn stop(&self) {
         if let Some(s) = self.0.retry.borrow_mut().take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         *self.0.running_with.borrow_mut() = None;
         if let Some(pid) = self.0.pid.take() {

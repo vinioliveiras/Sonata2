@@ -433,7 +433,7 @@ pub fn open_panel(dock: &Dock, tile: &Rc<Tile>, then: Option<Rc<dyn Fn()>>, rena
     let reuse = then.is_none() && !folder_locked(&folder);
     let cached = tile.folder_pop.borrow_mut().take();
     if let Some(cached) = cached {
-        if reuse && cached.sig == signature(&folder) && !cached.pop.is_visible() {
+        if reuse && cached.sig == signature(&folder) && !cached.pop.get_visible() {
             replay(&cached);
             if rename {
                 edit_title(&cached);
@@ -441,7 +441,7 @@ pub fn open_panel(dock: &Dock, tile: &Rc<Tile>, then: Option<Rc<dyn Fn()>>, rena
             tile.folder_pop.replace(Some(cached.clone()));
             return Some(cached);
         }
-        if !cached.pop.is_visible() {
+        if !cached.pop.get_visible() {
             cached.pop.unparent();
         }
     }
@@ -596,7 +596,7 @@ fn edit_title(p: &Rc<Panel>) {
     let p = Rc::downgrade(p);
     glib::idle_add_local_once(move || {
         let Some(p) = p.upgrade() else { return };
-        if p.pop.is_visible() && p.editable.get() {
+        if p.pop.get_visible() && p.editable.get() {
             if let (Some(d), Some(t)) = (p.dock.upgrade(), p.tile.upgrade()) {
                 ask_rename(&d, &t, Some(&p));
             }
@@ -617,7 +617,7 @@ pub fn ask_rename(dock: &Dock, tile: &Rc<Tile>, p: Option<&Rc<Panel>>) {
             }
         }, "", None);
     };
-    match p.filter(|p| p.pop.is_visible()) {
+    match p.filter(|p| p.pop.get_visible()) {
         Some(p) => close_panel(p, Some(Box::new(ask))),
         None => ask(),
     }

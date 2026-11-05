@@ -732,7 +732,7 @@ impl Bar {
     /// Settings changed topbar.json: apply live.
     fn config_changed(self: &Rc<Self>) {
         self.cfg.replace(topbar_prefs::load());
-        self.battery_pct.set_visible(self.cfg_bool("battery_percent", false) && self.battery.is_visible());
+        self.battery_pct.set_visible(self.cfg_bool("battery_percent", false) && self.battery.get_visible());
         self.bt_update();
         self.extras_visibility();
         self.tray.set_shown(self.cfg_bool("show_tray", true));
@@ -873,7 +873,7 @@ impl Bar {
     /// only three of them (and not the logo, the tray, the battery) were.
     fn theme_settled(self: &Rc<Self>) {
         if let Some(s) = self.theme_src.take() {
-            s.remove(); // (on_change comes on every frame of a cross-fade)
+            sonata_ui::cancel(s); // (on_change comes on every frame of a cross-fade)
         }
         let w = Rc::downgrade(self);
         self.theme_src.replace(Some(glib::timeout_add_local_once(Duration::from_millis(THEME_SETTLE_MS), move || {
@@ -1690,7 +1690,7 @@ impl Bar {
         detach(cc.root.upcast_ref());
         if let Some(p) = pop {
             // (another item opened it, or a new one)
-            if p.is_visible() {
+            if p.get_visible() {
                 p.popdown();
             }
             if p.parent().is_some() {
@@ -1737,7 +1737,7 @@ pub(crate) fn detach_for_tests(widget: &gtk::Widget) {
 fn detach(widget: &gtk::Widget) {
     let Some(parent) = widget.parent() else { return };
     if let Some(old) = widget.ancestor(gtk::Popover::static_type()).and_downcast::<gtk::Popover>() {
-        if old.is_visible() {
+        if old.get_visible() {
             old.popdown();
         }
     }

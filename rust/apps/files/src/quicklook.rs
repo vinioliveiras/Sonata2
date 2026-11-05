@@ -243,7 +243,7 @@ impl QuickLook {
         let ct = info.content_type().map(|c| c.to_string()).unwrap_or_default();
         let app = if is_dir(info) || ct.is_empty() { None } else { gio::AppInfo::default_for_type(&ct, false) };
         self.open_btn.set_label(&match &app {
-            Some(a) => fmt(&tr!("Open with {app}"), &[("app", &a.display_name())]),
+            Some(a) => fmt(&tr!("Open with {app}"), &[("app", &sonata_ui::apps::display_name(a))]),
             None => tr!("Open"),
         });
         self.app.replace(app);
@@ -320,10 +320,12 @@ impl QuickLook {
 
     fn open(&self) {
         let Some(f) = self.info().as_ref().and_then(file_of) else { return };
-        let ctx = WidgetExt::display(&self.window).app_launch_context();
+        // Sonata's launch path, as everywhere an app opens (apps.py's
+        // patched launch: app lock, limits, the GPU, its own scope)
+        let ctx = WidgetExt::display(&self.window).app_launch_context().upcast::<gio::AppLaunchContext>();
         let _ = match self.app.borrow().as_ref() {
-            Some(app) => app.launch(&[f], Some(&ctx)),
-            None => gio::AppInfo::launch_default_for_uri(&f.uri(), Some(&ctx)),
+            Some(app) => sonata_ui::apps::launch(app, &[f], Some(&ctx)),
+            None => sonata_ui::apps::launch_default_for_uri(&f.uri(), Some(&ctx)),
         };
         self.window.close();
     }
@@ -483,7 +485,7 @@ fn open_with(win: &adw::Window, col: &gtk::Box, info: &gio::FileInfo) {
     col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     col.append(&gtk::Label::builder().label(tr!("Open with:")).xalign(0.0).css_classes(["gi-key"]).build());
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let names: Vec<String> = apps.iter().map(|a| a.display_name().to_string()).collect();
+    let names: Vec<String> = apps.iter().map(sonata_ui::apps::display_name).collect();
     let pick = sonata_ui::controls::popup_button(&names, cur, |_| {});
     pick.set_hexpand(true);
     row.append(&pick);
@@ -502,7 +504,7 @@ fn change_all(win: &adw::Window, app: gio::AppInfo, ct: &str) {
     let body = if desc.is_empty() { tr!("This change will apply to every such file.") } else { fmt(&tr!("This change will apply to every {kind} file."), &[("kind", &desc)]) };
     let (ct, w) = (ct.to_string(), win.downgrade());
     sonata_ui::dialog::alert(
-        &fmt(&tr!("Do you want to change all similar documents to open with “{app}”?"), &[("app", &app.display_name())]),
+        &fmt(&tr!("Do you want to change all similar documents to open with “{app}”?"), &[("app", &sonata_ui::apps::display_name(&app))]),
         &body,
         &[("cancel", tr!("Cancel"), ""), ("change", tr!("Continue"), "default")],
         move |rid| {

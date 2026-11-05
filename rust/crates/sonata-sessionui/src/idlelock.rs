@@ -62,7 +62,7 @@ pub fn lock_and_wait(argv: &[String], timeout: std::time::Duration) -> i32 {
     lock_and_wait_with(timeout, || {
         use std::os::unix::process::CommandExt;
         // a session of its own: not swayidle's child to wait on
-        Command::new(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn().map(|_| ()).map_err(|_| ())
+        Command::new(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn().map(sonata_backend::run::reap).map_err(|_| ())
     })
 }
 
@@ -205,7 +205,11 @@ impl IdleLock {
                 Box::new(move |on| darken(&*w2, on)),
                 Box::new(|| {
                     use std::os::unix::process::CommandExt;
-                    let _ = Command::new("sh").args(["-c", &lock_command()]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn();
+                    // reaped when the lock screen ends: the menu bar gathered a
+                    // defunct flock per idle lock
+                    if let Ok(c) = Command::new("sh").args(["-c", &lock_command()]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn() {
+                        sonata_backend::run::reap(c);
+                    }
                 }),
             )
         });
@@ -292,7 +296,7 @@ impl IdleLock {
 impl Drop for IdleLock {
     fn drop(&mut self) {
         if let Some(id) = self._check.borrow_mut().take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         self.stop();
     }

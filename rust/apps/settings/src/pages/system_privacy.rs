@@ -384,7 +384,7 @@ fn switch_keyring(ctx: &Ctx) {
                     Err(keyring::SwitchError::Permission(e) | keyring::SwitchError::Failed(e)) => Err(fmt(&tr!("Not switched: {error}"), &[("error", &e)])),
                 }
             }, move |msg: Result<String, String>| {
-                tell.remove();
+                sonata_ui::cancel(tell);
                 let Some(s) = w.upgrade() else { return };
                 for t in std::mem::take(&mut *steps.lock().unwrap_or_else(|e| e.into_inner())) {
                     s.toast(&t);

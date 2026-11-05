@@ -782,7 +782,7 @@ impl VideoWallpaper {
     fn close(&self) {
         self.focus.remove_listener(self.listener.get());
         if let Some(s) = self.watch.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         for m in self.sound_mon.take() {
             m.cancel();

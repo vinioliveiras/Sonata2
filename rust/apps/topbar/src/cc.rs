@@ -331,12 +331,12 @@ impl ControlCenter {
             // closed, Control Center couldn't be closed, Vini). Two per row,
             // names cut short if need be: never wider than the panel
             let add_list = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).homogeneous(true).column_spacing(6).row_spacing(6).min_children_per_line(2).max_children_per_line(2).halign(gtk::Align::Fill).css_classes(["cc-add-list"]).build();
-            let add_reveal = gtk::Revealer::builder().child(&add_list).reveal_child(false).transition_type(gtk::RevealerTransitionType::SlideUp).transition_duration(200).build();
+            let add_reveal = gtk::Revealer::builder().child(&add_list).reveal_child(false).transition_type(gtk::RevealerTransitionType::SlideUp).transition_duration(sonata_ui::tokens::ms(200.0)).build();
             let edit_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
             edit_box.append(&add_reveal);
             edit_box.append(&edit_bar);
             main.append(&edit_box);
-            let pages = gtk::Stack::builder().transition_type(gtk::StackTransitionType::SlideLeftRight).transition_duration(220).vhomogeneous(false).interpolate_size(true).build();
+            let pages = gtk::Stack::builder().transition_type(gtk::StackTransitionType::SlideLeftRight).transition_duration(sonata_ui::tokens::ms(220.0)).vhomogeneous(false).interpolate_size(true).build();
             pages.add_named(&main, Some("main"));
             let root = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(8).width_request(320).build();
             root.append(&pages);

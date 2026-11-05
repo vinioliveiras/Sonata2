@@ -360,7 +360,7 @@ impl SwitcherPanel {
                 p.queue_draw();
             }
         });
-        let anim = adw::TimedAnimation::new(self, 0.0, 1.0, SLIDE_MS, target);
+        let anim = adw::TimedAnimation::new(self, 0.0, 1.0, sonata_ui::tokens::ms(SLIDE_MS as f64), target);
         anim.set_easing(adw::Easing::EaseOutCubic);
         anim.play();
         imp.anim.replace(Some(anim));

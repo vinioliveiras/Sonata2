@@ -66,7 +66,9 @@ fn copy_key(t: &impl IsA<gtk::EventController>) -> bool {
 /// Sonata Settings at a page (topbar.open_settings: the Python Settings).
 fn open_settings(page: &str) {
     let launcher = std::env::var("SONATA2_LAUNCHER").unwrap_or_else(|_| "sonata2".into());
-    let _ = std::process::Command::new(launcher).args(["settings", "--page", page]).spawn();
+    if let Ok(c) = std::process::Command::new(launcher).args(["settings", "--page", page]).spawn() {
+        sonata_backend::run::reap(c); // (else a zombie once Settings quits)
+    }
 }
 
 // -- the icon layer: a gtk::Fixed whose icons glide to a new spot ----------------------------
@@ -434,7 +436,7 @@ impl Desktop {
                 if *old.info.borrow() == info {
                     continue;
                 }
-                if !old.lbl.is_visible() || old.lbl.opacity() == 0.0 {
+                if !old.lbl.get_visible() || old.lbl.opacity() == 0.0 {
                     old.info.replace(info); // its name being typed (the field over it): keep the field
                     continue;
                 }

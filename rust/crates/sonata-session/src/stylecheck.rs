@@ -462,7 +462,9 @@ impl Watch {
     }
 
     pub fn stop(&self) {
-        for s in self.srcs.borrow_mut().drain(..) {
+        // (only the ones still there: SourceId::remove panics on an ended
+        // source, and this crate has no sonata_ui::cancel)
+        for s in self.srcs.borrow_mut().drain(..).filter(|s| glib::MainContext::default().find_source_by_id(s).is_some()) {
             s.remove();
         }
     }

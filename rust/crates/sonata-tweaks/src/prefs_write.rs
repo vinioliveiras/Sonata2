@@ -175,7 +175,7 @@ pub fn reload_wallpaper() {
     }
     RELOAD.with(|r| {
         if let Some(src) = r.borrow_mut().take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         let id = glib::timeout_add_local_once(std::time::Duration::from_millis(RELOAD_AFTER_MS), || {
             RELOAD.with(|r| r.borrow_mut().take());

@@ -37,6 +37,10 @@ pub(crate) fn gtk_here() -> bool {
     if !shown {
         return false;
     }
+    // one test thread at a time asks: two seeing GTK not started and both
+    // starting it crashed the run (SIGSEGV in ColumnView::new)
+    static INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one = INIT.lock().unwrap_or_else(|e| e.into_inner());
     if gtk::is_initialized() {
         return gtk::is_initialized_main_thread();
     }

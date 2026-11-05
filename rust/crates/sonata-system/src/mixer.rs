@@ -626,7 +626,7 @@ impl MixerService {
         if idx.is_some() {
             // a new stream: no waiting for the burst to end
             if let Some(src) = me.src.borrow_mut().take() {
-                src.remove();
+                sonata_ui::cancel(src);
             }
         }
         if me.src.borrow().is_none() {

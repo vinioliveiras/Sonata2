@@ -480,7 +480,7 @@ impl Widget {
     }
 
     fn shown(&self) -> bool {
-        self.frame.is_visible() && !self.frame.has_css_class("hiding")
+        self.frame.get_visible() && !self.frame.has_css_class("hiding")
     }
 }
 
@@ -535,7 +535,7 @@ fn focusables(root: &gtk::Widget) -> Vec<gtk::Widget> {
     while !stack.is_empty() {
         let w = stack.remove(0);
         let stop = w.is::<gtk::Button>() || w.is::<gtk::Range>() || is_module_slider(&w);
-        if &w != root && stop && w.is_visible() && w.is_sensitive() && !w.has_css_class("gb-pin") {
+        if &w != root && stop && w.get_visible() && w.get_sensitive() && !w.has_css_class("gb-pin") {
             found.push(w);
             continue;
         }
@@ -668,7 +668,7 @@ pub struct GameBar {
 
 fn remove_source(cell: &RefCell<Option<glib::SourceId>>) {
     if let Some(id) = cell.take() {
-        id.remove();
+        sonata_ui::cancel(id);
     }
 }
 
@@ -848,7 +848,7 @@ impl GameBar {
 
     fn sync_toggles(&self) {
         for (wid, b) in &self.toggles {
-            if self.widget(wid).frame.is_visible() {
+            if self.widget(wid).frame.get_visible() {
                 b.add_css_class("on");
             } else {
                 b.remove_css_class("on");
@@ -985,7 +985,7 @@ impl GameBar {
         let mon = self.win.surface().and_then(|s| WidgetExt::display(&self.win).monitor_at_surface(&s));
         for wid in self.pinned() {
             let Some((_, w)) = self.widgets.iter().find(|(k, _)| *k == wid) else { continue };
-            if !w.frame.is_visible() || self.pins.borrow().contains_key(&wid) {
+            if !w.frame.get_visible() || self.pins.borrow().contains_key(&wid) {
                 continue;
             }
             let (x, y) = w.frame.compute_bounds(&self.root).map_or((0.0, 0.0), |b| (b.x() as f64, b.y() as f64));

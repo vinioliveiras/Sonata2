@@ -427,6 +427,50 @@ pub fn scale_durations(css: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Vini: several animations of the Rust session ran slower than
+    /// Python's (the Dock's hide, magnification and bounce-in, the
+    /// switcher's glide, Launchpad's zoom, Notification Center's banners,
+    /// the OSD's fade, every stack and revealer...). Python scales every
+    /// Adw.TimedAnimation and every Gtk.Stack/Revealer transition by
+    /// ANIMATION_SPEED (theme._animation_speed); Rust can't patch GTK, so
+    /// each call site passes its designed duration through tokens::ms --
+    /// on the same line, so this check can see it.
+    #[test]
+    fn test_animations_ignored_the_animation_speed() {
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    if p.file_name().is_some_and(|n| n != "target") {
+                        walk(&p, out);
+                    }
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    out.push(p);
+                }
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = Vec::new();
+        for d in ["apps", "crates"] {
+            walk(&root.join(d), &mut files);
+        }
+        assert!(files.len() > 100, "the workspace's sources not found from {}", root.display());
+        let mut bad = Vec::new();
+        for f in files.iter().filter(|f| !f.ends_with("sonata-ui/src/tokens.rs")) {
+            let src = std::fs::read_to_string(f).unwrap_or_default();
+            for (i, line) in src.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or("");
+                let sets = code.contains("TimedAnimation::new(")
+                    || code.contains("set_duration(")
+                    || code.contains("transition_duration(") && !code.contains("transition_duration()") && !code.contains("transition_duration(0)");
+                if sets && !code.contains("tokens::ms(") && !code.contains("fn ") {
+                    bad.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "durations not at Sonata's animation speed (tokens::ms):\n{}", bad.join("\n"));
+    }
+
     #[test]
     fn palettes_have_the_same_tokens_in_light_and_dark() {
         let (l, d) = (palette(false), palette(true));

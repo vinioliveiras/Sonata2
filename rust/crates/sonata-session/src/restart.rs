@@ -69,7 +69,9 @@ impl Host for Real {
                 Ok(())
             });
         }
-        let _ = c.spawn();
+        if let Ok(c) = c.spawn() {
+            sonata_backend::run::reap(c); // (Restart Sonata from the menu bar: no zombie left in it)
+        }
     }
     fn alive(&mut self, pid: u32) -> bool {
         Path::new(&format!("/proc/{pid}")).exists()

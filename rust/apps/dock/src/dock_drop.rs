@@ -234,7 +234,7 @@ pub fn attach_app(dock: &Rc<Dock>, tile: &Rc<Tile>) {
         let spring = spring.clone();
         move || {
             if let Some(s) = spring.borrow_mut().take() {
-                s.remove();
+                sonata_ui::cancel(s);
             }
         }
     };

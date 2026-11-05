@@ -768,7 +768,9 @@ pub fn area_menu(dock: &Dock, window: &DockWindow, at: (f64, f64)) -> gtk::Popov
 /// This Sonata's own component (the Rust binary).
 pub fn spawn_own(args: &[&str]) {
     if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).args(args).spawn();
+        if let Ok(c) = std::process::Command::new(exe).args(args).spawn() {
+            sonata_backend::run::reap(c); // (else a zombie in the Dock once it quits)
+        }
     }
 }
 
@@ -786,8 +788,9 @@ pub fn spawn_sonata(args: &[&str]) {
 /// The Python Sonata's launcher ($SONATA2_LAUNCHER, else `sonata2`).
 pub fn spawn_python(args: &[&str]) {
     let py = std::env::var("SONATA2_LAUNCHER").ok().filter(|l| Path::new(l).exists()).unwrap_or_else(|| "sonata2".into());
-    if let Err(e) = std::process::Command::new(py).args(args).spawn() {
-        println!("sonata2-dock: {args:?}: {e}");
+    match std::process::Command::new(py).args(args).spawn() {
+        Ok(c) => sonata_backend::run::reap(c),
+        Err(e) => println!("sonata2-dock: {args:?}: {e}"),
     }
 }
 

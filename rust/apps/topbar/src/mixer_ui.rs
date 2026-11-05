@@ -107,7 +107,7 @@ pub struct MixerRow {
 
 impl MixerRow {
     fn new(owner: &Rc<Inner>, stream: &Stream) -> Rc<Self> {
-        let revealer = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(SLIDE_MS).build();
+        let revealer = gtk::Revealer::builder().transition_type(gtk::RevealerTransitionType::SlideDown).transition_duration(sonata_ui::tokens::ms(SLIDE_MS as f64)).build();
         let root = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(5).css_classes(["mixer-row"]).build();
         let title = gtk::Box::builder().spacing(6).css_classes(["mixer-title"]).build();
         let mute = gtk::Button::builder().css_classes(["mixer-mute"]).valign(gtk::Align::Center).can_focus(false).tooltip_text(tr!("Mute")).build();
@@ -189,7 +189,7 @@ impl MixerRow {
 
     fn moved(self: &Rc<Self>) {
         if let Some(s) = self.src.take() {
-            s.remove();
+            sonata_ui::cancel(s);
         }
         let weak = Rc::downgrade(self);
         let id = glib::timeout_add_local_once(Duration::from_millis(APPLY_MS), move || {

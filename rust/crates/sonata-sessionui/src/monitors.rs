@@ -343,7 +343,7 @@ pub fn ensure_refresh() {
         Rc::new(move || {
             // a burst of changes (a mode switch): once
             if let Some(id) = pending.borrow_mut().take() {
-                id.remove();
+                sonata_ui::cancel(id);
             }
             let p = pending.clone();
             *pending.borrow_mut() = Some(glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {

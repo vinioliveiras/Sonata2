@@ -368,7 +368,9 @@ fn topbar_services() -> sonata_topbar::seams::Services {
     let spawn = move |args: Vec<String>| {
         let me = me.clone();
         Rc::new(move || {
-            let _ = std::process::Command::new(&me).args(&args).spawn();
+            if let Ok(c) = std::process::Command::new(&me).args(&args).spawn() {
+                sonata_backend::run::reap(c); // (a defunct sonata2-rs per click otherwise)
+            }
         }) as Rc<dyn Fn()>
     };
     let mut s = sonata_topbar::seams::Services { mixer: Some(sonata_topbar::seams::system_mixer()), ..Default::default() };

@@ -513,7 +513,7 @@ impl CameraWin {
 
     fn cancel_count(&self) {
         if let Some(id) = self.count_src.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         self.count.set_visible(false);
     }
@@ -579,7 +579,7 @@ impl CameraWin {
 
     fn stop_video(self: &Rc<Self>) {
         if let Some(id) = self.rec_src.take() {
-            id.remove();
+            sonata_ui::cancel(id);
         }
         self.rec_time.set_visible(false);
         self.shutter.remove_css_class("recording");
@@ -805,7 +805,7 @@ mod tests {
         win.win.present();
         settle(800);
         win.capture();
-        assert!(win.count.is_visible());
+        assert!(win.count.get_visible());
         assert_eq!(win.count.label(), "3");
         win.cancel_count();
         settle(1300);
@@ -819,7 +819,7 @@ mod tests {
         win.win.present();
         win.start_camera();
         settle(100);
-        assert!(win.msg.is_visible());
+        assert!(win.msg.get_visible());
         assert_eq!(win.msg_title.label(), tr!("No Camera"));
         assert!(!win.shutter.is_sensitive());
         win.win.close();
@@ -839,7 +839,7 @@ mod tests {
         win.capture();
         assert!(win.cam.recording());
         assert!(win.shutter.has_css_class("recording"));
-        assert!(win.rec_time.is_visible());
+        assert!(win.rec_time.get_visible());
         settle(1500);
         win.capture(); // stop
         settle(2500);

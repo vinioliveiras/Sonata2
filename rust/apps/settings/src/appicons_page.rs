@@ -362,7 +362,7 @@ impl AppIconsPage {
     /// Saved (and the icon drawn again) once the slider pauses.
     fn size_changed(&self, row: &AppRow, value: f64, then: impl Fn() + 'static) {
         if let Some(src) = self.size_src.borrow_mut().take() {
-            src.remove();
+            sonata_ui::cancel(src);
         }
         let (me, r) = (self.me.clone(), row.clone());
         let src = glib::timeout_add_local_once(Duration::from_millis(150), move || {

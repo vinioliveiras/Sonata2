@@ -609,7 +609,7 @@ impl Sidebar {
     /// The disk's icon, crossfading to Eject while the pointer is on it; a
     /// click on it then ejects.
     fn eject_icon(&self, img: gtk::Widget, mount: gio::Mount) -> gtk::Widget {
-        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(EJECT_FADE_MS).valign(gtk::Align::Center).css_classes(["fs-eject-icon"]).tooltip_text(tr!("Eject")).build();
+        let stack = gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(sonata_ui::tokens::ms(EJECT_FADE_MS as f64)).valign(gtk::Align::Center).css_classes(["fs-eject-icon"]).tooltip_text(tr!("Eject")).build();
         stack.add_named(&img, Some("disk"));
         stack.add_named(&gtk::Image::builder().icon_name("media-eject-symbolic").pixel_size(16).css_classes(["fs-place"]).build(), Some("eject"));
         let hover = gtk::EventControllerMotion::new();
@@ -672,7 +672,7 @@ impl Sidebar {
         }
         sections.push(vec![Item::new(&tr!("Open Disk Utility"), || {
             if let Some(info) = sonata_ui::apps::lookup("io.github.vinioliveiras.sonata2.diskutil") {
-                let _ = info.launch(&[], None::<&gio::AppLaunchContext>);
+                let _ = sonata_ui::apps::launch(&info, &[], None);
             }
         })]);
         sonata_ui::menu::popup(row, sections, sonata_ui::menu::Options::at(x, y).passthrough());
