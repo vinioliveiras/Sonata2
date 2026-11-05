@@ -49,7 +49,7 @@ pub fn popup_at(widget: &impl IsA<gtk::Widget>, sections: Vec<Vec<Item>>, at: (f
 /// The file behind an app: its real executable (AppImage, script,
 /// binary), or its .desktop file for Flatpak/Snap and unresolvable commands.
 pub fn app_file(info: &gio::DesktopAppInfo) -> Option<PathBuf> {
-    let exe = info.executable();
+    let exe = sonata_ui::apps::executable(info);
     let base = exe.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     if !["flatpak", "snap", "env", "sh", "bash"].contains(&base.as_str()) && !exe.as_os_str().is_empty() {
         let path = if exe.is_absolute() { Some(exe.clone()) } else { glib::find_program_in_path(&exe) };

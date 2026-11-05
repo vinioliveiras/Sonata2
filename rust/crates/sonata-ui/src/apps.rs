@@ -5,6 +5,7 @@
 
 use gtk::gio;
 use gtk::glib;
+use gtk::prelude::*;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -70,4 +71,35 @@ pub fn lookup(desktop_id: &str) -> Option<gio::DesktopAppInfo> {
 /// The .desktop file behind an app.
 pub fn app_filename(info: &gio::DesktopAppInfo) -> Option<PathBuf> {
     info.filename()
+}
+
+/// The program an app's Exec starts (empty without one), as
+/// g_app_info_get_executable gives it. gio's AppInfo::executable() reads
+/// that as a path and crashes on the NULL of an entry with no Exec= (a
+/// D-Bus activated one): Task Manager closed itself as it opened, and the
+/// Dock and Launchpad went down the same way (Vini).
+pub fn executable(info: &impl IsA<gio::AppInfo>) -> PathBuf {
+    let cmd = info.as_ref().commandline().map(|c| c.to_string_lossy().into_owned()).unwrap_or_default();
+    let first = glib::shell_parse_argv(cmd.as_str()).ok().and_then(|a| a.into_iter().next()).map(|a| a.to_string_lossy().into_owned()).unwrap_or_default();
+    PathBuf::from(first)
+}
+
+#[cfg(test)]
+mod exec_tests {
+    use super::*;
+
+    /// Vini: Task Manager didn't open in the Rust session -- an app entry
+    /// without Exec= crashed it (AppInfo::executable() on its NULL).
+    #[test]
+    fn test_task_manager_did_not_open() {
+        let entry = |text: &str| {
+            let kf = glib::KeyFile::new();
+            kf.load_from_data(text, glib::KeyFileFlags::NONE).unwrap();
+            gio::DesktopAppInfo::from_keyfile(&kf).expect("an entry")
+        };
+        let info = entry("[Desktop Entry]\nType=Application\nName=D-Bus only\nDBusActivatable=true\n");
+        assert_eq!(executable(&info), PathBuf::new());
+        let info = entry("[Desktop Entry]\nType=Application\nName=Files\nExec=\"/bin/sh\" -c true %U\n");
+        assert_eq!(executable(&info), PathBuf::from("/bin/sh"));
+    }
 }

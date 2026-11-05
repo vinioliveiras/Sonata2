@@ -216,7 +216,7 @@ pub fn names(app_id: &str, executable: &str, o: Option<&Owner>) -> Vec<String> {
 /// storage.
 pub fn data_dirs(info: &gio::AppInfo, o: Option<&Owner>) -> Vec<PathBuf> {
     let id = info.id().map(|s| s.to_string()).unwrap_or_default();
-    let exe = info.executable().to_string_lossy().into_owned();
+    let exe = sonata_ui::apps::executable(info).to_string_lossy().into_owned();
     let home = glib::home_dir();
     let state = std::env::var_os("XDG_STATE_HOME").filter(|s| !s.is_empty()).map(PathBuf::from).unwrap_or_else(|| home.join(".local/state"));
     let bases = [glib::user_config_dir(), glib::user_data_dir(), glib::user_cache_dir(), state];

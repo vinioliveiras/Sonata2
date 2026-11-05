@@ -19,3 +19,4 @@ sonata-config = { workspace = true, features = ["watch"] }
 sonata-desktop.workspace = true
 sonata-i18n.workspace = true
 sonata-session.workspace = true
+sonata-ui.workspace = true

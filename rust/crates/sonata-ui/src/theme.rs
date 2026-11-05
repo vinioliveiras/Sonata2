@@ -166,6 +166,18 @@ fn follow_color_scheme() {
     }
 }
 
+/// A window made without the application (About This Computer, a
+/// dialog's own window) is named after the program on Wayland, and every
+/// component is the one `sonata2-rs`: the Dock took About This Computer
+/// for the Assistant (Vini), the first entry running `sonata2-rs`. Each
+/// process is its component's app id instead, as __main__.py does.
+pub(crate) fn name_windows() {
+    use gtk::{gio, glib, prelude::*};
+    if let Some(id) = gio::Application::default().and_then(|a| a.application_id()) {
+        glib::set_prgname(Some(id.as_str()));
+    }
+}
+
 /// Install the provider once per process (idempotent), after the
 /// application started (a display exists).
 pub fn setup() {
@@ -176,6 +188,7 @@ pub fn setup() {
         eprintln!("sonata-ui: no display");
         return;
     };
+    name_windows();
     crate::icons::setup(); // Sonata's own icon theme, before any widget (as ui.setup does)
     let provider = gtk::CssProvider::new();
     gtk::style_context_add_provider_for_display(&display, &provider, PRIORITY);
@@ -212,4 +225,22 @@ pub fn rgba(token: &str) -> gtk::gdk::RGBA {
         .get(token)
         .and_then(|c| gtk::gdk::RGBA::parse(c.as_str()).ok())
         .unwrap_or(gtk::gdk::RGBA::BLACK)
+}
+
+#[cfg(test)]
+mod name_tests {
+    use gtk::{gio, glib, prelude::*};
+
+    /// Vini: About This Computer opened as the Assistant in the Dock -- a
+    /// window without the application was named `sonata2-rs`, which the
+    /// Dock matched to the Assistant's entry. It is named after the
+    /// component's app id now.
+    #[test]
+    fn test_about_opened_as_assistant() {
+        let app = gio::Application::new(Some("io.github.vinioliveiras.sonata2.topbar"), gio::ApplicationFlags::NON_UNIQUE);
+        app.set_default();
+        glib::set_prgname(Some("sonata2-rs"));
+        super::name_windows();
+        assert_eq!(glib::prgname().as_deref(), Some("io.github.vinioliveiras.sonata2.topbar"));
+    }
 }

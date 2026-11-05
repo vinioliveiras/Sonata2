@@ -67,6 +67,14 @@ cp -r "$REPO/sonata2/data/wallpapers" "$SHARE/sonata2-rs/wallpapers"
 # Wayfire's default config: Settings' shortcuts read their defaults from it
 mkdir -p "$SHARE/sonata2-rs/config"
 cp "$REPO/config/wayfire.ini" "$SHARE/sonata2-rs/config/wayfire.ini"
+# The icon themes are ~16,000 symlinks (one artwork, many names). A clone
+# made with core.symlinks=false holds them as small text files naming the
+# target, which GTK can't draw: Files, Terminal, Spotify... went invisible
+# in the Dock (Vini). Check them out as real links again.
+if [ -f "$REPO/sonata2/data/icons/Sonata-MacTahoe/apps/scalable/system-file-manager.svg" ] \
+    && [ ! -L "$REPO/sonata2/data/icons/Sonata-MacTahoe/apps/scalable/system-file-manager.svg" ]; then
+    git -C "$REPO" -c core.symlinks=true checkout -- sonata2/data/icons
+fi
 rm -rf "$SHARE/sonata2-rs/icons"
 ln -s "$REPO/sonata2/data/icons" "$SHARE/sonata2-rs/icons"
 # the desktop entries name this binary; on trial they are the "(Rust)" ones

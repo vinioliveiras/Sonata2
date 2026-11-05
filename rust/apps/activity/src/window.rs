@@ -57,7 +57,7 @@ pub fn icon_index() -> HashMap<String, AppIcon> {
         if let Some(wm) = info.downcast_ref::<gio::DesktopAppInfo>().and_then(|d| d.startup_wm_class()) {
             strong.push(wm.to_string());
         }
-        let exe = info.executable();
+        let exe = sonata_ui::apps::executable(&info);
         // a shortcut that only asks another program to start something (a
         // Steam game: "steam steam://rungameid/...") doesn't own that
         // program's processes: Steam itself showed as a game

@@ -1166,7 +1166,7 @@ impl Pad {
             .filter_map(|k| {
                 let v = installed.get(k)?;
                 let keywords = v.keywords().iter().map(|k| k.to_string()).collect::<Vec<_>>().join(" ");
-                let exec = v.executable().display().to_string();
+                let exec = sonata_ui::apps::executable(v).display().to_string();
                 let extra = [v.generic_name().map(|s| s.to_string()).unwrap_or_default(), keywords, exec].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
                 Some((k.clone(), (v.display_name().to_string(), extra)))
             })

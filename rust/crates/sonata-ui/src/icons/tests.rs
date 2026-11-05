@@ -139,3 +139,15 @@ fn generated_icons_are_named_as_the_python_ones() {
 fn the_bundled_themes_are_found() {
     assert!(icons_dir().join("Sonata").join("index.theme").exists(), "{}", icons_dir().display());
 }
+
+/// Vini, in the Rust session: Files, Terminal, Spotify and GitHub Desktop
+/// were invisible in the Dock. Their artwork is a symlink in the theme
+/// (system-file-manager.svg -> file-manager.svg), and a clone with
+/// core.symlinks=false had them as text files naming the target. Every
+/// icon the themes ship is a picture GTK can read.
+#[test]
+fn test_dock_icons_were_invisible() {
+    let link = icons_dir().join("Sonata-MacTahoe/apps/scalable/system-file-manager.svg");
+    let text = std::fs::read_to_string(&link).unwrap_or_default();
+    assert!(text.contains("<svg"), "{} is not a picture: {:?}", link.display(), &text[..text.len().min(40)]);
+}
