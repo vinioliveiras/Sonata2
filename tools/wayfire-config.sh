@@ -62,8 +62,16 @@ if has_plugin autostart; then
     done
     sed -i -E "0,/^plugins *=.*/ s//plugins =$keep/" "$out"
 fi
+# The Rust session ("Sonata (Rust preview)") runs the two Python steps below
+# in Rust (sonata2-rs wayfire-config; the same bytes, its golden test runs
+# both): its login needs no python3. Python when that build isn't there.
+rs=""
+if [ "${SONATA2_RS_SESSION:-}" = 1 ] && command -v sonata2-rs >/dev/null; then rs=1; fi
 # Window frame (corners, traffic lights) from tokens.FRAME -- one place for
 # every window: the title bars Wayfire draws follow Sonata's own windows.
+if [ -n "$rs" ]; then
+    sonata2-rs wayfire-config frame "$out" "$here" || true
+else
 PYTHONPATH="$here" python3 - "$out" <<'PY' || true
 import importlib.util, os, sys
 from sonata2 import wfconfig
@@ -97,6 +105,7 @@ if not own:
     here = os.environ["PYTHONPATH"]
     wfconfig.wayfire_set("core", "xwayland_startup_script", f"env PYTHONPATH={here} python3 -m sonata2.xsettings")
 PY
+fi
 over="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire-overrides.ini"
 # Keyboard: the system's layout (localectl) until one is picked in Settings.
 if ! grep -qs '^xkb_layout' "$over" && command -v localectl >/dev/null; then
@@ -108,7 +117,9 @@ if ! grep -qs '^xkb_layout' "$over" && command -v localectl >/dev/null; then
         sed -i "0,/^\[input\]/s//[input]\nxkb_layout = $lay${var:+\nxkb_variant = $var}${mdl:+\nxkb_model = $mdl}/" "$out"
     fi
 fi
-if [ -f "$over" ]; then
+if [ -f "$over" ] && [ -n "$rs" ]; then
+    sonata2-rs wayfire-config overrides "$out" "$over"
+elif [ -f "$over" ]; then
     PYTHONPATH="$here" python3 - "$out" "$over" <<'PY'
 import sys
 from sonata2 import wfconfig as system

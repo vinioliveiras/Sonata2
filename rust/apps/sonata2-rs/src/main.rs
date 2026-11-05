@@ -65,7 +65,7 @@ mod procenv;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings|gallery> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings|wayfire-config|gallery> [--dark|--light]";
 
 /// autostart.py's setup steps before the login items, each on its own
 /// (one failing never keeps the rest, or the apps, from starting).
@@ -82,7 +82,7 @@ fn login_steps() {
 }
 
 /// The commands that run and return, or run without GTK: no start-up trace.
-const NO_WINDOWS: &[&str] = &["key", "screenshot", "keep", "keep-all", "autostart", "xsettings", "prefs", "desktop-files", "restart", "doctor", "lock-wait", "keyring", "show-desktop"];
+const NO_WINDOWS: &[&str] = &["key", "screenshot", "keep", "keep-all", "autostart", "xsettings", "wayfire-config", "prefs", "desktop-files", "restart", "doctor", "lock-wait", "keyring", "show-desktop"];
 
 /// The components USAGE lists (the ones this binary dispatches).
 fn handles(component: &str) -> bool {
@@ -186,6 +186,10 @@ fn main() -> ExitCode {
         }
         // XWayland's startup script (tools/wayfire-config.sh): X11 apps in Sonata's look
         "xsettings" => ExitCode::from(sonata_system::xsettings::run() as u8),
+        // tools/wayfire-config.sh at every login of the Rust session: its
+        // Python steps (the window frame, the migrations, the overrides), so
+        // that session's login needs no python3
+        "wayfire-config" => ExitCode::from(sonata_backend::wfconfig::login_main(&args[1..]) as u8),
         "clipboard" => {
             let code = sonata_clipboard::run_clipboard(&args[1..]);
             ExitCode::from(code.value() as u8)

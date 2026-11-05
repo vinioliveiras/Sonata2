@@ -729,4 +729,9 @@ Rust ones; tools/sonata-session passes SONATA2_RS_SESSION and
 SONATA2_RS_SIDE_BY_SIDE to D-Bus activation (empty in a Python session),
 and the XWayland start-up script becomes `sonata2-rs xsettings`. The
 login's setup steps (title bars, compose, GTK style, keyring) run in
-Rust there (`autostart_with`).
+Rust there (`autostart_with`). So do tools/wayfire-config.sh's two Python steps
+(`sonata2-rs wayfire-config frame|overrides`, sonata-backend wfconfig.rs:
+the window frame, grid off with sonata-resize, the Mission Control
+migration, the XWayland script, the overrides without the button keys),
+byte for byte the Python's (tests/wfconfig_golden.rs runs the script's own
+heredocs next to them); Python only when sonata2-rs isn't on the PATH.

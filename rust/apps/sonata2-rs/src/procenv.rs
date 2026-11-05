@@ -6,7 +6,7 @@
 use serde_json::{json, Value};
 
 /// The commands __main__.py runs before any of this (no GTK: nothing to set).
-const EARLY: &[&str] = &["keep", "keep-all", "key", "screenshot", "doctor", "restart", "keyring", "share-picker", "show-desktop", "webapp", "lock-wait", "self-update", "--handles", "-h", "--help", "help", "desktop-files", "prefs", "xsettings"];
+const EARLY: &[&str] = &["keep", "keep-all", "key", "screenshot", "doctor", "restart", "keyring", "share-picker", "show-desktop", "webapp", "lock-wait", "self-update", "--handles", "-h", "--help", "help", "desktop-files", "prefs", "xsettings", "wayfire-config"];
 
 /// The shell reads Sonata's settings itself (prefs): it never waits on the
 /// settings portal, even while that is still starting (__main__.SHELL_NO_PORTAL;
