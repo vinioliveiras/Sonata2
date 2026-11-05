@@ -21,8 +21,10 @@ pub mod menu;
 pub mod panel;
 pub mod progress;
 pub mod theme;
+pub mod timer;
 pub mod tokens;
 pub mod transition;
 pub mod window;
 
+pub use timer::cancel;
 pub use theme::{force_appearance, glass, is_dark, on_buttons_change, on_change, register, register_with, rgba, setup, values};

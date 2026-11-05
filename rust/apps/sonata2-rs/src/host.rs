@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn test_reminder_added_after_login_never_rang() {
         let src = include_str!("host.rs");
-        let services = &src[src.find("fn start_services").unwrap()..];
+        let services = &src[src.find("fn start_services").unwrap()..src.find("#[cfg(test)]").unwrap()];
         assert!(services.contains("ReminderWatch::start()"));
         assert!(!services.contains("store::Store::new()"));
     }
