@@ -201,3 +201,27 @@ class LockByDefaultTest(unittest.TestCase):
         cmd = I.command(I.DEFAULTS, 600)
         self.assertIn("before-sleep", cmd)
         self.assertEqual(cmd[cmd.index(I.LOCK) - 1], "600")
+
+
+class TiedTest(unittest.TestCase):
+    def test_swayidle_left_behind_on_restart(self):
+        """After a menu bar restart two swayidle ran: the old menu bar's was
+        left behind. It ends with whoever started it (a thread here:
+        PDEATHSIG follows the thread that forked)."""
+        import threading
+        import time
+        from sonata2.shell import idlelock as IL
+        got = {}
+        t = threading.Thread(target=lambda: got.setdefault("p", IL.spawn_tied(["sleep", "30"])))
+        t.start()
+        t.join()
+        p = got["p"]
+        for _ in range(50):
+            if p.poll() is not None:
+                break
+            time.sleep(0.02)
+        alive = p.poll() is None
+        if alive:
+            p.kill()
+        p.wait()
+        self.assertFalse(alive, "still running once its starter was gone")

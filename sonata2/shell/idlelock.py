@@ -17,6 +17,24 @@ import time
 
 from .. import config
 
+
+def _die_with_parent() -> None:
+    """In the child, before exec: SIGTERM when the process that started it
+    ends (prctl PR_SET_PDEATHSIG)."""
+    import ctypes
+    try:
+        ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM)    # 1: PR_SET_PDEATHSIG
+    except (OSError, AttributeError):
+        pass
+
+
+def spawn_tied(cmd):
+    """swayidle, ending with the menu bar: a restart stops the menu bar with
+    SIGTERM (no shutdown runs), and its swayidle stayed behind next to the
+    new one's -- two timers darkening and locking (Vini)."""
+    return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, preexec_fn=_die_with_parent)
+
 # lock_after: seconds after the display turns off (0 = immediately), -1 = never.
 # On by default (Vini): locked when the display turns off and before sleep, like macOS
 DEFAULTS = {"lock_after": 0, "lock_before_sleep": True,
@@ -231,8 +249,7 @@ class IdleLock:
         self.cmd = cmd
         if cmd:
             try:
-                self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                             stderr=subprocess.DEVNULL)
+                self.proc = spawn_tied(cmd)
             except OSError:
                 self.proc = None
 

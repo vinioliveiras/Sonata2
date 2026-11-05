@@ -149,6 +149,23 @@ fn displays_dark_with(watch: &dyn IdleWatch, on: bool, backlight: bool, dim: &dy
     sonata_shell::idlewatch::displays_dark_with(&|power, only| watch.displays(power, only), on, backlight, dim);
 }
 
+/// swayidle, ending with the menu bar: a restart stops the menu bar with
+/// SIGTERM (no shutdown runs), and its swayidle stayed behind next to the
+/// new one's -- two timers darkening and locking (seen in Vini's session).
+pub fn spawn_tied(cmd: &[String]) -> Option<Child> {
+    use std::os::unix::process::CommandExt;
+    let mut c = Command::new(&cmd[0]);
+    c.args(&cmd[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    // SAFETY: prctl is async-signal-safe, the only call between fork and exec
+    unsafe {
+        c.pre_exec(|| {
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+            Ok(())
+        });
+    }
+    c.spawn().ok()
+}
+
 /// What IdleLock needs from parts ported elsewhere.
 pub struct Hooks {
     /// The compositor never powers the display off itself
@@ -252,7 +269,7 @@ impl IdleLock {
         self.stop();
         let mut st = self.st.borrow_mut();
         if !cmd.is_empty() {
-            st.proc = Command::new(&cmd[0]).args(&cmd[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().ok();
+            st.proc = spawn_tied(&cmd);
         }
         st.cmd = Some(cmd);
     }
@@ -291,6 +308,27 @@ mod tests {
     }
 
     const LOCK: &str = "sonata2-rs lock-wait";
+
+    /// Vini's session: after a menu bar restart two swayidle ran -- the
+    /// old menu bar's was left behind. It ends with whoever started it
+    /// (here a thread that ends: PDEATHSIG follows the spawning thread).
+    #[test]
+    fn test_swayidle_left_behind_on_restart() {
+        let cmd: Vec<String> = ["sleep", "30"].map(String::from).to_vec();
+        let mut child = std::thread::spawn(move || spawn_tied(&cmd).expect("sleep runs")).join().unwrap();
+        let mut gone = None;
+        for _ in 0..50 {
+            if let Ok(Some(st)) = child.try_wait() {
+                gone = Some(st);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        if gone.is_none() {
+            let _ = child.kill();
+        }
+        assert!(gone.is_some(), "still running once its starter was gone");
+    }
 
     #[test]
     fn keyboard_light_follows_the_display() {
