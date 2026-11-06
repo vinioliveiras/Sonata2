@@ -257,6 +257,23 @@ mod tests {
         assert!(!keep(Some("google-chrome"), 1, None, 1)); // a window focused: follow it
     }
 
+    /// Vini: with Chrome in front, About in its menu showed Files' About
+    /// (and the other items acted on Files) -- the menus asked for the
+    /// focused window, and with the bar holding the focus there was none.
+    #[test]
+    fn test_chrome_menu_acted_on_files() {
+        use crate::seams::Toplevel;
+        let t = |id, app: &str, act| Toplevel { id, app_id: app.into(), title: String::new(), activated: act, minimized: false, maximized: false };
+        let tops = vec![t(1, "google-chrome", false), t(2, "google-chrome", false), t(3, "org.other.App", false)];
+        let (key, wins) = crate::bar::shown_from(&tops, Some(2));
+        assert_eq!(key.as_deref(), Some("google-chrome"));
+        assert_eq!(wins.iter().filter(|w| w.activated).map(|w| w.id).collect::<Vec<_>>(), vec![2]); // the one in front
+        assert_eq!(crate::bar::shown_from(&tops, None).0, None); // nothing shown: the desktop's (Files')
+        assert_eq!(crate::bar::shown_from(&tops, Some(9)).0, None); // that window is gone
+        let focused = vec![t(1, "google-chrome", false), t(3, "org.other.App", true)];
+        assert_eq!(crate::bar::shown_from(&focused, Some(1)).0.as_deref(), Some("org.other.App")); // a focused window wins
+    }
+
     #[test]
     fn test_wifi_panel_opened_off_to_the_right() {
         assert!(!crate::bar::STATUS_ALIGN_START);

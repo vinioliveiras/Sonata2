@@ -314,6 +314,9 @@ pub struct Bar {
     windows_id: Cell<Option<u64>>,
     icons_src: RefCell<Option<glib::SourceId>>,
     icons_sig: RefCell<Option<IconsSig>>,
+    /// The window whose app the bar shows (its id), kept while the focus
+    /// is on a surface of ours (keeps_front_app): the menus act on it.
+    front: Cell<Option<i64>>,
     theme_src: RefCell<Option<glib::SourceId>>,
     cfg_mon: RefCell<Vec<gio::FileMonitor>>,
 }
@@ -370,6 +373,21 @@ fn set_icon(btn: &gtk::Button, name: &str) {
             i.set_icon_name(Some(name));
         }
     }
+}
+
+/// (the app's key, its windows) of the focused window, or, with none
+/// focused, of the window `front` the bar still shows -- marked activated
+/// so the menus act on it. (None, []) when neither.
+pub fn shown_from(tops: &[Toplevel], front: Option<i64>) -> (Option<String>, Vec<Toplevel>) {
+    let key_of = |t: &Toplevel| sonata_desktop::appmatch::match_app_id(&t.app_id).unwrap_or_else(|| t.app_id.clone());
+    let act = tops.iter().find(|t| t.activated).or_else(|| front.and_then(|id| tops.iter().find(|t| t.id == id)));
+    let Some(act) = act else { return (None, vec![]) };
+    let (key, id) = (key_of(act), act.id);
+    let wins = tops.iter().filter(|t| key_of(t) == key).cloned().map(|mut t| {
+        t.activated = t.id == id;
+        t
+    }).collect();
+    (Some(key), wins)
 }
 
 /// Whether the app name and menus stay as they are when no window is
@@ -589,6 +607,7 @@ impl Bar {
             windows_id: Cell::new(None),
             icons_src: RefCell::default(),
             icons_sig: RefCell::default(),
+            front: Cell::new(None),
             theme_src: RefCell::default(),
             cfg_mon: RefCell::default(),
         });
@@ -955,6 +974,16 @@ impl Bar {
         (Some(key), wins)
     }
 
+    /// The app the bar shows and its windows, the one in front marked
+    /// activated -- what the app, File and Window menus act on. Asking only
+    /// for the focused window, a menu opened from the bar found none (the
+    /// bar has the focus) and acted on Files: Vini, About in Chrome's menu
+    /// showed Files' About.
+    pub fn shown(&self) -> (Option<String>, Vec<Toplevel>) {
+        let tops = self.services.windows.as_ref().map(|w| w.toplevels()).unwrap_or_default();
+        shown_from(&tops, self.front.get())
+    }
+
     /// App name + menus follow the focused app; on the desktop (nothing
     /// focused) they are Files' -- File, Go, Window -- like Finder's.
     fn active_changed(self: &Rc<Self>) {
@@ -973,6 +1002,7 @@ impl Bar {
         if keeps_front_app(key.as_deref(), self.open_menus.get(), focus.as_ref(), shown) {
             return; // a menu of ours took the focus: the app in front is still Chrome's...
         }
+        self.front.set(tops.iter().find(|t| t.activated).map(|t| t.id));
         self.go_btn.set_visible(key.is_none());
         match key {
             Some(key) => {
@@ -1048,7 +1078,7 @@ impl Bar {
     }
 
     fn app_menu(self: &Rc<Self>, btn: &gtk::Button) -> Option<gtk::Popover> {
-        let (key, wins) = self.active();
+        let (key, wins) = self.shown();
         let info = sonata_ui::apps::lookup(key.as_deref().unwrap_or("io.github.vinioliveiras.sonata2.files")); // desktop: Files, like Finder
         let name = info.as_ref().map(sonata_ui::apps::display_name).or(key.clone()).unwrap_or_else(|| tr!("Files"));
         let win = self.services.windows.clone();
@@ -1082,7 +1112,7 @@ impl Bar {
 
     /// File: the app's windows (apptabs: the app's own shortcuts); on the desktop, Files' own.
     fn file_menu(self: &Rc<Self>, btn: &gtk::Button) -> Option<gtk::Popover> {
-        let (key, wins) = self.active();
+        let (key, wins) = self.shown();
         let Some(key) = key else { return self.files_file_menu(btn) };
         let act = wins.iter().find(|t| t.activated).cloned();
         let app_id = act.as_ref().map_or(key, |t| t.app_id.clone());
@@ -1142,7 +1172,7 @@ impl Bar {
     }
 
     fn window_menu(self: &Rc<Self>, btn: &gtk::Button) -> Option<gtk::Popover> {
-        let (_key, wins) = self.active();
+        let (_key, wins) = self.shown();
         let act = wins.iter().find(|t| t.activated).cloned();
         let win = self.services.windows.clone();
         let (w1, w2, a1, a2) = (win.clone(), win.clone(), act.clone(), act.clone());
