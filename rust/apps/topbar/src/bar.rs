@@ -1283,11 +1283,7 @@ impl Bar {
     }
 
     pub fn set_volume(&self, v: f64) {
-        run_async(move || system::set_volume(Some(v as i64), Some(false)), |_| {
-            if let Some(b) = bars().first() {
-                b.poll();
-            }
-        });
+        set_output_volume(v);
     }
 
     // -- menus of the extras --------------------------------------------------------------------
@@ -1946,11 +1942,78 @@ thread_local! {
     static ART: RefCell<Vec<((String, i32), (gdk::Texture, bool))>> = RefCell::default();
 }
 
+/// The system's output volume (Control Center's and the Sound menu's
+/// slider, the Now Playing panel's), the menu bar's icon following.
+pub fn set_output_volume(v: f64) {
+    run_async(move || system::set_volume(Some(v as i64), Some(false)), |_| {
+        if let Some(b) = bars().first() {
+            b.poll();
+        }
+    });
+}
+
+/// What the Now Playing square shows.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Art {
+    /// the player's art (mpris:artUrl)
+    Cover(String),
+    /// no art: the icon of the app playing (this bus name's)
+    App(String),
+    /// nothing playing: a small note
+    Note,
+}
+
+/// Vini: Netflix in Chrome had an empty square with a note -- Chrome sends
+/// no art. A player without art shows its app's icon; the note only when
+/// nothing plays.
+pub fn art_choice(active: bool, url: &str, bus_name: &str) -> Art {
+    match (active, url.is_empty(), bus_name.is_empty()) {
+        (false, ..) => Art::Note,
+        (true, false, _) => Art::Cover(url.to_string()),
+        (true, true, false) => Art::App(bus_name.to_string()),
+        (true, true, true) => Art::Note,
+    }
+}
+
+fn show_note(image: &gtk::Image, size: i32) {
+    image.set_icon_name(Some("sonata-now-playing-symbolic"));
+    image.set_pixel_size(size / 2); // a small note in the empty square
+}
+
+/// The square's picture: the art, the playing app's icon, or the note.
+/// `shown`: what the square should show by now -- an app found after the
+/// player changed again is dropped.
+fn show_art(art: &Art, image: &gtk::Image, size: i32, shown: &Rc<RefCell<Option<Art>>>) {
+    match art {
+        Art::Note => show_note(image, size),
+        Art::Cover(url) => load_art(url, image, size),
+        Art::App(bus) => {
+            image.set_paintable(gdk::Paintable::NONE); // empty while found: no note flashing first
+            let (b, img, shown, want) = (bus.clone(), image.clone(), shown.clone(), art.clone());
+            // D-Bus calls, /proc and Wayfire's views: in a thread
+            run_async(
+                move || crate::mpris::app_of_player(&b),
+                move |did| {
+                    if shown.borrow().as_ref() != Some(&want) {
+                        return;
+                    }
+                    match did.and_then(|d| sonata_ui::apps::lookup(&d)) {
+                        Some(info) => {
+                            img.set_from_gicon(&sonata_ui::icons::app_icon(info.upcast_ref()));
+                            img.set_pixel_size(art_size(size, true));
+                        }
+                        None => show_note(&img, size),
+                    }
+                },
+            );
+        }
+    }
+}
+
 /// Album art (mpris:artUrl: file:// or http[s]://) into `image`.
 fn load_art(url: &str, image: &gtk::Image, size: i32) {
     if url.is_empty() {
-        image.set_icon_name(Some("sonata-now-playing-symbolic"));
-        image.set_pixel_size(size / 2); // a small note in the empty square
+        show_note(image, size);
         return;
     }
     let key = (url.to_string(), size);
@@ -2040,7 +2103,7 @@ pub fn now_playing_module(p: &crate::mpris::Players, header: bool) -> gtk::Box {
         row.append(&b);
         btns.push(b);
     }
-    let shown_art: Rc<RefCell<Option<String>>> = Rc::default();
+    let shown_art: Rc<RefCell<Option<Art>>> = Rc::default();
     let pl = p.clone();
     let update: Rc<dyn Fn()> = Rc::new(move || {
         let on = pl.active();
@@ -2051,10 +2114,10 @@ pub fn now_playing_module(p: &crate::mpris::Players, header: bool) -> gtk::Box {
         for b in &btns {
             b.set_sensitive(on);
         }
-        let url = if on { pl.art() } else { String::new() };
-        if shown_art.borrow().as_ref() != Some(&url) {
-            shown_art.replace(Some(url.clone()));
-            load_art(&url, &art, 36);
+        let want = art_choice(on, &pl.art(), &pl.bus_name());
+        if shown_art.borrow().as_ref() != Some(&want) {
+            shown_art.replace(Some(want.clone()));
+            show_art(&want, &art, 36, &shown_art);
         }
     });
     update();
@@ -2076,7 +2139,26 @@ pub fn now_playing_module(p: &crate::mpris::Players, header: bool) -> gtk::Box {
         }
     });
     bx.append(&row);
+    if header {
+        // the menu bar's panel: the system volume under the player (Vini),
+        // Control Center's Sound slider; Control Center has its own Sound
+        bx.append(&volume_slider());
+    }
     kit::module(&[bx.upcast_ref()], 8)
+}
+
+/// Control Center's Sound slider (its Output button too), set to the
+/// system's volume once read.
+fn volume_slider() -> gtk::Widget {
+    let out_btn = crate::controls::round_button("sonata-audio-output-symbolic", &tr!("Output"), |b| device_menu(b, &tr!("Output"), false));
+    let (bx, slider) = crate::controls::slider_with_icon(|v| crate::controls::speaker_icon(v).to_string(), crate::cc::level("vol"), set_output_volume, true, Some(&out_btn));
+    crate::controls::volume_feedback(&slider);
+    run_async(system::volume, move |v| {
+        if let Some((v, _)) = v {
+            slider.show_value(v as f64);
+        }
+    });
+    bx
 }
 
 #[cfg(test)]
@@ -2100,6 +2182,19 @@ mod art_tests {
         assert_eq!(art_size(36, corners_clear(&cover)), 36);
         let jpeg = Pixbuf::new(Colorspace::Rgb, false, 8, 64, 64).unwrap(); // no alpha at all
         assert!(!corners_clear(&jpeg));
+    }
+
+    /// Vini: Netflix in Chrome showed an empty square with a music note --
+    /// Chrome sends no art. A player without art gets its app's icon (drawn
+    /// at the icon size); the note is left for nothing playing.
+    #[test]
+    fn test_empty_square_for_chrome_without_art() {
+        let chrome = "org.mpris.MediaPlayer2.chromium.instance7754";
+        assert_eq!(art_choice(true, "", chrome), Art::App(chrome.into()));
+        assert_eq!(art_choice(true, "file:///a.png", chrome), Art::Cover("file:///a.png".into()));
+        assert_eq!(art_choice(false, "", ""), Art::Note);
+        assert_eq!(art_choice(false, "file:///a.png", chrome), Art::Note);
+        assert_eq!(art_size(36, true), 24);
     }
 }
 

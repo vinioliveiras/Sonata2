@@ -89,6 +89,42 @@ pub fn art_of(meta: Option<&Variant>) -> String {
     meta_value(meta, "mpris:artUrl").and_then(|v| v.str().map(str::to_string)).unwrap_or_default()
 }
 
+/// The app playing, as a desktop id (no .desktop), best clue first: the
+/// DesktopEntry the player names; the app whose window its process has
+/// (Chrome names none and calls itself "Chrome" on the bus name
+/// "chromium": only its window, "Google-chrome", says which app it is);
+/// its Identity; its bus name's app part. `entry`: a name -> desktop id
+/// (appmatch, as the Dock matches windows).
+pub fn player_app(desktop_entry: &str, window_app: Option<&str>, identity: &str, bus_name: &str, entry: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    let bus_app = bus_name.strip_prefix(PREFIX).and_then(|r| r.split('.').next()).unwrap_or("");
+    [desktop_entry, window_app.unwrap_or(""), identity, bus_app].into_iter().filter(|n| !n.is_empty()).find_map(entry)
+}
+
+/// player_app for a bus name, read live: the player's own properties
+/// (Identity, DesktopEntry: org.mpris.MediaPlayer2's, not the Player
+/// interface the proxy follows), the process owning the name and that
+/// process's window (Wayfire). Blocking: off the main thread.
+pub fn app_of_player(bus_name: &str) -> Option<String> {
+    if bus_name.is_empty() {
+        return None;
+    }
+    let bus = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).ok()?;
+    let call = |dest: &str, path: &str, iface: &str, method: &str, args: Variant| bus.call_sync(Some(dest), path, iface, method, Some(&args), None, gio::DBusCallFlags::NONE, 1000, gio::Cancellable::NONE).ok();
+    let root = |name: &str| {
+        call(bus_name, PATH, "org.freedesktop.DBus.Properties", "Get", ("org.mpris.MediaPlayer2", name).to_variant())
+            .and_then(|r| r.child_value(0).as_variant())
+            .and_then(|v| v.str().map(str::to_string))
+            .unwrap_or_default()
+    };
+    let (entry, identity) = (root("DesktopEntry"), root("Identity"));
+    let pid = call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetConnectionUnixProcessID", (bus_name,).to_variant()).and_then(|r| r.get::<(u32,)>()).map_or(0, |(p,)| p as i64);
+    let window = match sonata_system::mixer::whose(pid, None, "/proc") {
+        Some(("app", app_id)) => Some(app_id),
+        _ => None,
+    };
+    player_app(&entry, window.as_deref(), &identity, bus_name, &|n| sonata_desktop::appmatch::match_app_id(n))
+}
+
 impl Players {
     fn new() -> Self {
         let bus = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).ok();
@@ -200,6 +236,11 @@ impl Players {
         self.0.proxy.borrow().as_ref().and_then(|p| p.name()).map(|n| app_of(&n)).unwrap_or_default()
     }
 
+    /// The player's bus name, "" with no player.
+    pub fn bus_name(&self) -> String {
+        self.0.proxy.borrow().as_ref().and_then(|p| p.name()).map(|n| n.to_string()).unwrap_or_default()
+    }
+
     /// PlayPause, Next, Previous...
     pub fn call(&self, method: &str) {
         if let Some(p) = self.0.proxy.borrow().as_ref() {
@@ -252,6 +293,28 @@ mod tests {
     fn test_artist_as_plain_string() {
         let m = meta(&[("xesam:artist", "Muse".to_variant())]);
         assert_eq!(artist_of(Some(&m)), "Muse");
+    }
+
+    /// Vini: Netflix in Chrome showed an empty square with a note in Now
+    /// Playing -- Chrome sends no art, names no DesktopEntry and calls
+    /// itself "Chrome" on the bus name "chromium". Its window
+    /// ("Google-chrome") finds the app, before the bus name's Chromium.
+    #[test]
+    fn test_no_chrome_icon_in_now_playing() {
+        let entry = |n: &str| match n.to_lowercase().as_str() {
+            "google-chrome" => Some("google-chrome".to_string()),
+            "chromium" => Some("chromium".to_string()),
+            "spotify" => Some("spotify-launcher".to_string()),
+            _ => None,
+        };
+        let chrome = "org.mpris.MediaPlayer2.chromium.instance7754";
+        assert_eq!(player_app("", Some("Google-chrome"), "Chrome", chrome, &entry).as_deref(), Some("google-chrome"));
+        // a DesktopEntry named wins; without a window, the Identity, then the bus name
+        assert_eq!(player_app("spotify", Some("Google-chrome"), "", chrome, &entry).as_deref(), Some("spotify-launcher"));
+        assert_eq!(player_app("", None, "Spotify", "org.mpris.MediaPlayer2.x", &entry).as_deref(), Some("spotify-launcher"));
+        assert_eq!(player_app("", None, "Chrome", chrome, &entry).as_deref(), Some("chromium"));
+        assert_eq!(player_app("", None, "Mystery", "org.mpris.MediaPlayer2.mystery", &entry), None);
+        assert_eq!(app_of_player(""), None);
     }
 
     #[test]
