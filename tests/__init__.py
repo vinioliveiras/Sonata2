@@ -31,6 +31,9 @@ def _dir(*parts) -> str:
     return path
 
 
+SESSION_VARS = ("SONATA2_LAUNCHER", "SONATA2_RS_SESSION", "SONATA2_RS_SIDE_BY_SIDE")
+
+
 def _isolate() -> None:
     env = os.environ
     home = _dir("home")
@@ -55,6 +58,13 @@ def _isolate() -> None:
     env["XDG_RUNTIME_DIR"] = runtime
     env.pop("WAYFIRE_SOCKET", None)
     env.pop("SWAYSOCK", None)
+    # the session's launcher and its Rust switches: a test that set a
+    # wallpaper ran restart_sonata through the real ~/.local/bin/sonata2,
+    # which handed it to `sonata2-rs restart` -- it finds its processes in
+    # /proc, whoever's they are, and stopped Vini's wallpaper (the desktop
+    # went grey, 2026-11-06)
+    for name in SESSION_VARS:
+        env.pop(name, None)
     _private_bus()
 
 
