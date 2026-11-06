@@ -26,12 +26,16 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 pub const COLS: i32 = 4;
-pub const SPACING: i32 = 8;
+/// The gap between modules, and Control Center's border around them: 12,
+/// as macOS's measured (Vini's photo: border = gap, ~3.4 % of the width --
+/// at 8 they read as cramped).
+pub const SPACING: i32 = 12;
 /// One grid row: every module is a whole number of these, always.
 pub const UNIT_H: i32 = 56;
 /// Control Center's width from the display's.
-pub const WIDTH_MIN: i32 = 344;
-pub const WIDTH_MAX: i32 = 400;
+/// (12 wider than at an 8 px gap: the modules keep their size)
+pub const WIDTH_MIN: i32 = 356;
+pub const WIDTH_MAX: i32 = 412;
 pub const WIDTH_SHARE: f64 = 0.18;
 /// Press and hold before edit mode starts (ui/edit.py).
 pub const HOLD_MS: f64 = 800.0;

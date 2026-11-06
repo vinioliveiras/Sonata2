@@ -85,11 +85,11 @@ pub const WIDGET_W: i32 = 340;
 /// (its own padding and the body's), as macOS's Control Center -- Vini,
 /// with a photo of it: 16 px outside and between there; ours had 10
 /// outside, 6 between. Control Center's own (ccgrid::SPACING)
-pub const GAP: i32 = 8;
+pub const GAP: i32 = 12;
 /// the widget's padding (gamebar.py's gb_pad): around its header too
 pub const WIDGET_PAD: i32 = 6;
 /// the body's, at the sides and bottom (gb_body): WIDGET_PAD + BODY_PAD = GAP
-pub const BODY_PAD: i32 = 2;
+pub const BODY_PAD: i32 = 6;
 /// the content's width inside a widget (its padding and the body's): long
 /// text wraps or ellipsizes, never widens a widget
 pub const WIDGET_INNER: i32 = WIDGET_W - 2 * WIDGET_PAD - 2 * BODY_PAD;
@@ -1839,8 +1839,8 @@ mod tests {
         let blocks = sonata_ui::css::blocks("shell/gamebar.py");
         assert!(blocks.iter().any(|(_, css, _)| css.contains("%(dim)s")));
         assert_eq!(DIM.to_string(), "0.45");
-        assert_eq!(WIDGET_INNER, 324);
-        assert_eq!(PERF_CELL, (158, 92));
+        assert_eq!(WIDGET_INNER, 316);
+        assert_eq!(PERF_CELL, (152, 92));
     }
 
     /// Vini, with a photo of macOS's Control Center (16 px outside its
@@ -1855,6 +1855,6 @@ mod tests {
         assert_eq!(local.get("gb_pad"), Some(&WIDGET_PAD.to_string()));
         assert_eq!(local.get("gb_body"), Some(&BODY_PAD.to_string()));
         assert_eq!(WIDGET_PAD + BODY_PAD, GAP);
-        assert_eq!(GAP, 8); // Control Center's (topbar's ccgrid::SPACING)
+        assert_eq!(GAP, 12); // Control Center's (topbar's ccgrid::SPACING)
     }
 }
