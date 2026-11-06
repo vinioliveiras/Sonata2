@@ -463,7 +463,7 @@ mod align_tests {
     /// hang from the icon's left edge. Its offset is set before it shows.
     #[test]
     fn test_panel_jumped_to_the_left_edge_after_opening() {
-        if (gtk::is_initialized() && !gtk::is_initialized_main_thread()) || gtk::init().is_err() {
+        if (gtk::is_initialized() && !gtk::is_initialized_main_thread()) || !crate::gtk_for_tests() {
             return; // (no display, or GTK is another test thread's)
         }
         let win = gtk::Window::new();

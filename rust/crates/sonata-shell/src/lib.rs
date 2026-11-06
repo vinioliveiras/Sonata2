@@ -25,13 +25,16 @@ pub mod wallpaper;
 /// (gdk_display_manager_get before gtk_init) -- every later test lost.
 #[cfg(test)]
 pub(crate) fn gtk_for_tests() -> bool {
-    use std::sync::atomic::{AtomicU8, Ordering};
-    static STATE: AtomicU8 = AtomicU8::new(0); // 0 untried, 1 ok, 2 no display
-    match STATE.load(Ordering::SeqCst) {
-        2 => false,
-        _ => {
+    // (one attempt, under a lock: the tests run on several threads, and two
+    // gtk::init at once crashed too)
+    static TRIED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+    let mut tried = TRIED.lock().unwrap_or_else(|e| e.into_inner());
+    match *tried {
+        Some(false) => false,
+        Some(true) => gtk::is_initialized_main_thread(), // (GTK is one thread's: elsewhere, skipped)
+        None => {
             let ok = gtk::init().is_ok();
-            STATE.store(if ok { 1 } else { 2 }, Ordering::SeqCst);
+            *tried = Some(ok);
             ok
         }
     }

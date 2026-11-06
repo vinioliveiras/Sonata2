@@ -245,7 +245,7 @@ mod tests {
     /// Every component on the page builds (where GTK can start).
     #[test]
     fn gallery_builds() {
-        if gtk::init().is_err() {
+        if !crate::gtk_for_tests() {
             return; // (no display)
         }
         let (col, tip, anchor) = page();

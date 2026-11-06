@@ -603,7 +603,7 @@ mod visible_tests {
     /// and the Dock could hide under it. Python asks the menu itself.
     #[test]
     fn test_menu_over_a_hidden_box_counted_as_closed() {
-        if gtk::init().is_err() {
+        if !crate::gtk_for_tests() {
             return; // (no display)
         }
         let win = gtk::Window::new();

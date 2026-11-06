@@ -660,7 +660,7 @@ mod look_tests {
     use adw::prelude::*;
 
     fn gtk_here() -> bool {
-        !(gtk::is_initialized() && !gtk::is_initialized_main_thread()) && adw::init().is_ok()
+        !(gtk::is_initialized() && !gtk::is_initialized_main_thread()) && crate::gtk_for_tests() && adw::init().is_ok()
     }
 
     /// One GTK test (GTK lives on one thread): the toolkit's global parts.
