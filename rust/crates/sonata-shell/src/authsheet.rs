@@ -157,6 +157,15 @@ impl PasswordSheet {
             me.win.set_modal(true);
             me.win.set_transient_for(parent);
         }
+        // the window keeps the sheet while it's open: a caller that drops what
+        // ask() returns (Launchpad's locked folders) left every callback with
+        // a dead weak reference -- Vini: the password typed, then OK, Enter,
+        // Cancel and Esc did nothing, over everything, with the keyboard
+        unsafe { me.win.set_data("sonata-sheet", me.clone()) };
+        // (destroyed some other way, the app quitting: let go of it too)
+        me.win.connect_destroy(|w| {
+            let _gone: Option<Rc<PasswordSheet>> = unsafe { w.steal_data("sonata-sheet") };
+        });
         me.win.present();
         me.entry.grab_focus();
         me
@@ -210,6 +219,7 @@ impl PasswordSheet {
 
     pub fn close(&self) {
         if !self.finished.replace(true) {
+            let _keep: Option<Rc<PasswordSheet>> = unsafe { self.win.steal_data("sonata-sheet") }; // (dropped below, after destroy)
             self.win.destroy();
             // (the callbacks hold the caller's state: let go of them with the window)
             self.on_submit.take();
@@ -260,4 +270,31 @@ pub fn ask(title: &str, text: &str, ok: Option<&str>, app: Option<&gtk::Applicat
     }, on_cancel, |_| {});
     cell.replace(Some(Rc::downgrade(&sheet)));
     sheet
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Vini, Launchpad's locked folder: the password typed, then OK, Enter,
+    /// Cancel and Esc did nothing -- the caller dropped what ask() returned
+    /// and the sheet went with it, its window left on screen with the
+    /// keyboard. The window keeps it now, until it closes.
+    #[test]
+    fn test_password_sheet_buttons_dead_after_typing() {
+        let display = ["WAYLAND_DISPLAY", "DISPLAY", "BROADWAY_DISPLAY"].iter().any(|v| std::env::var_os(v).is_some());
+        if !display || !crate::gtk_for_tests() {
+            return;
+        }
+        let cancelled = Rc::new(Cell::new(false));
+        let c = cancelled.clone();
+        let weak = Rc::downgrade(&ask("Locked", "Enter your password", None, None, None, |_| {}, move || c.set(true)));
+        let sheet = weak.upgrade().expect("kept by its window after the caller let go");
+        let win = sheet.win.clone();
+        drop(sheet);
+        win.activate_default(); // (nothing to check: only must not crash)
+        weak.upgrade().unwrap().cancel(); // Esc / Cancel
+        assert!(cancelled.get());
+        assert!(weak.upgrade().is_none(), "let go once closed");
+    }
 }

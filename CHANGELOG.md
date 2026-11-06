@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rust preview session: the password prompt of a locked folder (Launchpad, Dock), a locked app or Files no longer freezes after you type the password -- OK, Return, Cancel and Esc did nothing while it covered the screen.
 - Rust preview session: the password prompt for system actions works again -- polkit refused Sonata's agent, so updates (Cachy-Update, paru) and anything asking for the administrator password failed with "Error creating textual authentication agent".
 - Game Bar: Super+G opens it again right after closing it (the first press used to do nothing), and it no longer sometimes opens without its glass when the menu bar is busy. Rust preview session: the Audio widget's volume and microphone use Control Center's white capsule slider, like the apps' rows under them.
 - Control Center: its border is as wide as the gaps between its modules, like macOS's (it was narrower and looked cramped).
