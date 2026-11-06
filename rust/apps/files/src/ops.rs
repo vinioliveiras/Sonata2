@@ -287,6 +287,21 @@ fn delete_all(files: &[gio::File], report: &dyn Fn(&gio::File, &glib::Error)) ->
     n
 }
 
+/// The Trash's items erased each as a whole: gvfs's trash:/// deletes a
+/// trashed folder with everything in it, but refuses anything inside one
+/// ("Items in the wastebasket may not be modified") -- going in to delete
+/// file by file, Empty Trash failed on every folder (Vini).
+pub fn erase_trashed(items: &[gio::File], erase: &dyn Fn(&gio::File) -> Result<(), glib::Error>, report: &dyn Fn(&gio::File, &glib::Error)) -> usize {
+    let mut n = 0;
+    for f in items {
+        match erase(f) {
+            Ok(()) => n += 1,
+            Err(e) => report(f, &e),
+        }
+    }
+    n
+}
+
 /// Delete Immediately, in a thread (big folders).
 pub fn delete_now(files: Vec<gio::File>, on_done: Option<Box<dyn FnOnce()>>, on_error: Option<Rc<dyn Fn(&gio::File, &glib::Error)>>) {
     in_thread(move |report| {
@@ -338,7 +353,7 @@ pub fn empty_trash(on_done: Option<Box<dyn FnOnce()>>, on_error: Option<Rc<dyn F
             let kids: Result<Vec<gio::File>, glib::Error> = t.enumerate_children("standard::name", NOFOLLOW, no_cancel()).map(|en| en.flatten().map(|i| t.child(i.name())).collect());
             match kids {
                 Ok(k) => {
-                    e2.store(delete_all(&k, report), std::sync::atomic::Ordering::SeqCst);
+                    e2.store(erase_trashed(&k, &|f| f.delete(no_cancel()), report), std::sync::atomic::Ordering::SeqCst);
                     clear_orphans();
                 }
                 Err(e) => report(&t, &e),
@@ -870,5 +885,26 @@ mod tests {
         run_worker(vec![f("a.txt")], &f("dst"), false, false);
         assert_eq!(std::fs::read_to_string(p("dst/a.txt")).unwrap(), "old");
         let _ = spin(|| true);
+    }
+}
+
+#[cfg(test)]
+mod trash_tests {
+    use super::*;
+
+    /// Vini: Empty Trash said it failed whenever a folder was in the Trash
+    /// -- it went into the folder, and gvfs refuses anything inside a
+    /// trashed one. Each item is erased whole, never what's inside.
+    #[test]
+    fn test_empty_trash_failed_on_a_folder() {
+        let items = [gio::File::for_uri("trash:///Pasta"), gio::File::for_uri("trash:///nota.txt")];
+        let asked = std::cell::RefCell::new(Vec::new());
+        let erase = |f: &gio::File| {
+            asked.borrow_mut().push(f.uri().to_string());
+            Ok(())
+        };
+        let n = erase_trashed(&items, &erase, &|_, _| panic!("no error"));
+        assert_eq!(n, 2);
+        assert_eq!(*asked.borrow(), ["trash:///Pasta", "trash:///nota.txt"]); // the items, never their insides
     }
 }

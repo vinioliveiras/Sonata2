@@ -818,3 +818,17 @@ class CalendarGapTest(unittest.TestCase):
         from sonata2.shell import notifications as N
         from sonata2.shell import menubar_size
         self.assertEqual(N.TOP_GAP - 12 + 8 - menubar_size.height(), 8)
+
+
+class EmptyTrashFolderTest(unittest.TestCase):
+    def test_empty_trash_failed_on_a_folder(self):
+        """Empty Trash failed whenever a folder was in the Trash: it went
+        into the folder, and gvfs refuses anything inside a trashed one.
+        Each item is erased whole."""
+        from sonata2.files import ops
+        asked, errors = [], []
+        n = ops._erase_trashed(["trash:///Pasta", "trash:///nota.txt"], asked.append,
+                               lambda f, e: errors.append(f))
+        self.assertEqual(n, 2)
+        self.assertEqual(asked, ["trash:///Pasta", "trash:///nota.txt"])
+        self.assertEqual(errors, [])

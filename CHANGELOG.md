@@ -12,6 +12,7 @@
 - Rust preview session: letting go of the volume in Control Center or the Sound menu plays the feedback sound again, and its sound mixer shows each app's icon (a Steam game's too). The "Calculator (Rust)", "Files (Rust)"... trial entries are gone from Launchpad: the Rust session opens the Rust apps from Sonata's own entries.
 - Rust preview session: closing Mission Control no longer crashes the menu bar, and no Rust part can crash any more by stopping a timer that had already run out. The menu bar no longer gathers dead processes (one per idle lock, alarm stopped, screenshot opened in Preview...).
 - Rust preview session: the login builds Wayfire's settings in Rust (`sonata2-rs wayfire-config`) -- the window frame, the Mission Control and window button migrations and your Settings changes come out exactly as in the Python session, without python3.
+- Empty Trash no longer fails when a folder is in the Trash (each item is erased whole: the Trash refuses changes inside a trashed folder).
 - Notification Center's calendar sits a little lower, no longer almost touching the menu bar.
 - The menu bar's panels and menus open where they belong at once, hung from their icon's or title's left edge, instead of opening centred and jumping to the right; Notification Center's glass (Rust) shows as soon as it opens.
 - Rust preview session: the Open / Save panels are the Rust ones too (D-Bus started the Python portal: the launcher looked for sonata2-rs on a PATH D-Bus doesn't have).

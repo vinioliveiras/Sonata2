@@ -278,6 +278,21 @@ def clear_orphans() -> None:
                 pass
 
 
+def _erase_trashed(items, erase, report) -> int:
+    """The Trash's items erased each as a whole: gvfs's trash:/// deletes a
+    trashed folder with everything in it, but refuses anything inside one
+    ("Items in the wastebasket may not be modified") -- going in to delete
+    file by file, Empty Trash failed on every folder (Vini)."""
+    n = 0
+    for f in items:
+        try:
+            erase(f)
+            n += 1
+        except GLib.Error as e:
+            report(f, e)
+    return n
+
+
 def empty_trash(on_done=None, on_error=None) -> None:
     """Listing and deleting both run in the thread (gvfs); the sound plays
     once something was really erased."""
@@ -289,7 +304,7 @@ def empty_trash(on_done=None, on_error=None) -> None:
         except GLib.Error as e:
             report(t, e)
             return
-        erased = _delete_all(kids, report)
+        erased = _erase_trashed(kids, lambda f: f.delete(None), report)
         clear_orphans()
         if erased:
             GLib.idle_add(lambda: (sounds.play("empty-trash"), False)[1])
