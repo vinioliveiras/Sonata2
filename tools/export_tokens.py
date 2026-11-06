@@ -63,7 +63,15 @@ def _registered(src: str, mod: str) -> list:
             consts[target.id] = value
         elif isinstance(target, ast.Tuple) and isinstance(value, tuple) and len(value) == len(target.elts):
             consts.update({t.id: v for t, v in zip(target.elts, value) if isinstance(t, ast.Name)})
+    # the module's top level, and the body of its functions: a module that
+    # registers on first use (files/tags.py's _css) was left out, and the
+    # Rust Files drew its colour dots square (no border-radius)
+    # (not one filled with computed values there: textedit's font size --
+    # the Rust side registers those itself)
+    stmts = []
     for node in tree.body:
+        stmts.extend([(n, True) for n in node.body] if isinstance(node, ast.FunctionDef) else [(node, False)])
+    for node, in_function in stmts:
         call = node.value if isinstance(node, ast.Expr) else None
         if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
                 and call.func.attr == "register" and isinstance(call.func.value, ast.Name)
@@ -77,6 +85,8 @@ def _registered(src: str, mod: str) -> list:
         elif isinstance(first, ast.BinOp) and isinstance(first.left, ast.Constant):
             first = first.left                  # `"""...""" + swatches` (Disk Manager): the same, the other way round
         if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+            continue
+        if in_function and any(kw.arg != "key" and not isinstance(kw.value, ast.Constant) for kw in call.keywords):
             continue
         key, local = None, {}
         for kw in call.keywords:

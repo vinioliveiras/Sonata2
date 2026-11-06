@@ -92,6 +92,15 @@ pub fn register_module_with(module: &str, extra: &[(&str, String)]) {
 mod tests {
     use super::*;
 
+    /// Vini: the colour tags' dots in Files turned into squares -- files/
+    /// tags.py registers its CSS inside a function, which the exporter
+    /// skipped, so the Rust Files had no border-radius for them.
+    #[test]
+    fn test_tag_dots_drawn_square() {
+        let blocks = blocks("files/tags.py");
+        assert!(blocks.iter().any(|(_, css, _)| css.contains(".fs-tag {") && css.contains("border-radius: 99px")));
+    }
+
     #[test]
     fn every_placeholder_has_a_value() {
         let mut known: Values = crate::tokens::palette(false);
