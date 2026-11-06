@@ -281,7 +281,7 @@ mod tests {
     fn test_first_alt_tab_after_login_lagged() {
         use gtk::prelude::*;
         use std::{cell::Cell, rc::Rc};
-        if gtk::init().is_err() {
+        if !crate::gtk_for_tests() {
             return; // (no display)
         }
         let win = gtk::Window::new();

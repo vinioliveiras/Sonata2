@@ -449,7 +449,7 @@ mod tests {
     /// and field sat off-centre. Python asks the rows' own visibility.
     #[test]
     fn test_balance_measured_flat_in_a_window_not_shown() {
-        if gtk::init().is_err() {
+        if !crate::gtk_for_tests() {
             return; // (no display)
         }
         let win = gtk::Window::new();
