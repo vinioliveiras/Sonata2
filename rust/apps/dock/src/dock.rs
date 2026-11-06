@@ -87,6 +87,9 @@ pub const HIDE_MS: u32 = 250;
 /// px strip at the screen edge that reveals a hidden Dock (layer.EDGE_TRIGGER)
 pub const TRIGGER: f64 = 2.0;
 pub const GLIDE_MS: u32 = 260;
+/// After a dragged icon's slot opens or closes, the others' new places are
+/// laid out within a frame or two: not kept before then.
+const SETTLE_LAYOUT: Duration = Duration::from_millis(50);
 
 // Plate padding and running dot, in px. Unlike macOS (where it sits low),
 // the dot is centred between the icon's visible artwork and the plate edge.
@@ -997,8 +1000,6 @@ pub struct Tile {
     /// a stack's folder and its choices (dock_stack.py)
     pub spec: RefCell<Map<String, Value>>,
     pub stack: dock_stack::TileState,
-    /// a folder's kept panel (dock_folder.py)
-    pub folder_pop: RefCell<Option<Rc<dock_folder::Panel>>>,
     pub fade: RefCell<Option<adw::TimedAnimation>>,
 }
 
@@ -1058,7 +1059,6 @@ impl Tile {
             spawn: Cell::new(false),
             spec: RefCell::default(),
             stack: dock_stack::TileState::default(),
-            folder_pop: RefCell::new(None),
             fade: RefCell::new(None),
         });
         let w = Rc::downgrade(&tile);
@@ -1147,11 +1147,11 @@ impl Tile {
     }
 }
 
-/// `widget` is (inside) a Dock icon or the divider.
+/// `widget` is (inside) a Dock icon, the divider or a folder's panel.
 pub fn on_an_item(widget: Option<gtk::Widget>) -> bool {
     let mut w = widget;
     while let Some(x) = w {
-        if x.has_css_class("dock-tile") || x.has_css_class("dock-divider") {
+        if x.has_css_class("dock-tile") || x.has_css_class("dock-divider") || x.has_css_class("dock-folder-panel") {
             return true;
         }
         w = x.parent();
@@ -1246,6 +1246,104 @@ pub struct Drag {
     bounds: Option<Vec<(Rc<Tile>, (f64, f64, f64, f64))>>,
     pub from_folder: Option<String>,
     pub folder_index: usize,
+    /// the icons are still moving (a slot opened or closed) until then:
+    /// their places aren't kept (drop_targets)
+    settle_until: Option<Instant>,
+}
+
+/// A folder's panel in the Dock's window, as the host follows it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum PanelState {
+    #[default]
+    Closed,
+    /// open; the window is this many px thicker for it
+    Open(i32),
+    /// an app of it is being dragged out: the window keeps its size (and
+    /// the panel its input) until the drag is over
+    Dragging(i32),
+}
+
+impl PanelState {
+    /// How much thicker the Dock's window is for the panel.
+    pub fn extent(self) -> i32 {
+        match self {
+            PanelState::Closed => 0,
+            PanelState::Open(e) | PanelState::Dragging(e) => e,
+        }
+    }
+
+    /// The Dock takes the keyboard (Esc) only while a panel is in its
+    /// window, and gives it back as it goes: a keyboard kept by the Dock
+    /// broke Alt+Tab and typing into the app clicked next (Vini). (Kept to
+    /// the drag's end: a keyboard handed over under a drag never arrived.)
+    pub fn keyboard(self) -> bool {
+        self != PanelState::Closed
+    }
+
+    /// A click anywhere but the panel closes it (the popover's autohide);
+    /// not while an app is dragged out of it.
+    pub fn catches_clicks(self) -> bool {
+        matches!(self, PanelState::Open(_))
+    }
+}
+
+/// The Dock window's thickness -- the biggest Dock (magnified), plus an
+/// open folder's panel (`panel` px) -- and the space it keeps from the
+/// windows. The panel only makes the surface thicker: the reserved space
+/// is the same, so no window moves when a folder opens.
+pub fn window_extent(cfg: &Map<String, Value>, panel: i32, exclusive_ok: bool) -> (i32, i32) {
+    let s = geti(cfg, "icon_size");
+    let thick = (SHADOW + PAD_TOP + max_icon(cfg) + dot_row(s) + geti(cfg, "edge_gap")) as i32 + panel.max(0);
+    let exclusive = if getb(cfg, "autohide") || !exclusive_ok { 0 } else { (plate_height(s) + 2 * geti(cfg, "edge_gap")) as i32 };
+    (thick, exclusive)
+}
+
+/// Where the Dock's window sits on its display (`display` its size, `win`
+/// the window's): against its screen edge, at the far end along it -- what
+/// the other edges' reserved space (the menu bar, at the top) takes off is
+/// at the near end.
+pub fn dock_origin(edge: &str, display: (f64, f64), win: (f64, f64)) -> (f64, f64) {
+    let (dw, dh) = display;
+    let (ww, wh) = win;
+    match edge {
+        "left" => (0.0, dh - wh),
+        _ => (dw - ww, dh - wh),
+    }
+}
+
+/// What an app dragged out of a folder does once let go (Vini's rules):
+/// dropped on the Dock it stays there; let go anywhere else, or the drag
+/// cancelled, it goes back into its folder where it was.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FolderDragEnd {
+    OnTheDock,
+    BackIntoFolder,
+}
+
+/// A folder's app whose drag the compositor cancelled (Error) while it was
+/// over the Dock -- its slot open there, (x, y) its last place -- is let go
+/// there, as a drop: on Vini's session the drop never arrived (the Dock saw
+/// the drag enter, then the cancel) and it went back into its folder. Esc
+/// still takes it back; so does a cancel once it had left the Dock.
+pub fn drop_on_cancel(reason: gdk::DragCancelReason, left: bool, at: Option<(f64, f64)>) -> Option<(f64, f64)> {
+    if reason == gdk::DragCancelReason::UserCancelled || left {
+        return None;
+    }
+    at
+}
+
+pub fn folder_drag_end(dropped_on_dock: bool) -> FolderDragEnd {
+    if dropped_on_dock {
+        FolderDragEnd::OnTheDock
+    } else {
+        FolderDragEnd::BackIntoFolder
+    }
+}
+
+/// The folder it left is undone (its last app takes its place) only once
+/// the app is on the Dock: never while it might still go back.
+pub fn ungroup_after(end: FolderDragEnd, apps_left: usize) -> bool {
+    end == FolderDragEnd::OnTheDock && apps_left <= 1
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -1320,6 +1418,14 @@ pub struct Dock {
     menu_closed_id: Cell<u64>,
     slots: RefCell<Vec<adw::TimedAnimation>>,
     rects_src: RefCell<Option<glib::SourceId>>,
+    /// what the host shows: the plate, and over it an open folder's panel
+    pub root: gtk::Overlay,
+    /// the folder panel open in this Dock (one at a time)
+    pub panel: RefCell<Option<Rc<dock_folder::Panel>>>,
+    panel_mode: Cell<PanelState>,
+    /// the host follows the panel: its window's size, keyboard, input
+    pub on_panel: RefCell<Option<Rc<dyn Fn(PanelState)>>>,
+    panel_rect: Cell<Option<(i32, i32, i32, i32)>>,
 }
 
 fn spacer(vertical: bool) -> gtk::Box {
@@ -1438,6 +1544,11 @@ impl Dock {
                 menu_closed_id: Cell::new(0),
                 slots: RefCell::default(),
                 rects_src: RefCell::default(),
+                root: gtk::Overlay::builder().child(&plate).build(),
+                panel: RefCell::default(),
+                panel_mode: Cell::new(PanelState::Closed),
+                on_panel: RefCell::default(),
+                panel_rect: Cell::new(None),
             }
         });
         dock.build();
@@ -1484,7 +1595,6 @@ impl Dock {
                 spawn: Cell::new(false),
                 spec: RefCell::default(),
                 stack: dock_stack::TileState::default(),
-                folder_pop: RefCell::default(),
                 fade: RefCell::default(),
             }),
             drag: RefCell::default(),
@@ -1518,6 +1628,11 @@ impl Dock {
             menu_closed_id: Cell::new(0),
             slots: RefCell::default(),
             rects_src: RefCell::default(),
+            root: gtk::Overlay::new(),
+            panel: RefCell::default(),
+            panel_mode: Cell::new(PanelState::Closed),
+            on_panel: RefCell::default(),
+            panel_rect: Cell::new(None),
         }
     }
 
@@ -1610,6 +1725,7 @@ impl Dock {
         let w = self.weak();
         drop.connect_drop(move |_, _, x, y| w.upgrade().is_some_and(|d| d.drag_drop(x, y)));
         plate.add_controller(drop);
+        self.setup_panel();
         dock_drop::attach_plate(self);
         dock_drop::attach_trash(self, &self.trash);
         self.update_thickness();
@@ -1661,6 +1777,7 @@ impl Dock {
 
     /// Stop listening to shared objects (before the Dock is replaced).
     pub fn detach(&self) {
+        self.panel_gone(None); // (its host lets go of the keyboard)
         if let Some(m) = &self.manager {
             for id in self.manager_ids.borrow_mut().drain(..) {
                 m.remove_listener(id);
@@ -2434,8 +2551,9 @@ impl Dock {
     pub fn remove_tile(&self, key: &str) {
         let Some(tile) = self.tiles.borrow_mut().remove(key) else { return };
         tile.label.pop.unparent();
-        if let Some(p) = tile.folder_pop.borrow_mut().take() {
-            p.pop.unparent(); // a folder's kept panel
+        let open = self.panel.borrow().as_ref().and_then(|p| p.tile()).is_some_and(|t| Rc::ptr_eq(&t, &tile));
+        if open {
+            self.panel_gone(None); // its folder's panel goes with it
         }
         self.close_up(&tile.widget(), true);
     }
@@ -2981,6 +3099,18 @@ impl Dock {
         true
     }
 
+    /// The drag of an app out of a folder was cancelled: over the Dock, it
+    /// stays where its slot opened (drop_on_cancel).
+    pub fn folder_app_drag_cancel(&self, reason: gdk::DragCancelReason) {
+        let at = self.drag.borrow().as_ref().filter(|d| d.from_folder.is_some() && !d.dropped).and_then(|d| drop_on_cancel(reason, d.left, d.x.zip(d.y)));
+        if verbose() {
+            eprintln!("dock: folder drag cancelled ({reason:?}): {}", if at.is_some() { "let go on the Dock" } else { "back into its folder" });
+        }
+        if let Some((x, y)) = at {
+            self.drag_drop(x, y);
+        }
+    }
+
     pub fn folder_app_drag_end(&self, fkey: &str, key: &str) {
         let ours = self.drag.borrow().as_ref().is_some_and(|d| d.from_folder.as_deref() == Some(fkey));
         if verbose() {
@@ -2997,15 +3127,15 @@ impl Dock {
                 self.drag.replace(None);
             }
         }
-        if !dropped {
-            // not dropped on the Dock: back into its folder
+        let end = folder_drag_end(dropped);
+        if end == FolderDragEnd::BackIntoFolder {
             self.back_into_folder(fkey, key, index);
             return;
         }
         let (w, fkey) = (self.weak(), fkey.to_string());
         glib::idle_add_local_once(move || {
             if let Some(d) = w.upgrade() {
-                if d.folder(&fkey).is_some_and(|f| folder_apps(&f).len() <= 1) {
+                if d.folder(&fkey).is_some_and(|f| ungroup_after(end, folder_apps(&f).len())) {
                     d.ungroup(&fkey);
                 }
             }
@@ -3213,6 +3343,145 @@ impl Dock {
         }
     }
 
+    // -- a folder's panel, in the Dock's own window -------------------------------------------------
+
+    /// The panel's place (beside its folder's icon, following it as it
+    /// magnifies) and a click beside it closing it.
+    fn setup_panel(&self) {
+        // the window resized (grown for a panel, or back): its input region
+        // anew. The plate's own allocation doesn't change when only the
+        // window does -- the region kept the grown window's place, and the
+        // Dock took no more clicks once a panel had closed
+        let sizer = gtk::DrawingArea::builder().can_target(false).build();
+        let w = self.weak();
+        sizer.connect_resize(move |_, _, _| {
+            if let Some(d) = w.upgrade() {
+                d.geometry_changed();
+            }
+        });
+        self.root.add_overlay(&sizer);
+        let w = self.weak();
+        self.root.connect_get_child_position(move |_, child| {
+            let d = w.upgrade()?;
+            let p = d.panel.borrow().clone().filter(|p| p.frame.upcast_ref::<gtk::Widget>() == child)?;
+            Some(d.place_panel(&p))
+        });
+        // anywhere in the Dock's window but the panel: it closes (the rest
+        // of the screen: the host's catchers). The click does nothing else,
+        // as with the popover's autohide -- a click on the folder closes it
+        let click = gtk::GestureClick::builder().button(0).propagation_phase(gtk::PropagationPhase::Capture).build();
+        let w = self.weak();
+        click.connect_pressed(move |g, _, x, y| {
+            let Some(d) = w.upgrade() else { return };
+            let open = d.panel.borrow().clone().filter(|p| !p.is_dragging());
+            let inside = open.as_ref().and_then(|p| p.view.compute_bounds(&d.root)).is_some_and(|b| b.contains_point(&graphene::Point::new(x as f32, y as f32)));
+            match open {
+                Some(_) if !inside => {
+                    g.set_state(gtk::EventSequenceState::Claimed);
+                    d.close_panel();
+                }
+                _ => {
+                    g.set_state(gtk::EventSequenceState::Denied);
+                }
+            }
+        });
+        self.root.add_controller(click);
+    }
+
+    /// The panel's natural size, its shadow room included.
+    fn panel_size(p: &dock_folder::Panel) -> (i32, i32) {
+        let (_, pw, _, _) = p.frame.measure(gtk::Orientation::Horizontal, -1);
+        let (_, ph, _, _) = p.frame.measure(gtk::Orientation::Vertical, pw);
+        (pw, ph)
+    }
+
+    fn place_panel(&self, p: &Rc<dock_folder::Panel>) -> gdk::Rectangle {
+        let (pw, ph) = Dock::panel_size(p);
+        let Some(b) = p.tile().and_then(|t| t.button.compute_bounds(&self.root)) else { return gdk::Rectangle::new(0, 0, pw, ph) };
+        let tile = (b.x().round() as i32, b.y().round() as i32, b.width().round() as i32, b.height().round() as i32);
+        let (x, y, fits) = dock_folder::panel_place(&self.edge, (self.root.width(), self.root.height()), tile, (pw, ph), dock_folder::PANEL_GAP, dock_folder::PANEL_MARGIN);
+        // (a host that doesn't grow -- the preview: shown where it is)
+        if fits || self.on_panel.borrow().is_none() {
+            p.zoom_in();
+        }
+        let r = (x, y, pw, ph);
+        if self.panel_rect.replace(Some(r)) != Some(r) {
+            // the host's input region takes the panel in, once it's placed
+            let w = self.weak();
+            glib::idle_add_local_once(move || {
+                if let Some(d) = w.upgrade() {
+                    d.geometry_changed();
+                }
+            });
+        }
+        gdk::Rectangle::new(x, y, pw, ph)
+    }
+
+    /// A folder's panel opens in this Dock (one at a time): over the plate,
+    /// the window growing for it, the keyboard taken for Esc.
+    pub fn show_panel(&self, p: &Rc<dock_folder::Panel>) {
+        self.panel_gone(None);
+        self.root.add_overlay(&p.frame);
+        self.panel.replace(Some(p.clone()));
+        self.panel_rect.set(None);
+        let (pw, ph) = Dock::panel_size(p);
+        let across = if self.vertical { pw } else { ph };
+        if verbose() {
+            eprintln!("dock: folder panel open ({across} px across)");
+        }
+        self.set_panel_state(PanelState::Open(dock_folder::panel_extent(across)));
+    }
+
+    /// An app is dragged out of the open panel: no more clicks caught, the
+    /// keyboard back; the window keeps its size until the drag ends.
+    pub fn panel_dragged(&self) {
+        if let PanelState::Open(e) = self.panel_mode.get() {
+            self.set_panel_state(PanelState::Dragging(e));
+        }
+    }
+
+    /// The panel is out of the window -- every way it closes ends here:
+    /// the window shrinks back, the keyboard goes back. `only`: if that one
+    /// is still the open one (a late close of an older panel).
+    pub fn panel_gone(&self, only: Option<&Rc<dock_folder::Panel>>) {
+        let cur = self.panel.borrow().clone();
+        let Some(p) = cur else { return };
+        if only.is_some_and(|o| !Rc::ptr_eq(o, &p)) {
+            return;
+        }
+        self.panel.replace(None);
+        self.panel_rect.set(None);
+        self.root.remove_overlay(&p.frame);
+        if verbose() {
+            eprintln!("dock: folder panel closed");
+        }
+        self.set_panel_state(PanelState::Closed);
+        self.menu_closed(); // an auto-hiding Dock may go now
+    }
+
+    pub fn panel_state(&self) -> PanelState {
+        self.panel_mode.get()
+    }
+
+    fn set_panel_state(&self, s: PanelState) {
+        self.panel_mode.set(s);
+        let cb = self.on_panel.borrow().clone();
+        if let Some(cb) = cb {
+            cb(s);
+        }
+    }
+
+    /// Esc, or a click beside it: the open panel fades out. False: none
+    /// open (or an app is being dragged out of it).
+    pub fn close_panel(&self) -> bool {
+        let Some(p) = self.panel.borrow().clone().filter(|p| !p.is_dragging()) else { return false };
+        if !matches!(self.panel_mode.get(), PanelState::Open(_)) {
+            return false;
+        }
+        dock_folder::close_panel(&p, None);
+        true
+    }
+
     // -- recents -------------------------------------------------------------------------------------
 
     fn is_recent(&self, key: &str) -> bool {
@@ -3278,9 +3547,20 @@ impl Dock {
             d.y = Some(y);
             d.key.clone()
         };
+        if let Some(p) = self.panel.borrow().clone().filter(|p| p.is_dragging()) {
+            dock_folder::drag_left(&p); // out of its folder, over the Dock
+        }
         let Some(tile) = self.tiles.borrow().get(&key).cloned() else { return gdk::DragAction::MOVE };
         if !tile.button.get_visible() {
-            self.set_tile_shown(&tile, true); // back over the Dock: its slot opens again
+            // back over the Dock: its slot opens again, under the pointer --
+            // no folder with a neighbour this time: the others are measured
+            // once they've moved (set_tile_shown)
+            let slot = self.slot_at(x, y, Some(&tile));
+            self.set_tile_shown(&tile, true);
+            if self.app_tiles().iter().position(|t| Rc::ptr_eq(t, &tile)) != Some(slot) {
+                self.move_to_slot(&tile, slot);
+            }
+            return gdk::DragAction::MOVE;
         }
         if self.over_trash(x, y) && Dock::can_uninstall(&tile) {
             // over the Trash: let go to uninstall it (macOS); the icon keeps its place meanwhile
@@ -3347,6 +3627,13 @@ impl Dock {
         if dock_folder::is_folder(&key) || PERMANENT.contains(&key.as_str()) || tile.info.is_none() {
             return None;
         }
+        // just taken out of a folder: it goes where its slot opens, never
+        // into a folder with the app it's over (Vini had to aim to the
+        // pixel: its slot opening moves the Dock half an icon, and the
+        // pointer was over a neighbour's middle)
+        if self.drag.borrow().as_ref().is_some_and(|d| d.from_folder.is_some()) {
+            return None;
+        }
         for (t, (bx, by, bw, bh)) in self.drop_targets(tile) {
             let (pos, start, size) = if self.vertical { (y, by, bh) } else { (x, bx, bw) };
             let (across, a0, alen) = if self.vertical { (x, bx, bw) } else { (y, by, bh) };
@@ -3376,8 +3663,8 @@ impl Dock {
                 out.push((t, (b.x() as f64, b.y() as f64, b.width() as f64, b.height() as f64)));
             }
         }
-        if let Some(d) = self.drag.borrow_mut().as_mut() {
-            d.bounds = Some(out.clone());
+        if let Some(d) = self.drag.borrow_mut().as_mut().filter(|d| d.settle_until.is_none_or(|t| Instant::now() >= t)) {
+            d.bounds = Some(out.clone()); // (not while they move: measured again next time)
         }
         out
     }
@@ -3445,13 +3732,21 @@ impl Dock {
     }
 
     fn set_tile_shown(&self, tile: &Rc<Tile>, shown: bool) {
+        // the others move: where they are is measured again, on the next
+        // motion (measured with its slot closed, an app out of a folder let
+        // go in its own open slot was taken as dropped on its neighbour --
+        // a new folder)
+        if let Some(d) = self.drag.borrow_mut().as_mut() {
+            d.bounds = None;
+            d.settle_until = Some(Instant::now() + SETTLE_LAYOUT);
+        }
         let others: Vec<gtk::Widget> = self.app_tiles().iter().filter(|t| !Rc::ptr_eq(t, tile)).map(|t| t.widget()).collect();
         let before = glide_record(&self.plate, &others);
         tile.button.set_visible(shown);
         glide_play(&self.plate, before, GLIDE_MS);
     }
 
-    fn drag_drop(&self, x: f64, y: f64) -> bool {
+    pub(crate) fn drag_drop(&self, x: f64, y: f64) -> bool {
         if verbose() {
             eprintln!("dock: drop at {x:.0},{y:.0}: {:?}", self.drag.borrow().as_ref().map(|d| (d.key.clone(), d.target.as_ref().and_then(|t| t.key()), d.trash)));
         }
@@ -3701,9 +3996,9 @@ impl Dock {
                 self.starting.borrow_mut().remove(key); // its window showed: the launch went well
                 self.retries.borrow_mut().remove(key);
             }
-            if let Some(p) = tile.folder_pop.borrow().clone() {
-                dock_folder::show_running(self, &p);
-            }
+        }
+        if let Some(p) = self.panel.borrow().clone() {
+            dock_folder::show_running(self, &p);
         }
         self.relayout();
         // an app opened: its place opens smoothly, as it closes up when it
@@ -4148,6 +4443,9 @@ pub fn folder_locked(f: &Map<String, Value>) -> bool {
 
 pub const CSS: &str = r#"
 window.sonata-dock, window.sonata-dock > contents { background: none; box-shadow: none; }
+/* the folder panel's click catcher: all but invisible -- with nothing at all
+   to draw GTK never gave it a picture, so it never showed (or took a click) */
+window.sonata-dock-away { background: rgba(0, 0, 0, 0.004); box-shadow: none; }
 /* no GTK drop-target outline (the dashed frame while dragging) */
 window.sonata-dock *:drop(active) { box-shadow: none; outline: none; border-color: transparent; }
 .dock-tile, .dock-tile:hover, .dock-tile:active, .dock-tile:focus {
@@ -4329,6 +4627,11 @@ pub struct DockWindow {
     monitors: RefCell<Vec<gio::FileMonitor>>,
     namespace: String,
     exclusive_ok: bool,
+    /// the Dock's folder panel, as last told (Dock::on_panel)
+    panel: Cell<PanelState>,
+    /// while a panel is open: a see-through surface over each display that
+    /// closes it on a click anywhere else (under the Dock, lifted over them)
+    catchers: RefCell<Vec<(gdk::Monitor, gtk::Window)>>,
 }
 
 pub const REBUILD_KEYS: [&str; 2] = ["position", "show_recents"];
@@ -4373,6 +4676,8 @@ impl DockWindow {
             monitors: RefCell::default(),
             namespace: "sonata2-dock".into(),
             exclusive_ok: true,
+            panel: Cell::new(PanelState::Closed),
+            catchers: RefCell::default(),
         });
         let motion = gtk::EventControllerMotion::new();
         let w = dw.me.clone();
@@ -4398,6 +4703,18 @@ impl DockWindow {
             }
         });
         dw.win.add_controller(area);
+        // Esc closes a folder's panel (the Dock has the keyboard only then)
+        let keys = gtk::EventControllerKey::new();
+        let w = dw.me.clone();
+        keys.connect_key_pressed(move |_, key, _, _| {
+            let closed = key == gdk::Key::Escape && w.upgrade().and_then(|d| d.dock()).is_some_and(|d| d.close_panel());
+            if closed {
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        });
+        dw.win.add_controller(keys);
         let mut mons = sonata_config::watch("dock", weak_do!(dw.me, d => d.config_changed()));
         // Settings > App Icons: new icons / shapes, live
         mons.extend(sonata_config::watch("icons", weak_do!(dw.me, d => { if let Some(x) = d.dock() { x.refresh_icons() } })));
@@ -4465,8 +4782,15 @@ impl DockWindow {
         dock.on_rebuild.replace(Some(Rc::new(weak_do!(self.me, w => w.rebuild()))));
         dock.on_geometry.borrow_mut().push(Rc::new(weak_do!(self.me, w => w.geometry())));
         dock.on_menu_closed.replace(Some(Rc::new(weak_do!(self.me, w => w.pointer(w.inside.get())))));
+        let w = self.me.clone();
+        dock.on_panel.replace(Some(Rc::new(move |s| {
+            if let Some(w) = w.upgrade() {
+                w.panel_changed(s);
+            }
+        })));
+        self.panel_changed(PanelState::Closed); // (the old Dock's let go of already)
         apply_margins(&dock);
-        self.win.set_child(Some(&dock.plate));
+        self.win.set_child(Some(&dock.root));
         dock.span_host.replace(Some(self.win.clone().upcast()));
         self.dock.replace(Some(dock.clone()));
         let win: &gtk::Window = self.win.upcast_ref();
@@ -4602,18 +4926,12 @@ impl DockWindow {
     /// Maximized windows stop above the Dock by the same space the Dock
     /// keeps from the screen edge (one gap, both sides of the plate).
     fn exclusive(&self) -> i32 {
-        let c = self.cfg.borrow();
-        if getb(&c, "autohide") || !self.exclusive_ok {
-            0
-        } else {
-            (plate_height(geti(&c, "icon_size")) + 2 * geti(&c, "edge_gap")) as i32
-        }
+        window_extent(&self.cfg.borrow(), self.panel.get().extent(), self.exclusive_ok).1
     }
 
+    /// The surface's thickness: an open folder's panel makes it thicker.
     fn thickness(&self) -> i32 {
-        let c = self.cfg.borrow();
-        let s = geti(&c, "icon_size");
-        (SHADOW + PAD_TOP + max_icon(&c) + dot_row(s) + geti(&c, "edge_gap")) as i32
+        window_extent(&self.cfg.borrow(), self.panel.get().extent(), self.exclusive_ok).0
     }
 
     pub fn set_launcher_open(&self, on: bool) {
@@ -4655,6 +4973,7 @@ impl DockWindow {
             self.last_wh.set((w, h));
             if let Some(d) = self.dock() {
                 d.refit_soon();
+                d.rects_soon(); // (grown for a folder's panel: the icons sit elsewhere in it)
             }
         }
         self.input_soon();
@@ -4676,8 +4995,14 @@ impl DockWindow {
 
     fn geometry(&self) {
         // Fixed surface thickness = biggest possible Dock; changes only with
-        // the Dock size/magnification setting, never while magnifying.
+        // the Dock size/magnification setting (never while magnifying) and
+        // while a folder's panel is open in it.
         let t = self.thickness();
+        if self.layer.get() {
+            // the smallest the content allows (gtk4-layer-shell's way): the
+            // surface shrinks back once a folder's panel has gone
+            self.win.set_default_size(1, 1);
+        }
         if ["left", "right"].contains(&gets(&self.cfg.borrow(), "position").as_str()) {
             self.win.set_size_request(t, -1);
         } else {
@@ -4742,7 +5067,105 @@ impl DockWindow {
                 _ => h = hh - y,
             }
         }
-        sonata_shell::layer::set_input_region(self.win.upcast_ref(), &[(x, y, w, h)]);
+        let mut rects = vec![(x, y, w, h)];
+        if !self.hidden.get() && self.panel.get() != PanelState::Closed {
+            // the panel's glass (its shadow lets clicks through to the catchers)
+            if let Some(b) = d.panel.borrow().as_ref().and_then(|p| p.view.compute_bounds(&self.win)) {
+                rects.push((b.x() as f64, b.y() as f64, b.width() as f64, b.height() as f64));
+            }
+        }
+        sonata_shell::layer::set_input_region(self.win.upcast_ref(), &rects);
+        self.catchers_input(&rects);
+    }
+
+    /// The Dock's folder panel opened, is dragged from or closed: the
+    /// window grows or shrinks back (never its reserved space: no window
+    /// moves), the keyboard is the Dock's only while it's open, and clicks
+    /// elsewhere are caught only then.
+    fn panel_changed(&self, s: PanelState) {
+        let was = self.panel.replace(s);
+        if self.layer.get() {
+            sonata_shell::layer::set_keyboard(self.win.upcast_ref(), s.keyboard());
+        }
+        if s.catches_clicks() != was.catches_clicks() {
+            self.catch_clicks(s.catches_clicks());
+        }
+        if s.extent() != was.extent() {
+            self.geometry();
+        }
+        self.input_soon();
+    }
+
+    /// A see-through surface over each display: a click on it (another
+    /// app's window, the desktop, the menu bar) closes the folder's panel,
+    /// as the popover's autohide did. It lies over the Dock too (the newer
+    /// surface on the same layer), with holes where the Dock takes clicks
+    /// (catchers_input). (Lifting the Dock over it to the overlay layer
+    /// instead: once put back, the Dock took no more clicks on Wayfire.)
+    fn catch_clicks(&self, on: bool) {
+        for (_, c) in self.catchers.borrow_mut().drain(..) {
+            c.destroy();
+        }
+        if !on || !self.layer.get() {
+            return;
+        }
+        use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
+        for m in sonata_shell::layer::monitors() {
+            let fill = gtk::Box::builder().hexpand(true).vexpand(true).build();
+            let c = gtk::Window::builder().css_classes(["sonata-dock-away"]).decorated(false).child(&fill).build();
+            if let Some(app) = self.win.application() {
+                c.set_application(Some(&app));
+            }
+            c.init_layer_shell();
+            c.set_namespace(Some("sonata-dock-away")); // (no "sonata2": not blurred)
+            c.set_layer(Layer::Top);
+            for e in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
+                c.set_anchor(e, true);
+            }
+            c.set_exclusive_zone(-1);
+            c.set_keyboard_mode(KeyboardMode::None);
+            c.set_monitor(Some(&m));
+            let click = gtk::GestureClick::builder().button(0).build();
+            let w = self.me.clone();
+            click.connect_pressed(move |g, _, _, _| {
+                g.set_state(gtk::EventSequenceState::Claimed);
+                if let Some(d) = w.upgrade().and_then(|w| w.dock()) {
+                    d.close_panel();
+                }
+            });
+            c.add_controller(click);
+            // its holes once it has its size
+            let w = self.me.clone();
+            c.connect_realize(move |c| {
+                let Some(surface) = c.surface() else { return };
+                let w = w.clone();
+                surface.connect_layout(move |_, _, _| {
+                    if let Some(w) = w.upgrade() {
+                        w.input_soon();
+                    }
+                });
+            });
+            c.present();
+            self.catchers.borrow_mut().push((m, c));
+        }
+        self.input_soon(); // (their holes)
+    }
+
+    /// The catcher on this Dock's display lets the Dock's own clicks
+    /// (`rects`, the Dock window's input region) through.
+    fn catchers_input(&self, rects: &[(f64, f64, f64, f64)]) {
+        let here = self.dock().and_then(|d| d.monitor());
+        for (m, c) in self.catchers.borrow().iter() {
+            let (cw, ch) = (c.width() as f64, c.height() as f64);
+            let holes = if here.as_ref() == Some(m) {
+                let origin = dock_origin(&self.dock().map(|d| d.edge.clone()).unwrap_or_default(), (cw, ch), (self.win.width() as f64, self.win.height() as f64));
+                rects.iter().map(|(x, y, w, h)| (x + origin.0, y + origin.1, *w, *h)).collect()
+            } else {
+                Vec::new()
+            };
+            sonata_shell::layer::set_input_region_except(c.upcast_ref(), (cw, ch), &holes);
+            c.queue_draw(); // (a region is sent with the surface's next picture)
+        }
     }
 
     // -- auto-hide ---------------------------------------------------------------------------
@@ -4759,9 +5182,9 @@ impl DockWindow {
         if let Some(t) = self.timer.borrow_mut().take() {
             sonata_ui::cancel(t);
         }
-        // a menu, a drag from the Dock, or Launchpad open (dragging an app
+        // a menu, a folder's panel, a drag from the Dock, or Launchpad open (dragging an app
         // out of it moves the pointer "out" of the Dock): it stays
-        let busy = menus_open() || self.dock().is_some_and(|d| d.drag.borrow().is_some()) || self.above.get();
+        let busy = menus_open() || self.dock().is_some_and(|d| d.drag.borrow().is_some()) || self.above.get() || self.panel.get() != PanelState::Closed;
         let w = self.me.clone();
         if inside && self.hidden.get() {
             let src = glib::timeout_add_local_once(Duration::from_millis(delay.max(0) as u64), move || {
@@ -4915,6 +5338,216 @@ mod tests {
     }
 
     use super::*;
+
+    /// No window may move when a folder opens: its panel makes the Dock's
+    /// surface thicker (it is drawn in the Dock's window now), never the
+    /// space the Dock keeps from maximized windows.
+    #[test]
+    fn test_windows_moved_when_a_folder_opened() {
+        for (autohide, magnification) in [(false, false), (false, true), (true, false)] {
+            let mut cfg = defaults().as_object().unwrap().clone();
+            cfg.insert("autohide".into(), json!(autohide));
+            cfg.insert("magnification".into(), json!(magnification));
+            let (closed, ex_closed) = window_extent(&cfg, PanelState::Closed.extent(), true);
+            for open in [PanelState::Open(340), PanelState::Dragging(340)] {
+                let (thick, ex) = window_extent(&cfg, open.extent(), true);
+                assert_eq!(ex, ex_closed, "the reserved space changed with a folder open");
+                assert_eq!(thick, closed + 340);
+            }
+        }
+        // and the host sets the reserved space from that alone
+        let src = include_str!("dock.rs");
+        let f = &src[src.find("fn panel_changed(&self").unwrap()..];
+        assert!(!f[..f.find("\n    }\n").unwrap()].contains("set_exclusive_zone"));
+    }
+
+    /// The Dock takes the keyboard while a folder's panel is open (Esc) and
+    /// must give it back however the panel goes: a keyboard the Dock kept
+    /// broke Alt+Tab and clicks into other apps (Vini).
+    #[test]
+    fn test_keyboard_kept_after_a_folder_closed() {
+        assert!(!PanelState::Closed.keyboard());
+        assert!(PanelState::Open(300).keyboard());
+        assert!(!PanelState::default().keyboard());
+        // clicks beside it are caught only while it's open, not under a drag
+        assert!(PanelState::Open(300).catches_clicks());
+        assert!(!PanelState::Dragging(300).catches_clicks());
+        assert!(!PanelState::Closed.catches_clicks());
+        let src = include_str!("dock.rs");
+        let body = |name: &str| {
+            let f = &src[src.find(name).unwrap()..];
+            f[..f.find("\n    }\n").unwrap()].to_string()
+        };
+        // every close ends in panel_gone, which tells the host Closed...
+        assert!(body("pub fn panel_gone(").contains("self.set_panel_state(PanelState::Closed)"));
+        // ...which sets the keyboard from it
+        assert!(body("fn panel_changed(&self").contains("set_keyboard(self.win.upcast_ref(), s.keyboard())"));
+        // the Dock replaced (Settings) or its folder removed: gone too
+        assert!(body("pub fn detach(&self)").contains("self.panel_gone(None)"));
+        assert!(body("pub fn remove_tile(").contains("self.panel_gone(None)"));
+        // the fade-out (Esc, a click beside it, an app opened, rename) and a drag out
+        let folder = include_str!("dock_folder.rs");
+        let close = &folder[folder.find("pub fn close_panel(").unwrap()..];
+        assert!(close[..close.find("\n}\n").unwrap()].contains("d.panel_gone(Some(&p))"));
+        let end = &folder[folder.find("src.connect_drag_end(").unwrap()..];
+        assert!(end[..end.find("b.add_controller(src)").unwrap()].contains("d.panel_gone(Some(&p))"));
+    }
+
+    /// Vini: an app dragged out of a Dock folder opened its slot in the
+    /// Dock, but let go there it went into a new folder with the app beside
+    /// it (dock.log: "drop at ... Some(\"sonata2-settings\")"). The other
+    /// icons' places were measured as the drag began, its slot still
+    /// closed; the slot opening moved them, and the pointer in it counted
+    /// as over the neighbour's middle. Shown or hidden, they're measured again.
+    #[test]
+    fn test_app_out_of_a_folder_dropped_into_a_new_folder() {
+        let src = include_str!("dock.rs");
+        let f = &src[src.find("fn set_tile_shown(&self").unwrap()..];
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        assert!(f.contains("d.bounds = None;") && f.contains("d.settle_until = Some("));
+        let t = &src[src.find("fn drop_targets(&self").unwrap()..];
+        assert!(t[..t.find("\n    }\n").unwrap()].contains("d.settle_until.is_none_or("));
+        // and before the others move
+        assert!(f.find("d.bounds = None;").unwrap() < f.find("tile.button.set_visible(shown)").unwrap());
+        // the motion that opens its slot looks for no folder: the others
+        // haven't moved yet (measured then, the old places were kept)
+        let m = &src[src.find("fn drag_motion(&self").unwrap()..];
+        let m = &m[..m.find("\n    }\n").unwrap()];
+        let shown = &m[m.find("if !tile.button.get_visible() {").unwrap()..];
+        let shown = &shown[..shown.find("\n        }\n").unwrap()];
+        assert!(shown.contains("return gdk::DragAction::MOVE;") && !shown.contains("folder_candidate"));
+        assert!(m.find("if !tile.button.get_visible() {").unwrap() < m.find("self.folder_candidate(").unwrap());
+    }
+
+    /// Vini: an app out of a Dock folder stayed on the Dock only when let
+    /// go just so -- elsewhere it went into a new folder with the app beside
+    /// it. Its slot opening grows and re-centres the Dock, which puts the
+    /// pointer over a neighbour's middle (the "make a folder" zone, 60% of
+    /// an icon). Taken out of a folder, it makes none: it goes to its slot.
+    #[test]
+    fn test_app_out_of_a_folder_needed_pixel_aim() {
+        let src = include_str!("dock.rs");
+        let f = &src[src.find("fn folder_candidate(&self").unwrap()..];
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        let no = f.find("d.from_folder.is_some()").unwrap();
+        assert!(no < f.find("self.drop_targets(tile)").unwrap());
+    }
+
+    /// Seen on a (headless) Wayfire while making the panel: once a folder's
+    /// panel had closed the Dock took no more clicks -- its input region
+    /// kept the grown window's place (the plate's own allocation doesn't
+    /// change when only the window does), and lifting the Dock over the
+    /// click catchers to the overlay layer and back left it deaf too.
+    #[test]
+    fn test_dock_took_no_clicks_after_a_folder_closed() {
+        let src = include_str!("dock.rs");
+        let body = |name: &str| {
+            let f = &src[src.find(name).unwrap()..];
+            f[..f.find("\n    }\n").unwrap()].to_string()
+        };
+        let setup = body("fn setup_panel(&self)");
+        assert!(setup.contains("sizer.connect_resize") && setup.contains("d.geometry_changed()"));
+        assert!(!body("fn panel_changed(&self").contains("set_layer"));
+    }
+
+    /// Also seen there: a click beside an open folder didn't close it -- the
+    /// click catcher, with nothing to draw, was never shown -- and once it
+    /// was, it took the panel's own clicks (it lies over the Dock: holes
+    /// where the Dock's input region is, on its display).
+    #[test]
+    fn test_click_beside_a_folder_did_not_close_it() {
+        let css = &CSS[CSS.find("window.sonata-dock-away").unwrap()..];
+        let css = &css[..css.find('}').unwrap()];
+        assert!(!css.contains("background: none") && css.contains("rgba(0, 0, 0, 0.004)"));
+        // the Dock window's place on its display, for the holes
+        assert_eq!(dock_origin("bottom", (1280.0, 720.0), (1280.0, 293.0)), (0.0, 427.0));
+        assert_eq!(dock_origin("left", (1280.0, 720.0), (351.0, 690.0)), (0.0, 30.0)); // under a 30 px menu bar
+        assert_eq!(dock_origin("right", (1280.0, 720.0), (351.0, 690.0)), (929.0, 30.0));
+        let src = include_str!("dock.rs");
+        let f = &src[src.find("fn update_input(&self)").unwrap()..];
+        assert!(f[..f.find("\n    }\n").unwrap()].contains("self.catchers_input(&rects)"));
+    }
+
+    fn spin(ms: u64) {
+        let ctx = glib::MainContext::default();
+        let until = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < until {
+            ctx.iteration(false);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// On a display (a private broadway one: GDK_BACKEND=broadway; skipped
+    /// without): a folder's panel opens inside the Dock's own window, over
+    /// its icon, and every way it goes tells the host Closed -- the
+    /// keyboard given back (test_keyboard_kept_after_a_folder_closed).
+    #[test]
+    fn test_keyboard_kept_after_a_folder_closed_on_a_display() {
+        if gtk::init().is_err() {
+            return; // no display
+        }
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path().join("config"));
+        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        std::env::remove_var("WAYFIRE_SOCKET");
+        let apps: Vec<String> = gio::AppInfo::all()
+            .iter()
+            .filter_map(|a| a.id())
+            .map(|id| id.trim_end_matches(".desktop").to_string())
+            .filter(|k| sonata_ui::apps::lookup(k).is_some() && !PERMANENT.contains(&k.as_str()))
+            .take(2)
+            .collect();
+        if apps.len() < 2 {
+            return; // no apps installed to fill a folder
+        }
+        let mut cfg = defaults().as_object().unwrap().clone();
+        cfg.insert("pinned".into(), json!(["folder:1"]));
+        cfg.insert("folders".into(), json!({"1": {"name": "Test", "apps": apps}}));
+        cfg.insert("stacks".into(), json!([]));
+        let dock = Dock::new(Rc::new(RefCell::new(cfg)), None);
+        let told: Rc<RefCell<Vec<PanelState>>> = Rc::default();
+        let t = told.clone();
+        dock.on_panel.replace(Some(Rc::new(move |s| t.borrow_mut().push(s))));
+        let win = gtk::Window::builder().default_width(900).default_height(600).child(&dock.root).build();
+        win.present();
+        spin(150);
+        let tile = || dock.tiles.borrow().get("folder:1").cloned().expect("the folder's tile");
+        let last = || *told.borrow().last().unwrap();
+        // opened: in the Dock's window, over its icon, the keyboard taken
+        let p = dock_folder::open_panel(&dock, &tile(), None, false, false).expect("a panel");
+        assert!(matches!(last(), PanelState::Open(e) if e > dock_folder::PANEL_GAP));
+        assert!(last().keyboard());
+        assert_eq!(p.frame.parent().as_ref(), Some(dock.root.upcast_ref::<gtk::Widget>()));
+        spin(150);
+        let (glass, icon) = (p.view.compute_bounds(&dock.root).unwrap(), tile().button.compute_bounds(&dock.root).unwrap());
+        assert!(glass.y() + glass.height() <= icon.y(), "the panel isn't over its icon");
+        // Esc (or a click beside it): it fades, then goes
+        assert!(dock.close_panel());
+        spin(dock_folder::CLOSE_MS + 150);
+        assert_eq!(last(), PanelState::Closed);
+        assert!(!last().keyboard());
+        assert!(dock.panel.borrow().is_none() && p.frame.parent().is_none());
+        // opened again while open: one panel, the first one's gone
+        let a = dock_folder::open_panel(&dock, &tile(), None, false, false).unwrap();
+        let b = dock_folder::open_panel(&dock, &tile(), None, false, false).unwrap();
+        assert!(a.frame.parent().is_none() && b.frame.parent().is_some());
+        // dragged out of: the keyboard kept to the drag's end, then given back
+        dock.panel_dragged();
+        assert!(matches!(last(), PanelState::Dragging(_)));
+        assert!(!dock.close_panel()); // (not under a drag)
+        dock.panel_gone(Some(&b));
+        assert!(!last().keyboard());
+        // the folder removed, or the Dock replaced, with it open
+        dock_folder::open_panel(&dock, &tile(), None, false, false).unwrap();
+        dock.remove_tile("folder:1");
+        assert_eq!(last(), PanelState::Closed);
+        dock.add_known_tile("folder:1");
+        dock_folder::open_panel(&dock, &tile(), None, false, false).unwrap();
+        dock.detach();
+        assert_eq!(last(), PanelState::Closed);
+        assert!(told.borrow().iter().filter(|s| !s.keyboard()).count() >= 4);
+        win.destroy();
+    }
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()

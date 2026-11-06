@@ -33,6 +33,9 @@ pub struct FolderView {
     pub pos: Option<(usize, usize)>,
     pub panel: gtk::Box,
     pub title: gtk::EditableLabel,
+    /// its apps' grid, kept: its tiles' gestures hold them weakly, and a
+    /// grid let go left a right-click on an app in the folder with no menu
+    pub grid: Rc<PageGrid>,
 }
 
 /// A drag of one of our tiles.
@@ -1068,7 +1071,8 @@ impl Pad {
                 tile.set_name_text(&name);
             }
         });
-        panel.append(&self.folder_grid(f).grid);
+        let grid = self.folder_grid(f);
+        panel.append(&grid.grid);
         // Big Sur: the folder name sits above the panel, editable in place
         let wrap = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(18).halign(gtk::Align::Center).valign(gtk::Align::Center).build();
         wrap.append(&title);
@@ -1076,7 +1080,7 @@ impl Pad {
         let (host, dim) = self.host();
         host.add_overlay(&wrap);
         let pos = if is_hidden_folder(f) { None } else { self.locate_folder(f, None) };
-        self.folder_view.replace(Some(FolderView { wrap: wrap.clone(), folder: f.clone(), pos, panel, title }));
+        self.folder_view.replace(Some(FolderView { wrap: wrap.clone(), folder: f.clone(), pos, panel, title, grid }));
         wrap.add_css_class("lp-folder-view");
         dim.add_css_class("dimmed");
         dim.set_can_target(false); // a click behind the folder closes it (Vini)
@@ -1143,6 +1147,7 @@ impl Pad {
                 fv.panel.remove(&old);
             }
             fv.panel.append(&grid.grid);
+            fv.grid = grid;
             fv.folder = now;
         }
     }
@@ -1971,6 +1976,26 @@ pub fn centred_editable_label(text: &str) -> gtk::EditableLabel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Vini: in Launchpad, a right-click on an app inside an open folder
+    /// opened no menu. The folder's grid was let go once its panel was
+    /// made; its tiles' right-click gestures hold the tile weakly, so the
+    /// press found nothing to show a menu for. The open folder keeps it.
+    #[test]
+    fn test_right_click_in_folder_opened_no_menu() {
+        let src = include_str!("pad.rs");
+        let code = &src[..src.find("#[cfg(test)]").unwrap()];
+        let fv = &code[code.find("pub struct FolderView").unwrap()..];
+        assert!(fv[..fv.find("\n}\n").unwrap()].contains("pub grid: Rc<PageGrid>"));
+        let open = &code[code.find("pub fn open_folder(").unwrap()..];
+        let open = &open[..open.find("\n    }\n").unwrap()];
+        assert!(open.contains("let grid = self.folder_grid(f);") && open.contains("title, grid }"));
+        let sync = &code[code.find("fn sync_folder_view(").unwrap()..];
+        assert!(sync[..sync.find("\n    }\n").unwrap()].contains("fv.grid = grid;"));
+        // the tiles' gesture holds the tile weakly: what keeps it is the grid
+        let tiles = include_str!("tiles.rs");
+        assert!(tiles.contains("let (w, t) = (Rc::downgrade(pad), Rc::downgrade(&tile));"));
+    }
 
     fn entry(dir: &std::path::Path, file: &str, name: &str) {
         std::fs::create_dir_all(dir).unwrap();

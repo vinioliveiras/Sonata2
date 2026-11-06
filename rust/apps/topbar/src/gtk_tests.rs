@@ -213,3 +213,29 @@ fn put_back_module_grew_in_at_every_opening() {
     let at = src.find("pub fn refresh(self: &Rc<Self>) -> bool").unwrap();
     assert!(src[at..].contains("self.grid.clear_arriving();"));
 }
+
+/// Vini: the menu bar's Now Playing showed no volume control -- only the
+/// player. Its panel has Control Center's Sound slider under the player;
+/// Control Center's own Now Playing (which sits by Sound) has none.
+#[test]
+fn test_no_volume_in_menu_bar_now_playing() {
+    in_own_process("gtk_tests::no_volume_in_menu_bar_now_playing");
+}
+
+#[test]
+#[ignore = "GTK: run by test_no_volume_in_menu_bar_now_playing"]
+fn no_volume_in_menu_bar_now_playing() {
+    let Some(_e) = gtk_up() else { return };
+    fn sliders(w: &gtk::Widget) -> usize {
+        let mut n = usize::from(w.has_css_class("cc-slider-box"));
+        let mut c = w.first_child();
+        while let Some(ch) = c {
+            n += sliders(&ch);
+            c = ch.next_sibling();
+        }
+        n
+    }
+    let p = crate::mpris::Players::with_bus(None);
+    assert_eq!(sliders(crate::bar::now_playing_module(&p, true).upcast_ref()), 1);
+    assert_eq!(sliders(crate::bar::now_playing_module(&p, false).upcast_ref()), 0);
+}

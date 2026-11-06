@@ -150,6 +150,17 @@ pub fn set_input_region(win: &gtk::Window, rects: &[(f64, f64, f64, f64)]) {
     surface.set_input_region(&region);
 }
 
+/// All of `win` (`size`) receives pointer input but these (x, y, w, h)
+/// holes, where clicks go to what is under it.
+pub fn set_input_region_except(win: &gtk::Window, size: (f64, f64), holes: &[(f64, f64, f64, f64)]) {
+    let Some(surface) = win.surface() else { return };
+    let region = gtk::cairo::Region::create_rectangle(&gtk::cairo::RectangleInt::new(0, 0, size.0.ceil() as i32, size.1.ceil() as i32));
+    for (x, y, w, h) in holes {
+        let _ = region.subtract_rectangle(&gtk::cairo::RectangleInt::new(*x as i32, *y as i32, *w as i32 + 1, *h as i32 + 1));
+    }
+    surface.set_input_region(&region);
+}
+
 // -- prewarm: a hidden surface drawn once, unseen (shell/layer.py's prewarm) ---------------------
 
 type Restore = (gtk::glib::WeakRef<gtk::Window>, Option<KeyboardMode>, bool, Option<Box<dyn FnOnce()>>);

@@ -314,6 +314,9 @@ pub struct Bar {
     windows_id: Cell<Option<u64>>,
     icons_src: RefCell<Option<glib::SourceId>>,
     icons_sig: RefCell<Option<IconsSig>>,
+    /// The window whose app the bar shows (its id), kept while the focus
+    /// is on a surface of ours (keeps_front_app): the menus act on it.
+    front: Cell<Option<i64>>,
     theme_src: RefCell<Option<glib::SourceId>>,
     cfg_mon: RefCell<Vec<gio::FileMonitor>>,
 }
@@ -372,12 +375,45 @@ fn set_icon(btn: &gtk::Button, name: &str) {
     }
 }
 
-/// Whether the app name and menus stay as they are: no window focused
-/// while one of the menu bar's own menus is open is the menu taking the
-/// keyboard, not the desktop (Wayfire's IPC reports no window focused then;
-/// Vini: Chrome in front, a click on a menu turned them into Files').
-pub fn keeps_front_app(focused: Option<&str>, menus_open: u32) -> bool {
-    focused.is_none() && menus_open > 0
+/// (the app's key, its windows) of the focused window, or, with none
+/// focused, of the window `front` the bar still shows -- marked activated
+/// so the menus act on it. (None, []) when neither.
+pub fn shown_from(tops: &[Toplevel], front: Option<i64>) -> (Option<String>, Vec<Toplevel>) {
+    let key_of = |t: &Toplevel| sonata_desktop::appmatch::match_app_id(&t.app_id).unwrap_or_else(|| t.app_id.clone());
+    let act = tops.iter().find(|t| t.activated).or_else(|| front.and_then(|id| tops.iter().find(|t| t.id == id)));
+    let Some(act) = act else { return (None, vec![]) };
+    let (key, id) = (key_of(act), act.id);
+    let wins = tops.iter().filter(|t| key_of(t) == key).cloned().map(|mut t| {
+        t.activated = t.id == id;
+        t
+    }).collect();
+    (Some(key), wins)
+}
+
+/// Whether the app name and menus stay as they are when no window is
+/// focused. Wayfire's IPC reports none as soon as a surface of ours takes
+/// the keyboard (a menu bar menu, and after it closes the focus may stay
+/// nowhere), where the Python bar read wlr-foreign-toplevel, which keeps
+/// the last window activated -- Vini: Chrome in front, a click on a menu
+/// turned them into Files'. Files' only for the desktop itself, or when no
+/// window is left to be in front.
+/// `focus`: Wayfire's focused view ("type", "app-id"), None when nothing.
+pub fn keeps_front_app(focused: Option<&str>, menus_open: u32, focus: Option<&serde_json::Value>, windows_shown: usize) -> bool {
+    if focused.is_some() {
+        return false; // a window in front: follow it
+    }
+    if menus_open > 0 {
+        return true;
+    }
+    match focus {
+        Some(v) => {
+            let app = v.get("app-id").and_then(|a| a.as_str()).unwrap_or("");
+            let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            // the desktop (the wallpaper's layer) has it: Files'
+            !(kind == "background" || app.contains("sonata2-wallpaper")) && windows_shown > 0
+        }
+        None => windows_shown > 0,
+    }
 }
 
 /// What redraws the icon items when it changes (icons_soon): the window in
@@ -571,6 +607,7 @@ impl Bar {
             windows_id: Cell::new(None),
             icons_src: RefCell::default(),
             icons_sig: RefCell::default(),
+            front: Cell::new(None),
             theme_src: RefCell::default(),
             cfg_mon: RefCell::default(),
         });
@@ -937,6 +974,16 @@ impl Bar {
         (Some(key), wins)
     }
 
+    /// The app the bar shows and its windows, the one in front marked
+    /// activated -- what the app, File and Window menus act on. Asking only
+    /// for the focused window, a menu opened from the bar found none (the
+    /// bar has the focus) and acted on Files: Vini, About in Chrome's menu
+    /// showed Files' About.
+    pub fn shown(&self) -> (Option<String>, Vec<Toplevel>) {
+        let tops = self.services.windows.as_ref().map(|w| w.toplevels()).unwrap_or_default();
+        shown_from(&tops, self.front.get())
+    }
+
     /// App name + menus follow the focused app; on the desktop (nothing
     /// focused) they are Files' -- File, Go, Window -- like Finder's.
     fn active_changed(self: &Rc<Self>) {
@@ -950,9 +997,12 @@ impl Bar {
             self.icons_soon();
         }
         let (key, wins) = self.active();
-        if keeps_front_app(key.as_deref(), self.open_menus.get()) {
+        let focus = if key.is_none() { sonata_backend::wfipc::call("window-rules/get-focused-view", serde_json::json!({})).and_then(|v| v.get("info").cloned()).filter(|v| !v.is_null()) } else { None };
+        let shown = tops.iter().filter(|t| !t.minimized).count();
+        if keeps_front_app(key.as_deref(), self.open_menus.get(), focus.as_ref(), shown) {
             return; // a menu of ours took the focus: the app in front is still Chrome's...
         }
+        self.front.set(tops.iter().find(|t| t.activated).map(|t| t.id));
         self.go_btn.set_visible(key.is_none());
         match key {
             Some(key) => {
@@ -1028,7 +1078,7 @@ impl Bar {
     }
 
     fn app_menu(self: &Rc<Self>, btn: &gtk::Button) -> Option<gtk::Popover> {
-        let (key, wins) = self.active();
+        let (key, wins) = self.shown();
         let info = sonata_ui::apps::lookup(key.as_deref().unwrap_or("io.github.vinioliveiras.sonata2.files")); // desktop: Files, like Finder
         let name = info.as_ref().map(sonata_ui::apps::display_name).or(key.clone()).unwrap_or_else(|| tr!("Files"));
         let win = self.services.windows.clone();
@@ -1062,7 +1112,7 @@ impl Bar {
 
     /// File: the app's windows (apptabs: the app's own shortcuts); on the desktop, Files' own.
     fn file_menu(self: &Rc<Self>, btn: &gtk::Button) -> Option<gtk::Popover> {
-        let (key, wins) = self.active();
+        let (key, wins) = self.shown();
         let Some(key) = key else { return self.files_file_menu(btn) };
         let act = wins.iter().find(|t| t.activated).cloned();
         let app_id = act.as_ref().map_or(key, |t| t.app_id.clone());
@@ -1122,7 +1172,7 @@ impl Bar {
     }
 
     fn window_menu(self: &Rc<Self>, btn: &gtk::Button) -> Option<gtk::Popover> {
-        let (_key, wins) = self.active();
+        let (_key, wins) = self.shown();
         let act = wins.iter().find(|t| t.activated).cloned();
         let win = self.services.windows.clone();
         let (w1, w2, a1, a2) = (win.clone(), win.clone(), act.clone(), act.clone());
@@ -1233,11 +1283,7 @@ impl Bar {
     }
 
     pub fn set_volume(&self, v: f64) {
-        run_async(move || system::set_volume(Some(v as i64), Some(false)), |_| {
-            if let Some(b) = bars().first() {
-                b.poll();
-            }
-        });
+        set_output_volume(v);
     }
 
     // -- menus of the extras --------------------------------------------------------------------
@@ -1896,11 +1942,78 @@ thread_local! {
     static ART: RefCell<Vec<((String, i32), (gdk::Texture, bool))>> = RefCell::default();
 }
 
+/// The system's output volume (Control Center's and the Sound menu's
+/// slider, the Now Playing panel's), the menu bar's icon following.
+pub fn set_output_volume(v: f64) {
+    run_async(move || system::set_volume(Some(v as i64), Some(false)), |_| {
+        if let Some(b) = bars().first() {
+            b.poll();
+        }
+    });
+}
+
+/// What the Now Playing square shows.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Art {
+    /// the player's art (mpris:artUrl)
+    Cover(String),
+    /// no art: the icon of the app playing (this bus name's)
+    App(String),
+    /// nothing playing: a small note
+    Note,
+}
+
+/// Vini: Netflix in Chrome had an empty square with a note -- Chrome sends
+/// no art. A player without art shows its app's icon; the note only when
+/// nothing plays.
+pub fn art_choice(active: bool, url: &str, bus_name: &str) -> Art {
+    match (active, url.is_empty(), bus_name.is_empty()) {
+        (false, ..) => Art::Note,
+        (true, false, _) => Art::Cover(url.to_string()),
+        (true, true, false) => Art::App(bus_name.to_string()),
+        (true, true, true) => Art::Note,
+    }
+}
+
+fn show_note(image: &gtk::Image, size: i32) {
+    image.set_icon_name(Some("sonata-now-playing-symbolic"));
+    image.set_pixel_size(size / 2); // a small note in the empty square
+}
+
+/// The square's picture: the art, the playing app's icon, or the note.
+/// `shown`: what the square should show by now -- an app found after the
+/// player changed again is dropped.
+fn show_art(art: &Art, image: &gtk::Image, size: i32, shown: &Rc<RefCell<Option<Art>>>) {
+    match art {
+        Art::Note => show_note(image, size),
+        Art::Cover(url) => load_art(url, image, size),
+        Art::App(bus) => {
+            image.set_paintable(gdk::Paintable::NONE); // empty while found: no note flashing first
+            let (b, img, shown, want) = (bus.clone(), image.clone(), shown.clone(), art.clone());
+            // D-Bus calls, /proc and Wayfire's views: in a thread
+            run_async(
+                move || crate::mpris::app_of_player(&b),
+                move |did| {
+                    if shown.borrow().as_ref() != Some(&want) {
+                        return;
+                    }
+                    match did.and_then(|d| sonata_ui::apps::lookup(&d)) {
+                        Some(info) => {
+                            img.set_from_gicon(&sonata_ui::icons::app_icon(info.upcast_ref()));
+                            img.set_pixel_size(art_size(size, true));
+                        }
+                        None => show_note(&img, size),
+                    }
+                },
+            );
+        }
+    }
+}
+
 /// Album art (mpris:artUrl: file:// or http[s]://) into `image`.
 fn load_art(url: &str, image: &gtk::Image, size: i32) {
     if url.is_empty() {
-        image.set_icon_name(Some("sonata-now-playing-symbolic"));
-        image.set_pixel_size(size / 2); // a small note in the empty square
+        show_note(image, size);
         return;
     }
     let key = (url.to_string(), size);
@@ -1990,7 +2103,7 @@ pub fn now_playing_module(p: &crate::mpris::Players, header: bool) -> gtk::Box {
         row.append(&b);
         btns.push(b);
     }
-    let shown_art: Rc<RefCell<Option<String>>> = Rc::default();
+    let shown_art: Rc<RefCell<Option<Art>>> = Rc::default();
     let pl = p.clone();
     let update: Rc<dyn Fn()> = Rc::new(move || {
         let on = pl.active();
@@ -2001,10 +2114,10 @@ pub fn now_playing_module(p: &crate::mpris::Players, header: bool) -> gtk::Box {
         for b in &btns {
             b.set_sensitive(on);
         }
-        let url = if on { pl.art() } else { String::new() };
-        if shown_art.borrow().as_ref() != Some(&url) {
-            shown_art.replace(Some(url.clone()));
-            load_art(&url, &art, 36);
+        let want = art_choice(on, &pl.art(), &pl.bus_name());
+        if shown_art.borrow().as_ref() != Some(&want) {
+            shown_art.replace(Some(want.clone()));
+            show_art(&want, &art, 36, &shown_art);
         }
     });
     update();
@@ -2026,7 +2139,26 @@ pub fn now_playing_module(p: &crate::mpris::Players, header: bool) -> gtk::Box {
         }
     });
     bx.append(&row);
+    if header {
+        // the menu bar's panel: the system volume under the player (Vini),
+        // Control Center's Sound slider; Control Center has its own Sound
+        bx.append(&volume_slider());
+    }
     kit::module(&[bx.upcast_ref()], 8)
+}
+
+/// Control Center's Sound slider (its Output button too), set to the
+/// system's volume once read.
+fn volume_slider() -> gtk::Widget {
+    let out_btn = crate::controls::round_button("sonata-audio-output-symbolic", &tr!("Output"), |b| device_menu(b, &tr!("Output"), false));
+    let (bx, slider) = crate::controls::slider_with_icon(|v| crate::controls::speaker_icon(v).to_string(), crate::cc::level("vol"), set_output_volume, true, Some(&out_btn));
+    crate::controls::volume_feedback(&slider);
+    run_async(system::volume, move |v| {
+        if let Some((v, _)) = v {
+            slider.show_value(v as f64);
+        }
+    });
+    bx
 }
 
 #[cfg(test)]
@@ -2050,6 +2182,19 @@ mod art_tests {
         assert_eq!(art_size(36, corners_clear(&cover)), 36);
         let jpeg = Pixbuf::new(Colorspace::Rgb, false, 8, 64, 64).unwrap(); // no alpha at all
         assert!(!corners_clear(&jpeg));
+    }
+
+    /// Vini: Netflix in Chrome showed an empty square with a music note --
+    /// Chrome sends no art. A player without art gets its app's icon (drawn
+    /// at the icon size); the note is left for nothing playing.
+    #[test]
+    fn test_empty_square_for_chrome_without_art() {
+        let chrome = "org.mpris.MediaPlayer2.chromium.instance7754";
+        assert_eq!(art_choice(true, "", chrome), Art::App(chrome.into()));
+        assert_eq!(art_choice(true, "file:///a.png", chrome), Art::Cover("file:///a.png".into()));
+        assert_eq!(art_choice(false, "", ""), Art::Note);
+        assert_eq!(art_choice(false, "file:///a.png", chrome), Art::Note);
+        assert_eq!(art_size(36, true), 24);
     }
 }
 

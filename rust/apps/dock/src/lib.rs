@@ -113,7 +113,7 @@ fn preview_window(app: &adw::Application, dock: &Rc<Dock>) -> gtk::ApplicationWi
     let over = gtk::Overlay::new();
     over.set_child(Some(&wall));
     dock::apply_margins(dock);
-    over.add_overlay(&dock.plate);
+    over.add_overlay(&dock.root);
     win.set_child(Some(&over));
     let paint = {
         let (wall, d) = (wall.clone(), Rc::downgrade(dock));
