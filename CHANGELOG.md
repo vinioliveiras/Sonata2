@@ -4,7 +4,7 @@
 
 - Dock: an app dragged out of a folder's panel and dropped on the Dock stays there (it used to go back into its folder); dropped on another app it makes or joins a folder, let go anywhere else it goes back. The panel is now drawn in the Dock itself, with the same look, and closes with Esc or a click anywhere else.
 - Search closes again with a click beside it, or on its menu bar icon again.
-- Menu bar: clicking a menu keeps the app in front's name and menus, also once the menu has closed (with Chrome in front they turned into Files').
+- Menu bar: clicking a menu keeps the app in front's name and menus, also once the menu has closed, and their items (About, Hide, Quit, the File and Window menus) act on that app (with Chrome in front they turned into Files').
 - Settings > Displays shows the displays and their brightness again (it came up empty).
 - Menu bar: Wi-Fi, Search and Control Center no longer turn dark after minimizing or maximizing an app or switching windows.
 - Dock: an app in a folder can be dragged out again -- after making a folder, no app in it could be picked up.
