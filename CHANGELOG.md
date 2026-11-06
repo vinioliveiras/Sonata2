@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- About This Computer looks and works like Big Sur's About This Mac: tabs in the title bar (Overview, Displays, Storage, Support). Overview shows "Sonata 2", its version, the computer, processor, memory, graphics and system, with System Report… (Task Manager) and Software Update…; Displays shows each display with its size, resolution, refresh rate and scale; Storage shows each disk's free space with a usage bar and Manage… (Disk Manager); Support links to the guide, what's new, the license, Report a Problem… (Feedback) and known problems.
+
 - Menu bar: Wi-Fi, Search and Control Center no longer turn dark after minimizing or maximizing an app or switching windows.
 - Dock: an app in a folder can be dragged out again -- after making a folder, no app in it could be picked up.
 - Apps: a folder's menu has Ungroup, like the Dock's folders (a locked folder asks for the password first); its apps take its place.

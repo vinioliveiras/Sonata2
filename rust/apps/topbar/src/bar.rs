@@ -372,6 +372,14 @@ fn set_icon(btn: &gtk::Button, name: &str) {
     }
 }
 
+/// Whether the app name and menus stay as they are: no window focused
+/// while one of the menu bar's own menus is open is the menu taking the
+/// keyboard, not the desktop (Wayfire's IPC reports no window focused then;
+/// Vini: Chrome in front, a click on a menu turned them into Files').
+pub fn keeps_front_app(focused: Option<&str>, menus_open: u32) -> bool {
+    focused.is_none() && menus_open > 0
+}
+
 /// What redraws the icon items when it changes (icons_soon): the window in
 /// front, how many there are, how many minimized and maximized. Vini: Wi-Fi,
 /// Search and Control Center went dark after minimizing or maximizing an
@@ -942,6 +950,9 @@ impl Bar {
             self.icons_soon();
         }
         let (key, wins) = self.active();
+        if keeps_front_app(key.as_deref(), self.open_menus.get()) {
+            return; // a menu of ours took the focus: the app in front is still Chrome's...
+        }
         self.go_btn.set_visible(key.is_none());
         match key {
             Some(key) => {

@@ -240,6 +240,16 @@ mod tests {
         assert_eq!(base, crate::bar::icons_signature(&[retitled, t(2, false, false, false)])); // a title alone: no redraw
     }
 
+    /// Vini: with Chrome in front, clicking a menu bar item turned the
+    /// app name and menus into Files' -- the open menu took the keyboard and
+    /// Wayfire reported no window focused, read as the desktop.
+    #[test]
+    fn test_menus_turned_into_files_on_click() {
+        assert!(crate::bar::keeps_front_app(None, 1)); // a menu of ours open: Chrome's stay
+        assert!(!crate::bar::keeps_front_app(None, 0)); // nothing focused, no menu: the desktop (Files')
+        assert!(!crate::bar::keeps_front_app(Some("google-chrome"), 1)); // another app focused: follow it
+    }
+
     #[test]
     fn test_wifi_panel_opened_off_to_the_right() {
         assert!(!crate::bar::STATUS_ALIGN_START);
