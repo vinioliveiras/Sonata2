@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.23.0-alpha -- 2026-11-06
+
+Sonata is Rust only now. The whole desktop -- Dock, Launchpad, the menu
+bar and Control Center, notifications, Mission Control, Files and every
+app -- is the Rust build, installed as `sonata2`, and updating from the
+Python Sonata keeps your settings and data. Also: a macOS-style
+Notification Center with grouped notifications, a Big Sur About window,
+folders in the Dock that open in place and let apps out with a drag, and
+a long list of fixes.
+
+### Changes
+- Apps: a web app's right-click menu no longer has Change Icon….
 - Web apps keep their window's size again: each opened at the size it had before the move to Rust.
 - Apps: a right-click on an app inside an open folder shows its menu again (nothing happened).
 - Dock: an app dragged out of a folder now stays on the Dock where its place opened, also when the drop doesn't reach the Dock (it went back into its folder, or into a new folder with the app beside it). Taken out of a folder, an app no longer makes a new folder with the app it's over: it goes where its place opens.
