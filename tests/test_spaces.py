@@ -31,6 +31,17 @@ class ArithmeticTest(unittest.TestCase):
         self.assertEqual(spaces.desktop_of(view(3, 1920 + 50), OUT), 2)  # one to the right
         self.assertEqual(spaces.desktop_of(view(4, 1700), OUT), 2)       # mostly on the next
 
+    def test_desktops_bar_under_the_menu_bar_on_a_second_display(self):
+        """Vini (laptop at 1920,201 next to the HDMI display): on the laptop the
+        desktops and the + sat at the very top, over the menu bar -- the work
+        area (display coordinates) was taken from the display's place in the
+        layout, 32 - 201 < 0."""
+        edp = {"name": "eDP-1", "geometry": {"x": 1920, "y": 201, "width": 1536, "height": 864},
+               "workarea": {"x": 0, "y": 32, "width": 1536, "height": 832}}
+        self.assertEqual(spaces.bar_top(edp), 32)
+        self.assertEqual(spaces.bar_top(OUT), 30)                       # the first display: as it was
+        self.assertEqual(spaces.bar_top({}), 0)
+
     def test_close_middle(self):
         moves, after, count = spaces.plan_close(1, 3, [(1, 0), (2, 1), (3, 2)], 1)
         self.assertEqual(sorted(moves), [(2, 0), (3, 1)])

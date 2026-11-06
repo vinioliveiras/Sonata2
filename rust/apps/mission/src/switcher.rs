@@ -404,6 +404,7 @@ impl Switcher {
         let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
         col.append(&panel);
         win.set_child(Some(&col));
+        sonata_ui::theme::fade_too(&win); // (Dark Mode cross-fades it, as Python)
         let layered = layered && sonata_shell::layer::available();
         if layered {
             use gtk4_layer_shell::{KeyboardMode, Layer, LayerShell};

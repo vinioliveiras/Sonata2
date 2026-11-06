@@ -94,6 +94,16 @@ pub fn plan_close(index: i64, count: i64, views: &[(i64, i64)], mut current: i64
     (moves, current.min(count - 2).max(0), count - 1)
 }
 
+/// How far down the display the bar starts: the top of the work area
+/// (under the menu bar). Wayfire's list-outputs gives "workarea" in the
+/// display's own coordinates (get_workarea() is cut from the output's
+/// relative geometry) while "geometry" is in the layout's, so the two are
+/// never to be subtracted: on a second display at y 201 that put the bar at
+/// the very top, over the menu bar.
+pub fn bar_top(out: &Value) -> i32 {
+    out["workarea"]["y"].as_i64().unwrap_or(0).max(0) as i32
+}
+
 /// (desktops, the current one) of an output.
 pub fn workspace(out: &Value) -> (i64, i64) {
     let ws = &out["workspace"];
@@ -233,6 +243,17 @@ pub fn drop_window(ipc: &dyn Ipc, connector: &str, view_id: i64, target: Target)
     }
 }
 
+/// The entry behind a window's app id, for its icon. A window no entry
+/// matches is asked of GIO alone: apps::lookup reads every .desktop file
+/// again on a miss (~5 ms each), for each such window at every open --
+/// match_app_id has just looked through them all.
+pub fn app_info(app_id: &str) -> Option<gio::DesktopAppInfo> {
+    match sonata_desktop::appmatch::match_app_id(app_id) {
+        Some(did) => sonata_ui::apps::lookup(&did),
+        None => gio::DesktopAppInfo::new(&format!("{app_id}.desktop")),
+    }
+}
+
 /// The name under a picture (macOS: one is just "Desktop").
 pub fn desktop_name(i: i64, count: i64) -> String {
     if count > 1 { sonata_i18n::fmt(&tr!("Desktop {n}"), &[("n", &(i + 1).to_string())]) } else { tr!("Desktop") }
@@ -241,7 +262,9 @@ pub fn desktop_name(i: i64, count: i64) -> String {
 /// The side of the user's window buttons (ui/window.close_align: Vini,
 /// "my buttons are all on the left"): true for the right.
 pub fn close_at_end() -> bool {
-    end_side(&sonata_config::load("appearance", &json!({})))
+    // (stored(), not load() with no defaults: load keeps only the keys its
+    // defaults have, so buttons_side never got through)
+    end_side(&sonata_config::stored("appearance"))
 }
 
 /// appearance.json's "buttons_side" is "right" (anything else: macOS's left).
@@ -544,8 +567,7 @@ impl SpacesBar {
         if self.layered {
             if let Some(out) = find_output(&*self.ipc, &self.connector) {
                 use gtk4_layer_shell::{Edge, LayerShell};
-                let top = out["workarea"]["y"].as_i64().unwrap_or(0) - out["geometry"]["y"].as_i64().unwrap_or(0);
-                self.top.set(top.max(0) as i32);
+                self.top.set(bar_top(&out));
                 self.win.set_margin(Edge::Top, self.top.get());
             }
         }
@@ -624,8 +646,7 @@ impl SpacesBar {
         let icons = gtk::Box::builder().spacing(3).halign(gtk::Align::Center).valign(gtk::Align::End).css_classes(["sp-icons"]).build();
         for aid in app_ids.iter().take(ICONS_PER_DESKTOP) {
             let img = gtk::Image::builder().pixel_size(18).build();
-            let key = sonata_desktop::appmatch::match_app_id(aid).unwrap_or_else(|| aid.clone());
-            match sonata_ui::apps::lookup(&key) {
+            match app_info(aid) {
                 Some(info) => sonata_ui::icons::set_image(&img, &sonata_ui::icons::app_icon(info.upcast_ref())),
                 None => img.set_icon_name(Some("application-x-executable")),
             }
@@ -830,6 +851,19 @@ mod tests {
         ipc.calls().into_iter().map(|(m, _)| m).filter(|m| !m.starts_with("window-rules/list-")).collect()
     }
 
+    /// Vini (laptop at 1920,201 next to the HDMI display): on the laptop the
+    /// desktops and the + sat at the very top, over the menu bar -- the work
+    /// area (display coordinates) was taken from the display's place in the
+    /// layout, 32 - 201 < 0.
+    #[test]
+    fn test_desktops_bar_under_the_menu_bar_on_a_second_display() {
+        let edp = json!({"name": "eDP-1", "geometry": {"x": 1920, "y": 201, "width": 1536, "height": 864},
+                         "workarea": {"x": 0, "y": 32, "width": 1536, "height": 832}});
+        assert_eq!(bar_top(&edp), 32);
+        assert_eq!(bar_top(&out(3, 1)), 30); // the first display: as it was
+        assert_eq!(bar_top(&json!({})), 0);
+    }
+
     #[test]
     fn test_desktop_of() {
         let o = out(3, 1);
@@ -982,6 +1016,40 @@ mod tests {
         assert_eq!(drop_window(&ipc, "DP-1", 2, Target::None), Dropped::Nothing);
         assert_eq!(drop_window(&ipc, "DP-1", 99, Target::Desktop(0)), Dropped::Nothing); // gone meanwhile
         assert!(!methods(&ipc).contains(&"vswitch/send-view".to_string()));
+    }
+
+    /// Vini keeps his window buttons on the right, and the x on Mission
+    /// Control's desktops and windows stayed on the left: close_at_end read
+    /// appearance.json through load() with no defaults, which drops every key.
+    #[test]
+    fn test_close_x_ignored_the_buttons_on_the_right() {
+        let dir = sonata_config::write_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("appearance.json"), r#"{"buttons_side": "right"}"#).unwrap();
+        let right = close_at_end();
+        std::fs::remove_file(dir.join("appearance.json")).unwrap();
+        assert!(right);
+        assert!(!close_at_end()); // macOS's left
+    }
+
+    /// The delay after Super+Tab: a window no .desktop matches (a terminal
+    /// started by hand, a game) had apps::lookup read every .desktop file
+    /// again, for each such window at every open.
+    #[test]
+    fn test_unknown_app_reread_every_desktop_file_at_each_open() {
+        assert!(app_info("no.such.app.anywhere").is_none()); // (match_app_id's index, built once)
+        let t = std::time::Instant::now();
+        let _ = sonata_ui::apps::scan();
+        let scan = t.elapsed();
+        let t = std::time::Instant::now();
+        for _ in 0..5 {
+            assert!(app_info("no.such.app.anywhere").is_none());
+        }
+        let five = t.elapsed();
+        if scan >= std::time::Duration::from_millis(1) {
+            // (a handful of entries here: nothing to tell apart)
+            assert!(five < scan, "5 misses took {five:?}, one scan {scan:?}");
+        }
     }
 
     /// Vini: Mission Control's buttons follow the user's window buttons.

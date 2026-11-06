@@ -38,6 +38,10 @@ pub const BACKDROP_FALLBACK: i32 = 1280;
 /// the video wallpaper's frame where it paused, written by the desktop as
 /// Overview opens (videowallpaper.FRAME_FILE)
 pub const FRAME_FILE: &str = "sonata2-wallpaper-frame.jpg";
+/// the wallpaper decoded this long after login, ahead of the first open
+pub const WARM_AFTER_MS: u64 = 3000;
+/// and this long after system.json changes (a burst of writes: one decode)
+pub const WARM_AFTER_CHANGE_MS: u64 = 400;
 
 /// What Mission Control listens to.
 pub const EVENTS: [&str; 7] = ["plugin-activation-state-changed", "wset-workspace-changed", "view-mapped", "view-unmapped", "view-workspace-changed", "sonata-scale-drag#", "sonata-scale-hover#"];
@@ -115,13 +119,32 @@ thread_local! {
     static FRAME: RefCell<Option<((PathBuf, std::time::SystemTime), gdk::Texture)>> = const { RefCell::new(None) };
 }
 
+/// system.json's Light and Dark wallpapers, as stored.
+fn chosen_pictures() -> (Option<Value>, Option<Value>) {
+    let data = sonata_config::stored("system");
+    let get = |k: &str| data.get(&format!("org.gnome.desktop.background/{k}")).cloned();
+    (get("picture-uri"), get("picture-uri-dark"))
+}
+
+/// The chosen wallpaper when it is a video that's there (the one
+/// wallpaper::wallpaper_uri picks), else None. Read from system.json alone:
+/// wallpaper_uri also checks a picture with Pixbuf::file_info, and with
+/// glycin's loaders that is a sandboxed process each time -- ~130 ms on
+/// the main loop at every Mission Control open, before the bar could show
+/// (Vini: a big delay after Super+Tab). A picture, readable or not, is
+/// never a video, so the check isn't needed to answer this.
+pub fn chosen_video(dark: bool) -> Option<PathBuf> {
+    let data = sonata_config::stored("system");
+    let get = |k: &str| data.get(&format!("org.gnome.desktop.background/{k}")).and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from);
+    let uri = (if dark { get("picture-uri-dark") } else { None }).or_else(|| get("picture-uri"))?;
+    let path = sonata_shell::wallpaper::path_of(&uri)?;
+    (sonata_shell::wallpaper::is_video(&path.to_string_lossy()) && path.is_file()).then_some(path)
+}
+
 /// The video wallpaper's frame where it paused, or None for a picture or
 /// no frame yet.
 pub fn video_frame(dark: bool) -> Option<gdk::Texture> {
-    let path = sonata_shell::wallpaper::path_of(&sonata_shell::wallpaper::wallpaper_uri(dark))?;
-    if !sonata_shell::wallpaper::is_video(&path.to_string_lossy()) {
-        return None;
-    }
+    let path = chosen_video(dark)?;
     let frame = frame_path();
     let key = (path, std::fs::metadata(&frame).ok()?.modified().ok()?);
     FRAME.with(|f| {
@@ -131,6 +154,117 @@ pub fn video_frame(dark: bool) -> Option<gdk::Texture> {
         }
         f.borrow().as_ref().map(|(_, t)| t.clone())
     })
+}
+
+/// The wallpaper's still (a video's poster) fitted into `max_size` pixels
+/// (0: full size), as loginui::wallpaper_texture decodes it -- callable off
+/// the main loop: nothing here touches GTK's state (the texture is made
+/// from the pixbuf's bytes, not Texture::for_pixbuf).
+pub fn decode_still(dark: bool, max_size: i32) -> Option<gdk::Texture> {
+    use sonata_shell::wallpaper as wp;
+    let path = match std::env::var("SONATA_LOCK_WALLPAPER") {
+        // previews
+        Ok(over) if !over.is_empty() => {
+            let p = PathBuf::from(&over);
+            if wp::is_video(&over) { wp::poster(&p).unwrap_or(p) } else { p }
+        }
+        _ => wp::path_of(&wp::still_uri(dark))?,
+    };
+    if !path.is_file() {
+        return None;
+    }
+    use gtk::gdk_pixbuf::Pixbuf;
+    if let (true, Some((_, w, h))) = (max_size > 0, Pixbuf::file_info(&path)) {
+        if w.max(h) > max_size {
+            // (never scaled up; no EXIF rotation: Texture::from_file applies none either)
+            if let Ok(pb) = Pixbuf::from_file_at_scale(&path, max_size, max_size, true) {
+                let format = if pb.has_alpha() { gdk::MemoryFormat::R8g8b8a8 } else { gdk::MemoryFormat::R8g8b8 };
+                return Some(gdk::MemoryTexture::new(pb.width(), pb.height(), format, &pb.read_pixel_bytes(), pb.rowstride() as usize).upcast());
+            }
+        }
+    }
+    gdk::Texture::from_filename(&path).ok()
+}
+
+/// (Light/Dark, the wallpaper generation it is for, the picture)
+type Still = (bool, u64, Option<gdk::Texture>);
+/// What decodes a still (Light/Dark, size), on a worker thread.
+pub type Decoder = std::sync::Arc<dyn Fn(bool, i32) -> Option<gdk::Texture> + Send + Sync>;
+
+/// The backdrop's decoded wallpaper, made off the main loop. Decoding it
+/// there took ~270 ms (glycin: a sandboxed loader for the size, another
+/// for the picture) on the first Mission Control open and again after
+/// every system.json change -- the desktops bar and the windows waited for
+/// it (Vini). Now it is decoded ahead (after login, after a change) and
+/// an open never waits: it takes what there is, the picture before the
+/// change or none, and the bar gets the new one when it lands (`ready`).
+pub struct Stills {
+    have: RefCell<Option<Still>>,
+    /// bumped when the wallpaper may have changed (system.json)
+    generation: Cell<u64>,
+    /// the decode on its way: (Light/Dark, generation)
+    busy: Cell<Option<(bool, u64)>>,
+    #[allow(clippy::type_complexity)]
+    ready: RefCell<Option<Box<dyn Fn(bool, Option<gdk::Texture>)>>>,
+    decode: Decoder,
+}
+
+impl Stills {
+    pub fn new() -> Rc<Stills> {
+        Stills::with_decoder(std::sync::Arc::new(decode_still))
+    }
+
+    pub fn with_decoder(decode: Decoder) -> Rc<Stills> {
+        Rc::new(Stills { have: RefCell::default(), generation: Cell::new(0), busy: Cell::new(None), ready: RefCell::default(), decode })
+    }
+
+    /// `f(dark, texture)` each time a decode lands.
+    pub fn on_ready(&self, f: impl Fn(bool, Option<gdk::Texture>) + 'static) {
+        self.ready.replace(Some(Box::new(f)));
+    }
+
+    fn fresh(&self, dark: bool) -> bool {
+        self.have.borrow().as_ref().is_some_and(|(d, g, _)| *d == dark && *g == self.generation.get())
+    }
+
+    /// The picture there is now, never waiting: a decode starts when it is
+    /// missing or out of date.
+    pub fn get(self: &Rc<Self>, dark: bool, size: i32) -> Option<gdk::Texture> {
+        if !self.fresh(dark) {
+            self.warm(dark, size);
+        }
+        self.have.borrow().as_ref().and_then(|(_, _, t)| t.clone())
+    }
+
+    /// Decode it now, off the main loop (nothing when it is fresh or on its way).
+    pub fn warm(self: &Rc<Self>, dark: bool, size: i32) {
+        let generation = self.generation.get();
+        if self.fresh(dark) || self.busy.get() == Some((dark, generation)) {
+            return;
+        }
+        self.busy.set(Some((dark, generation)));
+        let (decode, weak) = (self.decode.clone(), Rc::downgrade(self));
+        glib::MainContext::ref_thread_default().spawn_local(async move {
+            let tex = gio::spawn_blocking(move || decode(dark, size)).await.ok().flatten();
+            let Some(me) = weak.upgrade() else { return };
+            if me.busy.get() == Some((dark, generation)) {
+                me.busy.set(None);
+            }
+            if generation != me.generation.get() {
+                return; // the wallpaper changed meanwhile: a newer decode follows
+            }
+            me.have.replace(Some((dark, generation, tex.clone())));
+            if let Some(f) = &*me.ready.borrow() {
+                f(dark, tex);
+            };
+        });
+    }
+
+    /// The wallpaper may have changed: what there is goes out of date (it
+    /// still shows until the new one lands).
+    pub fn changed(&self) {
+        self.generation.set(self.generation.get() + 1);
+    }
 }
 
 /// A window's close button in Mission Control (Vini), over the window
@@ -219,8 +353,8 @@ pub struct MissionBackdrop {
     /// (plugin, connector)
     active: RefCell<HashSet<(String, String)>>,
     ipc: Rc<dyn Ipc>,
-    /// the decoded wallpaper: only the current Light/Dark one, until system.json changes
-    texture: RefCell<Option<(bool, Option<gdk::Texture>)>>,
+    /// the decoded wallpaper: only the current Light/Dark one, decoded off the main loop
+    stills: Rc<Stills>,
     pub bars: RefCell<HashMap<String, Rc<SpacesBar>>>,
     closers: RefCell<HashMap<String, Rc<CloseOverlay>>>,
     monitors: RefCell<Vec<gio::FileMonitor>>,
@@ -237,12 +371,20 @@ impl MissionBackdrop {
             fades: Rc::default(),
             active: RefCell::default(),
             ipc: Rc::new(Wayfire),
-            texture: RefCell::default(),
+            stills: Stills::new(),
             bars: RefCell::default(),
             closers: RefCell::default(),
             monitors: RefCell::default(),
             prefs_watched: Cell::new(false),
             watch: RefCell::default(),
+        });
+        let weak = Rc::downgrade(&me);
+        me.stills.on_ready(move |dark, tex| {
+            if let Some(me) = weak.upgrade() {
+                if dark == sonata_ui::is_dark() && video_frame(dark).is_none() {
+                    me.give_bars(tex); // (an open that came first had the old one, or none)
+                }
+            }
         });
         // a video wallpaper's frame, written as Overview opens
         let weak = Rc::downgrade(&me);
@@ -261,8 +403,68 @@ impl MissionBackdrop {
                 }
             });
             me.watch.replace(w);
+            // the wallpaper decoded before the first Super+Tab (not at once:
+            // login has enough to do), and again when Light/Dark flips
+            let weak = Rc::downgrade(&me);
+            glib::timeout_add_local_once(Duration::from_millis(WARM_AFTER_MS), move || {
+                if let Some(me) = weak.upgrade() {
+                    me.warm();
+                    // each display's bar built once, unseen: the first open
+                    // found the app index, icons and styles cold (~50 ms more)
+                    for m in sonata_shell::layer::monitors() {
+                        if let Some(bar) = me.bar(&sonata_shell::layer::connector(&m)) {
+                            bar.refresh();
+                        }
+                    }
+                }
+            });
+            let weak = Rc::downgrade(&me);
+            sonata_ui::on_change(move || {
+                if let Some(me) = weak.upgrade() {
+                    me.warm();
+                }
+            });
         }
         me
+    }
+
+    /// The wallpaper decoded ahead, off the main loop.
+    fn warm(self: &Rc<Self>) {
+        self.watch_prefs();
+        let dark = sonata_ui::is_dark();
+        if video_frame(dark).is_none() {
+            // (a picture, or a video's poster until its frame comes)
+            self.stills.warm(dark, backdrop_size(&displays()));
+        }
+    }
+
+    fn watch_prefs(self: &Rc<Self>) {
+        if self.prefs_watched.replace(true) {
+            return;
+        }
+        // a wallpaper change: decoded again, ahead (a burst of writes: once;
+        // other settings in system.json: not at all)
+        let (weak, soon) = (Rc::downgrade(self), Rc::new(RefCell::new(None::<glib::SourceId>)));
+        let chosen = RefCell::new(chosen_pictures());
+        let ms = sonata_config::watch("system", move || {
+            let Some(me) = weak.upgrade() else { return };
+            if *chosen.borrow() == chosen_pictures() {
+                return;
+            }
+            chosen.replace(chosen_pictures());
+            me.stills.changed();
+            if let Some(id) = soon.take() {
+                sonata_ui::cancel(id);
+            }
+            let (weak, done) = (Rc::downgrade(&me), soon.clone());
+            soon.replace(Some(glib::timeout_add_local_once(Duration::from_millis(WARM_AFTER_CHANGE_MS), move || {
+                done.replace(None);
+                if let Some(me) = weak.upgrade() {
+                    me.warm();
+                }
+            })));
+        });
+        self.monitors.borrow_mut().extend(ms);
     }
 
     pub fn event(self: &Rc<Self>, ev: &Value) {
@@ -365,53 +567,47 @@ impl MissionBackdrop {
             return;
         }
         let wall = self.wallpaper();
-        let bar = match bar {
-            Some(b) => b,
-            None => {
-                let Some(mon) = monitor_named(name) else { return };
-                let b = SpacesBar::new(&self.app, Some(mon), name, wall.clone(), self.ipc.clone(), Rc::new(crate::spaces::set_count), None);
-                self.bars.borrow_mut().insert(name.to_string(), b.clone());
-                b
-            }
-        };
+        let Some(bar) = bar.or_else(|| self.bar(name)) else { return };
         bar.wallpaper.replace(wall);
         bar.show_bar();
     }
 
+    /// That display's desktops bar, made the first time.
+    fn bar(&self, name: &str) -> Option<Rc<SpacesBar>> {
+        if let Some(b) = self.bars.borrow().get(name) {
+            return Some(b.clone());
+        }
+        let mon = monitor_named(name)?;
+        let b = SpacesBar::new(&self.app, Some(mon), name, None, self.ipc.clone(), Rc::new(crate::spaces::set_count), None);
+        self.bars.borrow_mut().insert(name.to_string(), b.clone());
+        Some(b)
+    }
+
     /// The wallpaper texture, decoded once per Light/Dark picture (not on
-    /// every Mission Control open); a wallpaper change drops the cache.
+    /// every Mission Control open); a wallpaper change decodes it again.
     /// Memory review: decoded at a quarter of the largest display (it is
     /// drawn under blur 40: the same picture on screen) and only the
     /// current Light/Dark one kept: full size, both variants held ~80 MB
-    /// for the whole session.
+    /// for the whole session. Never decoded here: Stills does it off the
+    /// main loop, and this gives what there is.
     pub fn wallpaper(self: &Rc<Self>) -> Option<gdk::Texture> {
-        if !self.prefs_watched.replace(true) {
-            let weak = Rc::downgrade(self);
-            let ms = sonata_config::watch("system", move || {
-                if let Some(me) = weak.upgrade() {
-                    me.texture.replace(None);
-                }
-            });
-            self.monitors.borrow_mut().extend(ms);
-        }
+        self.watch_prefs();
         let dark = sonata_ui::is_dark();
         if let Some(frame) = video_frame(dark) {
             return Some(frame); // a video: where it paused (Vini)
         }
-        if let Some((d, t)) = self.texture.borrow().as_ref() {
-            if *d == dark {
-                return t.clone();
-            }
-        }
-        let t = sonata_shell::loginui::wallpaper_texture(backdrop_size(&displays()));
-        self.texture.replace(Some((dark, t.clone())));
-        t
+        self.stills.get(dark, backdrop_size(&displays()))
     }
 
     /// The video's frame landed (just after Overview opened): the desktops
     /// showing get it.
     fn frame_changed(self: &Rc<Self>) {
         let tex = self.wallpaper();
+        self.give_bars(tex);
+    }
+
+    /// The desktops showing get this picture.
+    fn give_bars(&self, tex: Option<gdk::Texture>) {
         let bars: Vec<_> = self.bars.borrow().values().cloned().collect();
         for bar in bars.into_iter().filter(|b| b.is_visible()) {
             if *bar.wallpaper.borrow() != tex {
@@ -593,6 +789,87 @@ mod tests {
         // (the test's home: Sonata's own picture wallpaper)
         assert!(video_frame(false).is_none());
         assert!(frame_path().ends_with(FRAME_FILE));
+    }
+
+    /// Vini: a big delay after Super+Tab before the windows and the
+    /// desktops bar showed. The wallpaper was decoded on the main loop as
+    /// Mission Control opened (~270 ms with glycin's loaders), on the first
+    /// open and after every system.json change; now an open takes what
+    /// there is and the decode runs on a worker, ahead.
+    #[test]
+    fn test_mission_control_open_waited_for_the_wallpaper_decode() {
+        const DECODE: Duration = Duration::from_millis(300);
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = calls.clone();
+        let stills = Stills::with_decoder(std::sync::Arc::new(move |_dark, size| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(DECODE); // (a slow loader)
+            let px = glib::Bytes::from_owned(vec![0u8; (size * size * 3) as usize]);
+            Some(gdk::MemoryTexture::new(size, size, gdk::MemoryFormat::R8g8b8, &px, size as usize * 3).upcast())
+        }));
+        let ctx = glib::MainContext::new();
+        ctx.with_thread_default(|| {
+            let landed: Rc<RefCell<Vec<Option<gdk::Texture>>>> = Rc::default();
+            let l = landed.clone();
+            stills.on_ready(move |_dark, tex| l.borrow_mut().push(tex));
+            let wait = |n: usize| {
+                let t = Instant::now();
+                while landed.borrow().len() < n && t.elapsed() < Duration::from_secs(10) {
+                    ctx.iteration(true);
+                }
+            };
+            // the first open: nothing decoded yet -- it doesn't wait for it
+            let t = Instant::now();
+            assert!(stills.get(false, 8).is_none());
+            assert!(t.elapsed() < DECODE / 3, "the open waited {:?}", t.elapsed());
+            wait(1);
+            let first = landed.borrow()[0].clone().expect("decoded");
+            assert_eq!(first.width(), 8);
+            // the next opens: that one, no decode
+            assert_eq!(stills.get(false, 8).as_ref(), Some(&first));
+            assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+            // system.json changed: the old picture at once, the new one after
+            stills.changed();
+            let t = Instant::now();
+            assert_eq!(stills.get(false, 8).as_ref(), Some(&first));
+            assert!(t.elapsed() < DECODE / 3, "the open waited {:?}", t.elapsed());
+            stills.get(false, 8); // (another open meanwhile: no second decode)
+            wait(2);
+            assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+            assert_ne!(stills.get(false, 8).as_ref(), Some(&first));
+        })
+        .unwrap();
+    }
+
+    /// Vini: the delay after Super+Tab, every time. Each open asked whether
+    /// the wallpaper is a video through wallpaper_uri, whose picture check
+    /// (Pixbuf::file_info) is a sandboxed glycin loader: ~130 ms on the
+    /// main loop. Whether it is a video needs no picture loader.
+    #[test]
+    fn test_every_open_checked_the_wallpaper_picture_with_a_loader() {
+        let pic = sonata_config::data_path("wallpapers").join("pier.jpg");
+        let uri = sonata_shell::wallpaper::uri_of(&pic);
+        let dir = sonata_config::write_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("system.json"), json!({"org.gnome.desktop.background/picture-uri": uri}).to_string()).unwrap();
+        let t = Instant::now();
+        assert!(gtk::gdk_pixbuf::Pixbuf::file_info(&pic).is_some());
+        let loader = t.elapsed();
+        let t = Instant::now();
+        assert!(video_frame(false).is_none());
+        assert!(chosen_video(false).is_none());
+        let open = t.elapsed();
+        if loader >= Duration::from_millis(20) {
+            // (a quick loader here: nothing to tell apart)
+            assert!(open < loader / 4, "{open:?} for a picture (its loader: {loader:?})");
+        }
+        // a video: found from the settings alone
+        let video = tempfile::Builder::new().suffix(".mp4").tempfile().unwrap();
+        let vuri = sonata_shell::wallpaper::uri_of(video.path());
+        std::fs::write(dir.join("system.json"), json!({"org.gnome.desktop.background/picture-uri": uri, "org.gnome.desktop.background/picture-uri-dark": vuri}).to_string()).unwrap();
+        assert_eq!(chosen_video(true).as_deref(), Some(video.path()));
+        assert!(chosen_video(false).is_none());
+        std::fs::remove_file(dir.join("system.json")).unwrap();
     }
 
     #[test]

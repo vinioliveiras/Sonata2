@@ -104,6 +104,16 @@ def desktop_of(view: dict, out: dict) -> int:
     return cur + int(centre // width)
 
 
+def bar_top(out: dict) -> int:
+    """How far down the display the bar starts: the top of the work area
+    (under the menu bar). Wayfire's list-outputs gives "workarea" in the
+    display's own coordinates (get_workarea() is cut from the output's
+    relative geometry) while "geometry" is in the layout's, so the two
+    were never to be subtracted: on a second display at y 201 that put the
+    bar at the very top, over the menu bar."""
+    return max(0, int((out.get("workarea") or {}).get("y", 0)))
+
+
 def plan_close(index: int, count: int, views: list, current: int):
     """Closing desktop `index` of `count` (views: [(view id, desktop)]):
     ([(view id, its desktop after)], the desktop to show, the new count).
@@ -234,8 +244,7 @@ class SpacesBar(Gtk.Window):
         out = self._out()
         LS = layer.layer_shell()
         if LS and out:
-            top = (out.get("workarea") or {}).get("y", 0) - (out.get("geometry") or {}).get("y", 0)
-            self.top = max(0, top)
+            self.top = bar_top(out)
             LS.set_margin(self, LS.Edge.TOP, self.top)
         self.row.remove_css_class("opening")
         self.present()
