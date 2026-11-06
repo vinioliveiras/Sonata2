@@ -502,6 +502,12 @@ pub fn open_panel(dock: &Dock, tile: &Rc<Tile>, then: Option<Rc<dyn Fn()>>, rena
             glib::idle_add_local_once(move || p.unparent());
         });
     }
+    let pw = Rc::downgrade(&panel);
+    pop.connect_closed(move |_| {
+        if crate::dock::debug_on() && pw.upgrade().is_some_and(|p| p.dragging_out.get()) {
+            eprintln!("dock: folder panel closed while an app was dragged out of it");
+        }
+    });
     dock::menu_opened(&pop); // keeps an auto-hiding Dock visible
     // the keyboard while it's open (the Dock takes none): Esc closes it
     let t = Rc::downgrade(tile);
@@ -697,7 +703,12 @@ fn app_button(dock: &Dock, tile: &Rc<Tile>, key: &str, p: &Rc<Panel>) -> gtk::Bu
             drag_out(&d, &t, &k, &p, drag);
         }
     });
-    src.connect_drag_cancel(|_, _, _| true); // no snap back into a closed panel
+    src.connect_drag_cancel(|_, _, reason| {
+        if crate::dock::debug_on() {
+            eprintln!("dock: panel drag cancelled: {reason:?}");
+        }
+        true // no snap back into a closed panel
+    });
     let (w, t, pw, k) = (dock.weak(), Rc::downgrade(tile), Rc::downgrade(p), key.to_string());
     src.connect_drag_end(move |_, _, deleted| {
         if crate::dock::debug_on() {
@@ -740,6 +751,11 @@ fn drag_out(dock: &Dock, tile: &Rc<Tile>, key: &str, p: &Rc<Panel>, drag: &gdk::
 /// -- its surface takes no pointer at all (an empty input region).
 fn hold_open(p: &Panel, on: bool) {
     p.dragging_out.set(on);
+    // no autohide meanwhile: letting go over the Dock is a release outside
+    // the panel, and an autohiding popover closes on it -- the drag's
+    // source went with it before the Dock had the drop (Vini: dropped on
+    // the Dock, the app went back into its folder)
+    p.pop.set_autohide(!on);
     p.pop.set_opacity(if on { 0.0 } else { 1.0 });
     if let Some(c) = p.pop.child() {
         c.set_can_target(!on);
@@ -851,6 +867,18 @@ pub fn app_items(dock: &Dock, key: &str) -> Vec<Item> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Vini: an app dragged out of a Dock folder and dropped on the Dock
+    /// went back into its folder -- letting go outside the autohiding panel
+    /// closed it, and its drag with it, before the Dock had the drop. The
+    /// panel doesn't autohide while an app is dragged out of it.
+    #[test]
+    fn test_dropped_on_the_dock_went_back_into_its_folder() {
+        let src = include_str!("dock_folder.rs");
+        let f = &src[src.find("fn hold_open(").unwrap()..];
+        assert!(f[..f.find("\n}\n").unwrap()].contains("set_autohide(!on)"));
+    }
+
     use super::*;
     use serde_json::json;
 
