@@ -263,7 +263,7 @@ pub struct Display {
 /// the whole factor. The whole factor alone rounds 1.25 up to 2: the
 /// display seemed twice its size, got a bigger scale, then a smaller one
 /// at the next look, and so on.
-fn monitor_scale(m: &gdk::Monitor) -> f64 {
+pub fn monitor_scale(m: &gdk::Monitor) -> f64 {
     let fractional = m.find_property("scale").filter(|p| p.value_type() == f64::static_type()).map(|_| m.property::<f64>("scale"));
     pixel_factor(fractional, m.scale_factor())
 }
@@ -272,7 +272,7 @@ fn pixel_factor(fractional: Option<f64>, whole: i32) -> f64 {
     fractional.filter(|k| k.is_finite() && *k > 0.0).unwrap_or(whole.max(1) as f64)
 }
 
-fn display_of(m: &gdk::Monitor) -> Display {
+pub fn display_of(m: &gdk::Monitor) -> Display {
     let g = m.geometry();
     let k = monitor_scale(m);
     Display { connector: connector(m), width: (g.width() as f64 * k).round() as i32, height: (g.height() as f64 * k).round() as i32, w_mm: m.width_mm(), h_mm: m.height_mm(), logical_width: g.width() }
