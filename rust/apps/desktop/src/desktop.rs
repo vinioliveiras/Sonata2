@@ -22,6 +22,12 @@ use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 /// ~/Desktop (the XDG desktop folder); created when missing, like macOS.
+/// Sonata's debug logging on (logs.verbose: SONATA_DEBUG=1 or the
+/// debug-logging flag): what the desktop sees goes to wallpaper.log.
+fn verbose() -> bool {
+    std::env::var("SONATA_DEBUG").as_deref() == Ok("1") || glib::user_config_dir().join("sonata2").join("debug-logging").exists()
+}
+
 pub fn desktop_dir() -> gio::File {
     let home = glib::home_dir();
     let real = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
@@ -363,12 +369,18 @@ impl Desktop {
 
     fn layout(&self) {
         if self.size.get().0 == 0 {
+            if verbose() {
+                eprintln!("desktop {}: no size yet, no layout", self.screen);
+            }
             return;
         }
         let g = self.grid();
         let names: Vec<String> = self.sorted_names().into_iter().filter(|n| self.items.borrow().contains_key(n)).collect();
         let prev = if grid::sort_of(&self.cfg.borrow()) == "none" { self.placed.borrow().clone() } else { HashMap::new() };
         let (placed, unsaved) = grid::layout(&g, &names, &self.cfg.borrow(), &prev);
+        if verbose() {
+            eprintln!("desktop {}: layout {:?} top {} margins {:?} -> {} placed of {} ({:?})", self.screen, g.size, g.top, g.margins, placed.len(), names.len(), placed.iter().map(|(n, c)| (n.clone(), *c, g.cell_xy(c.0, c.1))).collect::<Vec<_>>());
+        }
         if !unsaved.is_empty() {
             let w = self.me.clone();
             glib::idle_add_local_once(move || {
@@ -422,6 +434,9 @@ impl Desktop {
     /// Items follow the folder (live monitor), the ones on this display.
     fn sync(&self) {
         let infos: HashMap<String, gio::FileInfo> = self.infos().into_iter().map(|i| (i.name().to_string_lossy().into_owned(), i)).filter(|(n, _)| self.mine(n)).collect();
+        if verbose() {
+            eprintln!("desktop {} (main {}): {} in the folder, {} here, size {:?}", self.screen, self.main, self.infos().len(), infos.len(), self.size.get());
+        }
         let gone: Vec<String> = self.items.borrow().keys().filter(|n| !infos.contains_key(*n)).cloned().collect();
         for name in gone {
             if let Some(item) = self.items.borrow_mut().remove(&name) {

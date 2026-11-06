@@ -122,9 +122,9 @@ mod imp {
         type Type = super::SizeBin;
         type ParentType = gtk::Widget;
 
-        fn class_init(klass: &mut Self::Class) {
-            klass.set_layout_manager_type::<gtk::BinLayout>();
-        }
+        // (no layout manager: with one, GTK allocates through it and never
+        // calls size_allocate below -- the desktop never learnt its size and
+        // laid out no icon: Vini, every new folder invisible)
     }
 
     impl ObjectImpl for SizeBin {
@@ -136,8 +136,17 @@ mod imp {
     }
 
     impl WidgetImpl for SizeBin {
+        fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
+            match self.obj().first_child() {
+                Some(c) => c.measure(orientation, for_size),
+                None => (0, 0, -1, -1),
+            }
+        }
+
         fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
-            self.parent_size_allocate(width, height, baseline);
+            if let Some(c) = self.obj().first_child() {
+                c.allocate(width, height, baseline, None);
+            }
             if let Some(f) = self.on_size.borrow().as_ref() {
                 f(width, height);
             }
@@ -554,6 +563,40 @@ impl Walls {
 
 #[cfg(test)]
 mod tests {
+
+    /// Vini, in the Rust session: every folder on the desktop invisible --
+    /// the bin under the wallpaper had a layout manager, so GTK never called
+    /// its size_allocate: the desktop's size stayed 0x0 and no icon was laid
+    /// out (wallpaper.log: "no size yet").
+    #[test]
+    fn test_new_folders_invisible_on_the_desktop() {
+        let _l = crate::testenv::lock();
+        crate::testenv::on_gtk(bin_says_its_size);
+    }
+
+    fn bin_says_its_size() {
+        use gtk::prelude::*;
+        use gtk::subclass::prelude::ObjectSubclassIsExt;
+        use std::{cell::Cell, rc::Rc};
+        let bin: super::SizeBin = glib::Object::new();
+        let seen = Rc::new(Cell::new((0, 0)));
+        let s = seen.clone();
+        bin.imp().on_size.replace(Some(Box::new(move |w, h| s.set((w, h)))));
+        let child = gtk::Label::new(Some("x"));
+        child.set_parent(&bin);
+        let win = gtk::Window::builder().default_width(320).default_height(200).child(&bin).build();
+        win.present();
+        let ctx = glib::MainContext::default();
+        let t = std::time::Instant::now();
+        while seen.get().0 == 0 && t.elapsed() < std::time::Duration::from_secs(5) {
+            ctx.iteration(false);
+        }
+        let (w, h) = seen.get();
+        let child_w = child.width();
+        win.destroy();
+        assert!(w > 0 && h > 0, "the bin never said its size");
+        assert_eq!(child_w, w, "its child fills it");
+    }
 
     /// Vini, in the Rust session: restarting the shell left the desktop
     /// black -- the new wallpaper woke the old one and quit, then the old
