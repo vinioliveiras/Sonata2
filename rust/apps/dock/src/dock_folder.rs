@@ -755,10 +755,10 @@ fn hold_open(p: &Panel, on: bool) {
     if let Some(c) = p.pop.child() {
         c.set_can_target(!on);
     }
-    if let Some(surface) = p.pop.native().and_then(|n| n.surface()) {
-        let region = if on { cairo::Region::create() } else { cairo::Region::create_rectangle(&cairo::RectangleInt::new(0, 0, 1 << 15, 1 << 15)) };
-        surface.set_input_region(&region);
-    }
+    // (its input region stays: emptied under a drag that began on it, the
+    // compositor took the drag's origin for gone and cancelled the drop --
+    // GTK said Error, and an app dropped on the Dock went back into its
+    // folder (Vini). The panel sits above the Dock, never over its icons.)
     if !on {
         p.pop.popdown();
     }
@@ -862,6 +862,18 @@ pub fn app_items(dock: &Dock, key: &str) -> Vec<Item> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Vini: an app dragged out of a Dock folder and dropped on the Dock
+    /// went back into its folder (dock.log: the drag cancelled, Error) --
+    /// the panel the drag began on had its input region emptied mid-drag.
+    #[test]
+    fn test_dropped_on_the_dock_went_back_into_its_folder() {
+        let src = include_str!("dock_folder.rs");
+        let f = &src[src.find("fn hold_open(").unwrap()..];
+        let body = &f[..f.find("\n}\n").unwrap()];
+        assert!(!body.contains("set_input_region"));
+    }
+
 
     use super::*;
     use serde_json::json;
