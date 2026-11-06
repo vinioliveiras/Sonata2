@@ -94,7 +94,7 @@ fn call_user(path: &str, method: &str, args: Variant) -> Option<String> {
     call(path, USER_IFACE, method, Some(args), gio::DBusCallFlags::ALLOW_INTERACTIVE_AUTHORIZATION, 120000).err().map(|e| e.message().to_string())
 }
 
-/// Sonata's own user pictures (tools/gen-avatars.py): sonata2/data/avatars,
+/// Sonata's own user pictures (tools/gen-avatars.py): data/avatars,
 /// found as Sonata's other data (next to the installed binary, else this
 /// clone's). It was looked for next to the catalogs, a folder the installed
 /// build doesn't have: Settings > Users showed no pictures to pick.

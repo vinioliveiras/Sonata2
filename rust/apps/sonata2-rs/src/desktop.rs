@@ -397,7 +397,7 @@ mod tests {
     use super::*;
 
     fn real_catalogs() -> Vec<Catalog> {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../sonata2/locale");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../locale");
         SUPPORTED.iter().map(|l| Catalog::load(&dir, l)).collect()
     }
 

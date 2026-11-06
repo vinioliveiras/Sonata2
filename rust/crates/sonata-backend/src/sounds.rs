@@ -28,18 +28,18 @@ fn file_of(event: &str) -> &str {
 }
 
 /// Where Sonata's sounds are: `$SONATA2_SOUNDS_DIR`; next to the installed
-/// binary (`<prefix>/share/sonata2-rs/sounds`); else this clone's.
+/// binary (`<prefix>/share/sonata2-rs/data/sounds`); else this clone's.
 pub fn sounds_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("SONATA2_SOUNDS_DIR").filter(|d| !d.is_empty()) {
         return PathBuf::from(d);
     }
     if let Some(prefix) = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(PathBuf::from)) {
-        let d = prefix.join("share").join("sonata2-rs").join("sounds");
+        let d = prefix.join("share").join("sonata2-rs").join("data").join("sounds");
         if d.is_dir() {
             return d;
         }
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../sonata2/data/sounds")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../data/sounds")
 }
 
 pub fn enabled(event: &str) -> bool {

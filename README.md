@@ -73,10 +73,10 @@ licenses (they are GPL-compatible):
 
 | Path | What | License |
 |---|---|---|
-| `sonata2/data/icons/Sonata-MacTahoe/` | MacTahoe icon theme | GPL-3.0 (its `COPYING`) |
-| `sonata2/data/icons/Sonata/places/scalable/user-trash*.svg` | WhiteSur trash icons | GPL-3.0 |
-| `sonata2/data/icons/Sonata-Cursors/` | apple_cursor | GPL-3.0 (`LICENSE-apple_cursor`) |
-| `sonata2/data/themes/` (WhiteSur parts) | WhiteSur GTK theme | MIT (`LICENSE-WhiteSur`) |
-| `sonata2/data/fonts/` | Inter | SIL OFL 1.1 (`LICENSE-Inter.txt`) |
-| `sonata2/data/avatars/` | Noto Color Emoji on the stock pictures | Apache-2.0 / OFL 1.1 (`LICENSE.txt`) |
-| `sonata2/data/wallpapers/` | Photos from Unsplash | Unsplash License (`LICENSE.md`) |
+| `data/icons/Sonata-MacTahoe/` | MacTahoe icon theme | GPL-3.0 (its `COPYING`) |
+| `data/icons/Sonata/places/scalable/user-trash*.svg` | WhiteSur trash icons | GPL-3.0 |
+| `data/icons/Sonata-Cursors/` | apple_cursor | GPL-3.0 (`LICENSE-apple_cursor`) |
+| `data/themes/` (WhiteSur parts) | WhiteSur GTK theme | MIT (`LICENSE-WhiteSur`) |
+| `data/fonts/` | Inter | SIL OFL 1.1 (`LICENSE-Inter.txt`) |
+| `data/avatars/` | Noto Color Emoji on the stock pictures | Apache-2.0 / OFL 1.1 (`LICENSE.txt`) |
+| `data/wallpapers/` | Photos from Unsplash | Unsplash License (`LICENSE.md`) |

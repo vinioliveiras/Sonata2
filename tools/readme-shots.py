@@ -22,7 +22,7 @@ Windows are captured by rendering their own snapshot (no screen grab), so
 translucent parts (sidebars, toolbars) show the wallpaper like in the
 session. The title bar the compositor draws for Sonata's apps is faked
 here (tokens: titlebar_bg/titlebar_text, the traffic-light artwork in
-sonata2/data/decor); Files and Settings draw their own.
+data/decor); Files and Settings draw their own.
 
 Full-screen shots (desktop, desktop-dark, files-full, settings-full,
 launchpad, controlcenter; 1920x1080) put the real menu bar, Dock, desktop
@@ -1165,7 +1165,7 @@ def _tokens():
 def _font(size: int):
     from PIL import ImageFont
     try:
-        f = ImageFont.truetype(os.path.join(ROOT, "sonata2", "data", "fonts", "InterVariable.ttf"), size)
+        f = ImageFont.truetype(os.path.join(ROOT, "data", "fonts", "InterVariable.ttf"), size)
         try:
             f.set_variation_by_name("SemiBold")
         except Exception:
@@ -1187,7 +1187,7 @@ def window_layer(raw, meta):
     w, h = raw.size
     win = Image.new("RGBA", (w, h + TITLEBAR_H), (0, 0, 0, 0))
     win.paste(Image.new("RGBA", (w, TITLEBAR_H), _rgba(pal["titlebar_bg"])), (0, 0))
-    decor = os.path.join(ROOT, "sonata2", "data", "decor")
+    decor = os.path.join(ROOT, "data", "decor")
     for i, n in enumerate(("close", "minimize", "maximize")):
         dot = Image.open(os.path.join(decor, n + ".png")).convert("RGBA")
         win.alpha_composite(dot, (7 + 20 * i, (TITLEBAR_H - dot.height) // 2))

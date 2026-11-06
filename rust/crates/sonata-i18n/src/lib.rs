@@ -63,7 +63,7 @@ pub fn detect() -> &'static str {
 
 /// Where the catalogs are: `$SONATA2_LOCALE_DIR`; next to the installed
 /// binary (`<prefix>/share/sonata2-rs/locale`); else this clone's
-/// `sonata2/locale` (development).
+/// `locale` (development).
 pub fn locale_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("SONATA2_LOCALE_DIR").filter(|d| !d.is_empty()) {
         return PathBuf::from(d);
@@ -76,7 +76,7 @@ pub fn locale_dir() -> PathBuf {
             }
         }
     }
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../sonata2/locale")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../locale")
 }
 
 /// Every `*.json` of `<dir>/<lang>/`, merged in name order (each area of

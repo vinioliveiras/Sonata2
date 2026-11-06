@@ -13,8 +13,8 @@ sys.path.insert(0, ROOT)
 from sonata2 import trafficlights as T  # noqa: E402
 from sonata2.ui.tokens import FRAME, TL_COLORS  # noqa: E402
 
-OUT = os.path.join(ROOT, "sonata2", "data", "decor")
-ICONS = os.path.join(ROOT, "sonata2", "data", "icons", "Sonata", "apps", "scalable")
+OUT = os.path.join(ROOT, "data", "decor")
+ICONS = os.path.join(ROOT, "data", "icons", "Sonata", "apps", "scalable")
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)

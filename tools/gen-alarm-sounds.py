@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Clock's alarm sounds, synthesized (no samples: Sonata's own, CC0):
-    python3 tools/gen-alarm-sounds.py   # writes sonata2/data/sounds/sonata-alarm-*.oga (needs numpy, ffmpeg)"""
+    python3 tools/gen-alarm-sounds.py   # writes data/sounds/sonata-alarm-*.oga (needs numpy, ffmpeg)"""
 import os
-os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sonata2", "data", "sounds"))
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sounds"))
 import numpy as np, wave, subprocess
 SR = 48000
 

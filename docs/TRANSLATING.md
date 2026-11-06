@@ -16,7 +16,7 @@ before touching any string the user sees.
 
   Settings > Language & Region sets the system's language, and that takes
   effect at the next login.
-- **Catalogs.** Translations live in `sonata2/locale/<pt_BR|pt_PT>/*.json`,
+- **Catalogs.** Translations live in `locale/<pt_BR|pt_PT>/*.json`,
   one file per area of Sonata. The files are merged when loaded.
   - A plain string looks like `{"English": "translation"}`.
   - A plural looks like `{"singular": ["one", "other"]}`, keyed by the
@@ -168,7 +168,7 @@ Portugal's spelling: "controlo", "ecrã", "cronómetro", "câmara" (not
 
 1. Add its code to `SUPPORTED` in `sonata2/i18n.py` and teach `detect()` its
    locale names.
-2. Create `sonata2/locale/<code>/` with the same files as `pt_BR`.
+2. Create `locale/<code>/` with the same files as `pt_BR`.
 3. If its plural rule differs from English's, add it to `ngettext()`.
 4. Add it to `LANGUAGES` / `REGIONS` in `sonata2/backend/locales.py`.
 5. Run the routine above. The tests check every language in `SUPPORTED`.

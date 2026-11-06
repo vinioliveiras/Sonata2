@@ -4,7 +4,7 @@
 //! Picking one types it into the window that had focus (pasted with
 //! Ctrl+V, its real keycode: clip_picker::paste) and leaves it on the
 //! clipboard. Lazy grid (GridView): only the visible cells exist.
-//! Data: sonata2/data/emoji.tsv (tools/gen-emoji.py), built into the binary.
+//! Data: data/emoji.tsv (tools/gen-emoji.py), built into the binary.
 //! "Frequently Used" is config emoji.json {"recent": [...]}, the Python
 //! picker's own file.
 
@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
-const DATA: &str = include_str!("../../../../sonata2/data/emoji.tsv");
+const DATA: &str = include_str!("../../../../data/emoji.tsv");
 pub const RECENT_MAX: usize = 16;
 /// (group in emoji.tsv, tab icon, title) in macOS order; the title shown
 /// translated

@@ -300,7 +300,7 @@ The Settings app keeps this split in its sidebar.
 - **Gallery**: `sonata2 gallery [--dark]` shows every component.
 - **Icons**: `Sonata` (our own) → `Sonata-MacTahoe` (bundled) → `hicolor`
   → the system theme, only for apps none of them has. Details:
-  [sonata2/data/icons](../sonata2/data/icons/README.md).
+  [data/icons](../data/icons/README.md).
 
 User-made themes will be a folder of token values plus optional artwork,
 picked in Settings → Appearance.

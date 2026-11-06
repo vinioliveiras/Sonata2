@@ -8,7 +8,7 @@ docs/DESIGN.md (design rules).
 - **Translations.** Sonata is in English, Portuguese (Brazil) and
   Portuguese (Portugal). Any new or changed string the user sees goes
   through `_()`, `ngettext()`, `N_()` or `pgettext()`, and must be added to
-  **both** `sonata2/locale/pt_BR/` and `sonata2/locale/pt_PT/`. Read
+  **both** `locale/pt_BR/` and `locale/pt_PT/`. Read
   **docs/TRANSLATING.md** first: it covers the rules, the routine, the
   pt-BR / pt-PT glossary, and the places where longer text breaks the
   layout.

@@ -21,4 +21,4 @@ update the commit above.
 
 ## Fonts
 
-`sonata2/data/fonts/`: [Inter](https://github.com/rsms/inter) 4.1 variable (SIL OFL 1.1, LICENSE-Inter.txt), the open stand-in for SF Pro. The session adds this folder through its own fontconfig file (`FONTCONFIG_FILE`), nothing is installed system-wide.
+`data/fonts/`: [Inter](https://github.com/rsms/inter) 4.1 variable (SIL OFL 1.1, LICENSE-Inter.txt), the open stand-in for SF Pro. The session adds this folder through its own fontconfig file (`FONTCONFIG_FILE`), nothing is installed system-wide.

@@ -9,11 +9,11 @@
 #   ~/.local/bin/sonata2-rs-videos                Videos' own (the same)
 #   ~/.local/bin/sonata2-rs-assistant             the Assistant's own (libsoup, libsecret)
 #   ~/.local/share/sonata2-rs/locale/             the translations (a copy)
-#   ~/.local/share/sonata2-rs/sounds/             the alarm sounds (a copy, for Clock's preview)
-#   ~/.local/share/sonata2-rs/wallpapers/         Sonata's wallpapers (a copy: the default one)
-#   ~/.local/share/sonata2-rs/avatars/            the stock user pictures (a copy, Settings > Users)
+#   ~/.local/share/sonata2-rs/data/sounds/        the alarm sounds (a copy, for Clock's preview)
+#   ~/.local/share/sonata2-rs/data/wallpapers/    Sonata's wallpapers (a copy: the default one)
+#   ~/.local/share/sonata2-rs/data/avatars/       the stock user pictures (a copy, Settings > Users)
 #   ~/.local/share/sonata2-rs/config/wayfire.ini  Wayfire's default config (the shortcuts' defaults)
-#   ~/.local/share/sonata2-rs/icons               Sonata's icon themes: a link to this clone's
+#   ~/.local/share/sonata2-rs/data/icons          Sonata's icon themes: a link to this clone's
 #                                                 (125 MB; keep the clone while trying it)
 #   ~/.config/sonata2-rs/                         what the Rust build saves
 # One exception, Vini's call: Clock (Rust) edits the same alarms and timers
@@ -58,15 +58,16 @@ install -m 755 target/release/sonata2-rs-camera "$BIN/sonata2-rs-camera"
 install -m 755 target/release/sonata2-rs-videos "$BIN/sonata2-rs-videos"
 install -m 755 target/release/sonata2-rs-assistant "$BIN/sonata2-rs-assistant"
 rm -rf "$SHARE/sonata2-rs/locale"
-cp -r "$REPO/sonata2/locale" "$SHARE/sonata2-rs/locale"
-rm -rf "$SHARE/sonata2-rs/sounds"
-cp -r "$REPO/sonata2/data/sounds" "$SHARE/sonata2-rs/sounds"
-rm -rf "$SHARE/sonata2-rs/wallpapers"
-cp -r "$REPO/sonata2/data/wallpapers" "$SHARE/sonata2-rs/wallpapers"
+cp -r "$REPO/locale" "$SHARE/sonata2-rs/locale"
+mkdir -p "$SHARE/sonata2-rs/data"
+rm -rf "$SHARE/sonata2-rs/data/sounds"
+cp -r "$REPO/data/sounds" "$SHARE/sonata2-rs/data/sounds"
+rm -rf "$SHARE/sonata2-rs/data/wallpapers"
+cp -r "$REPO/data/wallpapers" "$SHARE/sonata2-rs/data/wallpapers"
 # Settings > Users' stock pictures (sonata_config::data_path("avatars")):
 # without the copy the installed build only found them while the clone stayed
-rm -rf "$SHARE/sonata2-rs/avatars"
-cp -r "$REPO/sonata2/data/avatars" "$SHARE/sonata2-rs/avatars"
+rm -rf "$SHARE/sonata2-rs/data/avatars"
+cp -r "$REPO/data/avatars" "$SHARE/sonata2-rs/data/avatars"
 # Wayfire's default config: Settings' shortcuts read their defaults from it
 mkdir -p "$SHARE/sonata2-rs/config"
 cp "$REPO/config/wayfire.ini" "$SHARE/sonata2-rs/config/wayfire.ini"
@@ -74,12 +75,12 @@ cp "$REPO/config/wayfire.ini" "$SHARE/sonata2-rs/config/wayfire.ini"
 # made with core.symlinks=false holds them as small text files naming the
 # target, which GTK can't draw: Files, Terminal, Spotify... went invisible
 # in the Dock (Vini). Check them out as real links again.
-if [ -f "$REPO/sonata2/data/icons/Sonata-MacTahoe/apps/scalable/system-file-manager.svg" ] \
-    && [ ! -L "$REPO/sonata2/data/icons/Sonata-MacTahoe/apps/scalable/system-file-manager.svg" ]; then
-    git -C "$REPO" -c core.symlinks=true checkout -- sonata2/data/icons
+if [ -f "$REPO/data/icons/Sonata-MacTahoe/apps/scalable/system-file-manager.svg" ] \
+    && [ ! -L "$REPO/data/icons/Sonata-MacTahoe/apps/scalable/system-file-manager.svg" ]; then
+    git -C "$REPO" -c core.symlinks=true checkout -- data/icons
 fi
-rm -rf "$SHARE/sonata2-rs/icons"
-ln -s "$REPO/sonata2/data/icons" "$SHARE/sonata2-rs/icons"
+rm -rf "$SHARE/sonata2-rs/data/icons"
+ln -s "$REPO/data/icons" "$SHARE/sonata2-rs/data/icons"
 # The "Calculator (Rust)"... entries were for trying the apps next to the
 # Python ones (Vini: removed once the port was done). The Rust session
 # opens the Rust apps through Sonata's own entries (the sonata2 launcher);

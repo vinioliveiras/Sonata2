@@ -72,8 +72,8 @@ fn english_has_no_catalog() {
 
 #[test]
 fn sonatas_own_catalogs_load() {
-    // the same files the Python code reads (sonata2/locale)
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../sonata2/locale");
+    // the clone's catalogs (locale/)
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../locale");
     assert_eq!(Catalog::load(&dir, "pt_BR").gettext("Calculator"), "Calculadora");
     assert_eq!(Catalog::load(&dir, "pt_PT").gettext("Calculator"), "Calculadora");
     assert_eq!(Catalog::load(&dir, "pt_PT").gettext("Error"), "Erro");

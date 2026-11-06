@@ -142,3 +142,8 @@ for line in open(over, encoding="utf-8"):
         system.wayfire_set(sec, system.current_key(sec, k.strip()), v.strip())
 PY
 fi
+# Title-bar pictures named by their old place (Sonata's data lived inside
+# its Python package, sonata2/data/): a wayfire.ini or overrides written
+# then -- by Settings, by hand -- still finds them, in this Sonata's data/.
+# Only the resolved copy changes; your files stay as they are.
+sed -i -E "s#[^ =]*/sonata2/data/decor/#$here/data/decor/#g" "$out"

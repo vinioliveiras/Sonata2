@@ -12,20 +12,20 @@ unset SONATA2_PRELOADED SONATA2_ORIG_LD_PRELOAD
 case "${LD_PRELOAD:-}" in *gtk4-layer-shell*) unset LD_PRELOAD ;; esac
 SONATA_REPO="${SONATA_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export SONATA_REPO
-export XDG_DATA_DIRS="$SONATA_REPO/sonata2/data:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export XDG_DATA_DIRS="$SONATA_REPO/data:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 # Flatpak apps: a login screen session doesn't source /etc/profile.d, where
 # flatpak adds its export folders -- without them its apps are invisible.
 for d in "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share" /var/lib/flatpak/exports/share; do
     case ":$XDG_DATA_DIRS:" in *":$d:"*|*":$d/:"*) ;; *) [ -d "$d" ] && XDG_DATA_DIRS="$XDG_DATA_DIRS:$d" ;; esac
 done
-export XCURSOR_PATH="$SONATA_REPO/sonata2/data/icons:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
+export XCURSOR_PATH="$SONATA_REPO/data/icons:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
 export XCURSOR_THEME=Sonata-Cursors XCURSOR_SIZE=24
 mkdir -p "$HOME/.config/sonata2"
 # Bundled fonts (Inter, the free stand-in for SF Pro), without installing
 # them system-wide: a fontconfig file that adds our folder to the system's.
 cat > "$HOME/.config/sonata2/fonts.conf" 2>/dev/null <<FC || true
 <?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<fontconfig><include ignore_missing="yes">/etc/fonts/fonts.conf</include><dir>$SONATA_REPO/sonata2/data/fonts</dir></fontconfig>
+<fontconfig><include ignore_missing="yes">/etc/fonts/fonts.conf</include><dir>$SONATA_REPO/data/fonts</dir></fontconfig>
 FC
 export FONTCONFIG_FILE="$HOME/.config/sonata2/fonts.conf"
 # Sonata's own desktop settings (sonata2/prefs.py: ~/.config/sonata2/system.json;

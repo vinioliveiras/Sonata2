@@ -88,7 +88,7 @@ rust/
     sonata-config/        config.py: load with defaults, update (flock + atomic write),
                           watch (gio::FileMonitor), side-by-side read/write dirs
     sonata-i18n/          i18n.py: detect(), _(), ngettext(), pgettext(), reading the
-                          SAME sonata2/locale/<lang>/*.json; tr!() / trn!() macros
+                          SAME locale/<lang>/*.json; tr!() / trn!() macros
     sonata-ui/            ui/: tokens (light/dark), the CSS templates, theme.setup()
                           (appearance.json, accent, glass), window frame, controls
     sonata-backend/       backend/system.py and its helpers: Wi-Fi, sound, brightness
@@ -136,7 +136,7 @@ template. Two copies would drift. During the port:
 ## Translations
 
 The catalogs stay exactly where and how they are:
-`sonata2/locale/{pt_BR,pt_PT}/*.json`, `{"English": "translation"}`,
+`locale/{pt_BR,pt_PT}/*.json`, `{"English": "translation"}`,
 plurals as `[one, other]`, contexts as `"context\x04text"`. `sonata-i18n`
 loads them at runtime (installed next to the binary under
 `share/sonata2-rs/locale`, or the clone's folder in development) with the

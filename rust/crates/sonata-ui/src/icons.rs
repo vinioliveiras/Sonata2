@@ -73,7 +73,7 @@ struct Analysed {
 /// (x, y, w, h) as fractions of a picture
 pub type Box4 = (f64, f64, f64, f64);
 
-/// Sonata's icon themes (sonata2/data/icons).
+/// Sonata's icon themes (data/icons).
 pub fn icons_dir() -> PathBuf {
     sonata_config::data_path("icons")
 }
