@@ -88,6 +88,14 @@ pub fn end_warm_up(win: &gtk::Window, warming: &Cell<bool>) {
     }
 }
 
+/// A click outside the panel: on nothing, or on anything not the panel nor
+/// inside it. (Asking for the window itself missed the Dark Mode fade's
+/// overlay, which fills it: Vini, a click beside Search -- or on its menu
+/// bar icon again -- no longer closed it.)
+pub fn beside_panel(hit: Option<&gtk::Widget>, panel: &gtk::Widget) -> bool {
+    hit.is_none_or(|h| h != panel && !h.is_ancestor(panel))
+}
+
 /// Sonata's Files: folders open there.
 const FILES_ID: &str = "io.github.vinioliveiras.sonata2.files.desktop";
 
@@ -308,8 +316,8 @@ impl Spotlight {
         click.connect_released(move |_, _, x, y| {
             let Some(me) = weak.upgrade() else { return };
             let hit = me.win.pick(x, y, gtk::PickFlags::DEFAULT);
-            if hit.is_none() || hit.as_ref() == Some(me.win.upcast_ref()) {
-                me.close(); // a click beside the panel
+            if beside_panel(hit.as_ref(), me.panel.upcast_ref()) {
+                me.close(); // a click beside the panel (the menu bar's Search icon again too)
             }
         });
         self.win.add_controller(click);
@@ -610,6 +618,36 @@ pub fn run(args: &[String]) -> glib::ExitCode {
 
 #[cfg(test)]
 mod tests {
+
+    /// Vini: a click beside Search, or on the menu bar's Search icon again,
+    /// didn't close it -- the Dark Mode fade put an overlay over the whole
+    /// window, and only a click on the window itself counted as outside.
+    #[test]
+    fn test_click_outside_search_didnt_close_it() {
+        let display = ["WAYLAND_DISPLAY", "DISPLAY", "BROADWAY_DISPLAY"].iter().any(|v| std::env::var_os(v).is_some());
+        if !display || gtk::init().is_err() {
+            return;
+        }
+        let win = gtk::Window::builder().default_width(600).default_height(400).build();
+        let panel = gtk::Box::builder().width_request(200).height_request(100).halign(gtk::Align::Center).valign(gtk::Align::Start).build();
+        let inner = gtk::Label::new(Some("result"));
+        panel.append(&inner);
+        win.set_child(Some(&panel));
+        sonata_ui::theme::fade_too(&win); // the overlay over the whole window
+        win.present();
+        let ctx = gtk::glib::MainContext::default();
+        let t = std::time::Instant::now();
+        while panel.width() == 0 && t.elapsed() < std::time::Duration::from_secs(5) {
+            ctx.iteration(false);
+        }
+        let beside = win.pick(20.0, 300.0, gtk::PickFlags::DEFAULT);
+        assert!(beside.as_ref() != Some(win.upcast_ref()), "(the fade's overlay is what's hit there)");
+        assert!(super::beside_panel(beside.as_ref(), panel.upcast_ref()));
+        assert!(!super::beside_panel(Some(inner.upcast_ref()), panel.upcast_ref()));
+        assert!(!super::beside_panel(Some(panel.upcast_ref()), panel.upcast_ref()));
+        assert!(super::beside_panel(None, panel.upcast_ref()));
+        win.destroy();
+    }
     use super::*;
 
     /// A package, an archive or a script opened from Spotlight is
