@@ -224,6 +224,22 @@ mod tests {
     /// Vini: Wi-Fi's (and every status icon's) panel opened hung from the
     /// icon's left edge; he wants it centred under the icon, as the Python
     /// menu bar does (ui.panel.popup without align_start).
+    /// Vini: Wi-Fi, Search and Control Center turned dark after minimizing
+    /// or maximizing an app, or switching windows -- the icons are drawn
+    /// anew only when this signature changes, and it ignored those.
+    #[test]
+    fn test_bar_icons_dark_after_minimize() {
+        use crate::seams::Toplevel;
+        let t = |id, act, min, max| Toplevel { id, app_id: "a".into(), title: String::new(), activated: act, minimized: min, maximized: max };
+        let base = crate::bar::icons_signature(&[t(1, true, false, false), t(2, false, false, false)]);
+        assert_ne!(base, crate::bar::icons_signature(&[t(1, false, true, false), t(2, false, false, false)])); // minimized
+        assert_ne!(base, crate::bar::icons_signature(&[t(1, true, false, true), t(2, false, false, false)])); // maximized
+        assert_ne!(base, crate::bar::icons_signature(&[t(1, false, false, false), t(2, true, false, false)])); // another window of the same app
+        let mut retitled = t(1, true, false, false);
+        retitled.title = "new title".into();
+        assert_eq!(base, crate::bar::icons_signature(&[retitled, t(2, false, false, false)])); // a title alone: no redraw
+    }
+
     #[test]
     fn test_wifi_panel_opened_off_to_the_right() {
         assert!(!crate::bar::STATUS_ALIGN_START);
