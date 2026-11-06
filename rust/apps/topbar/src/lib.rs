@@ -228,13 +228,12 @@ fn listen_for_lock() {
 #[cfg(test)]
 mod tests {
 
-    /// Vini: clicking Wi-Fi (or any status icon) opened its panel and then
-    /// threw it to the right. It hangs from the icon's left edge (his
-    /// choice over centred), placed there before it shows (sonata-ui's
-    /// test_panel_jumped_to_the_left_edge_after_opening).
+    /// Vini: Wi-Fi's (and every status icon's) panel opened hung from the
+    /// icon's left edge; he wants it centred under the icon, as the Python
+    /// menu bar does (ui.panel.popup without align_start).
     #[test]
     fn test_wifi_panel_opened_off_to_the_right() {
-        assert!(crate::bar::STATUS_ALIGN_START);
+        assert!(!crate::bar::STATUS_ALIGN_START);
         let src = include_str!("bar.rs");
         let f = &src[src.find("fn status_panel").unwrap()..];
         assert!(f[..f.find('}').unwrap()].contains("STATUS_ALIGN_START"));

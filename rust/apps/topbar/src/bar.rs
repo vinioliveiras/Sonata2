@@ -425,15 +425,16 @@ fn menu_at(btn: &gtk::Button, sections: Vec<Vec<Item>>) -> Option<gtk::Popover> 
     Some(pop.upcast())
 }
 
-/// A status item's panel (Wi-Fi, Bluetooth, battery...), hung from its
-/// icon's left edge like the app menus (Vini preferred it to centred), and
-/// placed there before it shows (align_to_start: no jump).
+/// A status item's panel (Wi-Fi, Bluetooth, battery...), centred under its
+/// icon as on macOS (Vini, after trying the left edge: better centred) --
+/// GTK's own placement, there from the first frame.
 fn status_panel(btn: &gtk::Button, col: &gtk::Box) -> gtk::Popover {
     kit::panel(btn, col, PANEL_GAP, Some(STATUS_W), STATUS_ALIGN_START, false)
 }
 
-/// Status panels hang from their icon's left edge (Vini).
-pub(crate) const STATUS_ALIGN_START: bool = true;
+/// Status panels centred under their icon (Vini; the app menus hang from
+/// their left edge).
+pub(crate) const STATUS_ALIGN_START: bool = false;
 
 impl Bar {
     pub fn new(services: Services) -> Rc<Bar> {

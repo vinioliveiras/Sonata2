@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rust preview session: the menu bar's status panels (Wi-Fi, Bluetooth, battery...) open centred under their icon again.
 - Game Bar: each widget's border around its modules is as wide as the gaps between them (8 px), as in macOS's Control Center; in the Python session it no longer sometimes opens without its glass when the menu bar is busy.
 - Notification Center: macOS-style glass -- the blurred desktop behind the whole column, fading out to the left, blurred more and more vivid -- and each app's notifications stacked into a group that opens on click (Show Less / Clear).
 - Screenshots: Super+Shift+3/4/5 and Print Screen now work while Mission Control is open. Shortcuts you changed in Settings carry over.
