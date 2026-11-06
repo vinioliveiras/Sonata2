@@ -17,6 +17,7 @@ use crate::imageload::{self, RAW_EXTS, RAW_TYPES};
 use crate::info::{self, InfoPanel};
 use crate::markup::{MarkupBar, MarkupLayer};
 use crate::marks;
+use crate::panel;
 use crate::sidebar::Thumbnails;
 use gtk::gdk::{self, Key, ModifierType};
 use gtk::{cairo, gio, glib, prelude::*};
@@ -1154,21 +1155,11 @@ impl PreviewWindow {
             dialog::alert(&tr!("This picture can't be exported."), &tr!("Preview can only view it."), &[("ok", tr!("OK"), "default")], |_| {}, Some(self.window.upcast_ref()));
             return;
         }
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        let f = gtk::FileFilter::new();
-        f.set_name(Some(&tr!("Images")));
-        f.add_pattern(&format!("*{ext}"));
-        filters.append(&f);
-        let dlg = gtk::FileDialog::builder()
-            .title(tr!("Export As"))
-            .modal(true)
-            .initial_folder(&gio::File::for_path(dir_of(&path)))
-            .initial_name(format!("{}{ext}", stem(&path)))
-            .filters(&filters)
-            .build();
         let w = self.me.clone();
-        dlg.save(Some(&self.window), gio::Cancellable::NONE, move |res| {
-            let (Ok(file), Some(p)) = (res, w.upgrade()) else { return };
+        let Some(app) = self.window.application() else { return };
+        panel::present(&app, Some(self.window.upcast_ref()), export_request(&path, ext), Box::new(move |uris| {
+            let (Some(uri), Some(p)) = (uris.and_then(|u| u.into_iter().next()), w.upgrade()) else { return };
+            let file = gio::File::for_uri(&uri);
             let Some(chosen) = file.path().map(|p| p.display().to_string()) else { return };
             let ok_ext: &[&str] = match ext {
                 ".jpg" => &[".jpg", ".jpeg"],
@@ -1197,7 +1188,7 @@ impl PreviewWindow {
                     dialog::alert(&tr!("The picture couldn't be exported."), &e, &[("ok", tr!("OK"), "default")], |_| {}, Some(p.window.upcast_ref()));
                 }
             }));
-        });
+        }));
     }
 
     // saving
@@ -1281,24 +1272,12 @@ impl PreviewWindow {
         }
         let Some(path) = self.cur() else { return };
         let ext = if edit::writable(&path) { std::path::Path::new(&path).extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default() } else { ".jpg".into() };
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        let f = gtk::FileFilter::new();
-        f.set_name(Some(&tr!("Images")));
-        for p in ["*.png", "*.jpg", "*.jpeg", "*.webp"] {
-            f.add_pattern(p);
-        }
-        filters.append(&f);
-        let dlg = gtk::FileDialog::builder()
-            .title(tr!("Save As"))
-            .modal(true)
-            .initial_folder(&gio::File::for_path(dir_of(&path)))
-            .initial_name(format!("{}{ext}", stem(&path)))
-            .filters(&filters)
-            .build();
         let w = self.me.clone();
         let then = Rc::new(then);
-        dlg.save(Some(&self.window), gio::Cancellable::NONE, move |res| {
-            let (Ok(file), Some(p)) = (res, w.upgrade()) else { return };
+        let Some(app) = self.window.application() else { return };
+        panel::present(&app, Some(self.window.upcast_ref()), save_as_request(&path, &ext), Box::new(move |uris| {
+            let (Some(uri), Some(p)) = (uris.and_then(|u| u.into_iter().next()), w.upgrade()) else { return };
+            let file = gio::File::for_uri(&uri);
             let Some(target) = file.path().map(|p| p.display().to_string()) else { return };
             let ok = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"];
             let final_ = if ok.contains(&edit::ext_of(&target).as_str()) { target.clone() } else { format!("{target}.png") };
@@ -1316,7 +1295,7 @@ impl PreviewWindow {
                     }
                 }));
             }));
-        });
+        }));
     }
 
     /// The "keep the changes?" alert, once at a time.
@@ -1634,25 +1613,45 @@ pub fn open_paths(app: &impl IsA<gtk::Application>, files: &[gio::File]) {
     }
     // (the app's own windows: the list above kept closed ones for a while)
     if files.is_empty() && app.upcast_ref::<gtk::Application>().windows().is_empty() {
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        let f = gtk::FileFilter::new();
-        f.set_name(Some(&tr!("Images")));
-        f.add_mime_type("image/*");
-        filters.append(&f);
-        let dlg = gtk::FileDialog::builder().title(tr!("Open")).modal(true).filters(&filters).build();
         let app = app.upcast_ref::<gtk::Application>().clone();
-        // the app stays while the panel is up
-        let hold = app.hold();
-        dlg.open_multiple(None::<&gtk::Window>, gio::Cancellable::NONE, move |res| {
-            let _hold = hold;
-            if let Ok(list) = res {
-                let files: Vec<gio::File> = (0..list.n_items()).filter_map(|i| list.item(i).and_downcast::<gio::File>()).collect();
-                if !files.is_empty() {
-                    open_paths(&app, &files);
-                }
+        let a = app.clone();
+        panel::present(&app, None, open_request(), Box::new(move |uris| {
+            let files: Vec<gio::File> = uris.unwrap_or_default().iter().map(|u| gio::File::for_uri(u)).collect();
+            if !files.is_empty() {
+                open_paths(&a, &files);
             }
-        });
+        }));
     }
+}
+
+/// Export As's panel (window.py's export_as): the picture's folder, its
+/// name in the new format, only that format shown.
+pub fn export_request(path: &str, ext: &str) -> panel::Request {
+    panel::Request {
+        save: true,
+        title: tr!("Export As"),
+        multiple: false,
+        filters: vec![(tr!("Images"), vec![(panel::GLOB, format!("*{ext}"))])],
+        folder: Some(gio::File::for_path(dir_of(path)).uri().to_string()),
+        name: format!("{}{ext}", stem(path)),
+    }
+}
+
+/// Save As's panel: the formats Preview writes.
+pub fn save_as_request(path: &str, ext: &str) -> panel::Request {
+    panel::Request {
+        save: true,
+        title: tr!("Save As"),
+        multiple: false,
+        filters: vec![(tr!("Images"), ["*.png", "*.jpg", "*.jpeg", "*.webp"].iter().map(|p| (panel::GLOB, p.to_string())).collect())],
+        folder: Some(gio::File::for_path(dir_of(path)).uri().to_string()),
+        name: format!("{}{ext}", stem(path)),
+    }
+}
+
+/// Preview started without pictures: Open, any picture, several at once.
+pub fn open_request() -> panel::Request {
+    panel::Request { save: false, title: tr!("Open"), multiple: true, filters: vec![(tr!("Images"), vec![(panel::MIME, "image/*".into())])], folder: None, name: String::new() }
 }
 
 /// Run Preview: pictures open in the running one; `--markup PATH` opens a
@@ -1723,6 +1722,21 @@ pub fn mime_types() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panels_have_pythons_filters_and_names() {
+        // what window.py hands ChooserWindow (Files' panel: chooser.rs installs it)
+        let e = export_request("/pics/Holiday.heic", ".jpg");
+        assert_eq!((e.save, e.title.as_str(), e.name.as_str(), e.folder.as_deref()), (true, "Export As", "Holiday.jpg", Some("file:///pics")));
+        assert_eq!(e.filters, vec![("Images".to_string(), vec![(panel::GLOB, "*.jpg".to_string())])]);
+        let s = save_as_request("/pics/Holiday.png", ".png");
+        assert_eq!((s.title.as_str(), s.name.as_str()), ("Save As", "Holiday.png"));
+        let globs: Vec<&str> = s.filters[0].1.iter().map(|(_, p)| p.as_str()).collect();
+        assert_eq!(globs, ["*.png", "*.jpg", "*.jpeg", "*.webp"]);
+        let o = open_request();
+        assert_eq!((o.save, o.multiple, o.title.as_str()), (false, true, "Open"));
+        assert_eq!(o.filters, vec![("Images".to_string(), vec![(panel::MIME, "image/*".to_string())])]);
+    }
 
     #[test]
     fn test_copy_froze_the_window() {

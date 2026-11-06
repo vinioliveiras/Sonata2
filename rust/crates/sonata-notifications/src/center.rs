@@ -69,6 +69,9 @@ glib::wrapper! {
 /// How far below the screen's top the Today widgets start: the calendar
 /// (its own 8 px margin on top of gap - 12) sits 8 px under the menu bar --
 /// Vini: at + 6 it all but touched the bar (notifications.py's TOP_GAP).
+/// The column's slide in or out (CSS .nc-slide: transform 250ms).
+pub const SLIDE_MS: f64 = 250.0;
+
 pub fn top_gap(menubar_h: i32) -> i32 {
     menubar_h + 12
 }
@@ -220,6 +223,7 @@ impl Center {
         slide.append(&outer);
         slide.set_can_target(false);
         win.set_child(Some(&slide));
+        sonata_ui::theme::fade_too(&win); // (Dark Mode cross-fades it, as Python)
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let title = gtk::Label::builder().xalign(0.0).hexpand(true).css_classes(["nc-head"]).build();
         head.append(&title);
@@ -304,6 +308,22 @@ impl Center {
             self.slide.remove_css_class("shown");
         }
         self.slide.set_can_target(on);
+        self.follow_slide();
+    }
+
+    /// The glass is the screen's picture, fixed where the screen is: drawn
+    /// again on every frame of the slide, or it moved with the panels and
+    /// only fell into place once the slide was over (Vini: the calendar's
+    /// glass "adjusted after the animation").
+    fn follow_slide(&self) {
+        let (top, col) = (self.top.downgrade(), self.col.downgrade());
+        let until = glib::monotonic_time() + i64::from(sonata_ui::tokens::ms(SLIDE_MS)) * 1000 + 50_000;
+        self.slide.add_tick_callback(move |_, _| {
+            for b in [top.upgrade(), col.upgrade()].into_iter().flatten() {
+                b.queue_draw();
+            }
+            if glib::monotonic_time() < until { glib::ControlFlow::Continue } else { glib::ControlFlow::Break }
+        });
     }
 
     fn clicked(self: &Rc<Self>, x: f64, y: f64) {

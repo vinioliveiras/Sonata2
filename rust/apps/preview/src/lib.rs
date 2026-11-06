@@ -7,6 +7,7 @@ pub mod imageload;
 pub mod info;
 pub mod markup;
 pub mod marks;
+pub mod panel;
 pub mod sidebar;
 pub mod window;
 

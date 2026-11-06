@@ -832,3 +832,31 @@ class EmptyTrashFolderTest(unittest.TestCase):
         self.assertEqual(n, 2)
         self.assertEqual(asked, ["trash:///Pasta", "trash:///nota.txt"])
         self.assertEqual(errors, [])
+
+
+class FadeWrapTest(unittest.TestCase):
+    def test_every_fade_wrapped_the_window_again(self):
+        """After the first Dark Mode cross-fade the window's content is the
+        fade's overlay; the next fade wrapped that in another overlay, so
+        every window was rebuilt (hover and focus lost) on each switch."""
+        import gi
+        gi.require_version("Gtk", "4.0")
+        try:
+            from gi.repository import Gtk
+            from sonata2.ui import theme
+        except RuntimeError:
+            self.skipTest("no display")
+        try:
+            win = Gtk.Window()
+        except RuntimeError:
+            self.skipTest("no display")
+        win.set_child(Gtk.Label(label="x"))
+        win.present()
+        ctx = __import__("gi.repository.GLib", fromlist=["GLib"]).MainContext.default()
+        for _ in range(50):
+            ctx.iteration(False)
+        theme._fade_window(win)
+        first = win.get_child()
+        theme._fade_window(win)
+        self.assertIs(win.get_child(), first)
+        win.destroy()

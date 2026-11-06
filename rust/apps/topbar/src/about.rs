@@ -20,7 +20,9 @@ fn frame(title: &str, width: i32) -> (adw::Window, gtk::WindowHandle) {
         win.add_css_class(c); // frosted glass, like the Dock
     }
     sonata_ui::window::standard(&win);
-    let (head, _, _) = sonata_ui::window::glass_toolbar(&win, vec![]);
+    // topbar.py's ui.window.titlebar(self, zoom=True): the window buttons
+    // (Vini: no close button, and a black glass toolbar over the glass)
+    let head = sonata_ui::window::titlebar(&win, None, None, Some(true));
     (win, head)
 }
 

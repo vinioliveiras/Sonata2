@@ -34,6 +34,16 @@ pub fn cover_size(img_w: i32, img_h: i32, w: i32, h: i32) -> (i32, i32) {
     (((img_w as f64 * f).round_ties_even() as i32).max(1), ((img_h as f64 * f).round_ties_even() as i32).max(1))
 }
 
+/// A display's logical size in device pixels, as wallpaper.py's _pixels:
+/// by the monitor's own fractional scale (GTK 4.14's "scale" property,
+/// asked by name: the bindings are built for 4.12, Sonata's minimum), else
+/// the whole factor. The whole factor rounds 1.25 up to 2, and the picture
+/// was decoded at 1.6 times the display's size for nothing.
+pub fn device_pixels(w: i32, h: i32, fractional: Option<f64>, whole: i32) -> (i32, i32) {
+    let k = fractional.filter(|k| k.is_finite() && *k > 0.0).unwrap_or(whole.max(1) as f64);
+    ((w as f64 * k) as i32, (h as f64 * k) as i32)
+}
+
 /// A picture decoded off the main loop, made a texture on it.
 pub struct Decoded {
     bytes: glib::Bytes,
@@ -308,8 +318,9 @@ impl WallpaperWindow {
         let mon = self.monitor.clone().or_else(|| sonata_shell::layer::monitors().into_iter().next());
         match mon {
             Some(m) => {
-                let (g, s) = (m.geometry(), m.scale_factor() as f64); // (the fractional scale needs GTK 4.14)
-                ((g.width() as f64 * s) as i32, (g.height() as f64 * s) as i32)
+                let g = m.geometry();
+                let fractional = m.find_property("scale").filter(|p| p.value_type() == f64::static_type()).map(|_| m.property::<f64>("scale"));
+                device_pixels(g.width(), g.height(), fractional, m.scale_factor())
             }
             None => (3840, 2160),
         }
@@ -574,6 +585,16 @@ mod tests {
         let shown = w.stack.visible_child().and_downcast::<gtk::Picture>().expect("a picture");
         assert!(shown.paintable().is_some(), "decoded after the window showed");
         w.destroy();
+    }
+
+    /// A 2560x1440 display at 125 %: the wallpaper was decoded for
+    /// 4096x2304 (the whole factor, 2) -- 2.5 times the memory on the card
+    /// the display can show. Python decodes at the fractional scale.
+    #[test]
+    fn test_wallpaper_decoded_at_whole_scale() {
+        assert_eq!(device_pixels(2048, 1152, Some(1.25), 2), (2560, 1440));
+        assert_eq!(device_pixels(2048, 1152, None, 2), (4096, 2304)); // (GTK 4.12: the whole factor)
+        assert_eq!(device_pixels(1920, 1080, Some(f64::NAN), 0), (1920, 1080));
     }
 
     #[test]

@@ -65,7 +65,7 @@ mod procenv;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings|wayfire-config|gallery> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings|wayfire-config|self-update|gallery> [--dark|--light]";
 
 /// autostart.py's setup steps before the login items, each on its own
 /// (one failing never keeps the rest, or the apps, from starting).
@@ -82,7 +82,7 @@ fn login_steps() {
 }
 
 /// The commands that run and return, or run without GTK: no start-up trace.
-const NO_WINDOWS: &[&str] = &["key", "screenshot", "keep", "keep-all", "autostart", "xsettings", "wayfire-config", "prefs", "desktop-files", "restart", "doctor", "lock-wait", "keyring", "show-desktop"];
+const NO_WINDOWS: &[&str] = &["key", "screenshot", "keep", "keep-all", "autostart", "xsettings", "wayfire-config", "prefs", "desktop-files", "restart", "doctor", "lock-wait", "keyring", "show-desktop", "self-update"];
 
 /// The components USAGE lists (the ones this binary dispatches).
 fn handles(component: &str) -> bool {
@@ -168,6 +168,10 @@ fn main() -> ExitCode {
             ExitCode::from(code.value() as u8)
         }
         "restart" => ExitCode::from(sonata_session::restart(&args[1..]) as u8),
+        // Sonata's own update (Software Update's Update runs it in a
+        // terminal through the `sonata2` launcher, which hands it here in
+        // the Rust session): the release installed, the Rust build rebuilt
+        "self-update" => ExitCode::from(sonata_system::selfupdate::main(&args[1..]).clamp(0, 255) as u8),
         "doctor" => ExitCode::from(sonata_session::doctor(&args[1..]) as u8),
         // in the Rust session the setup steps are the Rust ones; on trial the
         // Python session's own autostart runs and this one only tries it
@@ -317,7 +321,7 @@ fn main() -> ExitCode {
         // (install.sh's launcher): 0 when the Rust build runs it, so the
         // apps and helpers Launchpad, the Dock, D-Bus and the session start
         // through `sonata2` are the Rust ones there, and the Python ones
-        // where nothing is ported (self-update...)
+        // where nothing is ported
         "--handles" => ExitCode::from(if args.get(1).is_some_and(|c| handles(c)) { 0 } else { 1 }),
         "-h" | "--help" | "help" => {
             println!("{USAGE}");
@@ -431,8 +435,20 @@ mod handles_tests {
         for c in ["activity", "terminal", "files", "portal", "settings", "topbar", "screenshot"] {
             assert!(super::handles(c), "{c}");
         }
-        for c in ["self-update", "", "--handles"] {
+        for c in ["", "--handles"] {
             assert!(!super::handles(c), "{c}");
         }
+    }
+
+    /// In the Rust session, Software Update's Update ran the Python
+    /// `sonata2 self-update`: the Rust build had no such command, and the
+    /// session went on running the old Rust Sonata after an update. The
+    /// launcher hands it to sonata2-rs now (no window, no start-up trace).
+    #[test]
+    fn test_self_update_ran_the_python_one() {
+        assert!(super::handles("self-update"));
+        assert!(super::NO_WINDOWS.contains(&"self-update"));
+        let src = include_str!("main.rs");
+        assert!(src.contains("\"self-update\" => ExitCode::from(sonata_system::selfupdate::main("));
     }
 }

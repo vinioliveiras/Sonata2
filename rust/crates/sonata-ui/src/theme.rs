@@ -399,6 +399,7 @@ pub fn strip_wheel(range: &impl gtk::prelude::IsA<gtk::Range>) {
 pub const FADE_MS: i64 = 320;
 const NO_FADE: &str = "sonata-no-fade";
 const FADE_OVERLAY: &str = "sonata-fade-overlay";
+const FADE_TOO: &str = "sonata-fade-too";
 
 /// No picture cross-fade over `win`: it blends its own colours (the Dock,
 /// the menu bar) or fades its own pictures (the wallpaper). The fade puts
@@ -408,9 +409,38 @@ pub fn no_fade(win: &impl gtk::prelude::IsA<gtk::Window>) {
     unsafe { win.as_ref().set_data(NO_FADE, true) };
 }
 
+/// A shell surface that cross-fades like an app window (Spotlight, the
+/// app switcher, Notification Center: theme.py fades every window but the
+/// Dock, the menu bar and the wallpaper). Undecorated windows only fade
+/// when they say so here: the Dock and the menu bar don't call no_fade.
+/// Its content goes in the fade's overlay now, before the pointer is ever
+/// on it: put there during a fade, the content was taken out of the window
+/// and put back under the pointer, and lost its hover until the pointer
+/// moved (GTK sends no crossing events for a re-rooted widget).
+pub fn fade_too(win: &impl gtk::prelude::IsA<gtk::Window>) {
+    use adw::prelude::*;
+    let win = win.as_ref();
+    unsafe { win.set_data(FADE_TOO, true) };
+    fade_overlay(win);
+    // (content set later: in by the time the window is on screen)
+    win.connect_realize(|w| {
+        fade_overlay(w);
+    });
+}
+
 fn faded(win: &gtk::Window) -> bool {
     use adw::prelude::*;
     unsafe { win.data::<bool>(NO_FADE).is_none() }
+}
+
+/// theme._start_fade's rule: every window on screen but those that fade
+/// themselves (no_fade). Here undecorated windows -- the shell's surfaces
+/// -- fade only when they opted in (fade_too), as the Dock and the menu
+/// bar don't opt out.
+fn fades(win: &gtk::Window) -> bool {
+    use adw::prelude::*;
+    let opted_in = win.is_decorated() || unsafe { win.data::<bool>(FADE_TOO).is_some() };
+    win.is_visible() && win.is_mapped() && opted_in && faded(win)
 }
 
 fn content(win: &gtk::Window) -> Option<gtk::Widget> {
@@ -441,18 +471,50 @@ pub fn ease(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// The window's fade overlay and the content in it, the content put in
+/// it the first time. Once in, it stays: the window's content is then the
+/// overlay itself, and was wrapped in one more overlay -- and taken out
+/// and put back, losing hover and focus -- on every change of look.
+fn fade_overlay(win: &gtk::Window) -> Option<(gtk::Overlay, gtk::Widget)> {
+    use adw::prelude::*;
+    let top = content(win)?;
+    let kept = unsafe { win.data::<gtk::Overlay>(FADE_OVERLAY).map(|p| p.as_ref().clone()) };
+    if let Some(o) = kept.filter(|o| o.upcast_ref::<gtk::Widget>() == &top) {
+        let child = o.child()?;
+        return Some((o, child));
+    }
+    // an alert in its own window: libadwaita aborts the app when a dialog
+    // is put in an overlay (Dark Mode switched with an alert open took
+    // Settings down). It keeps its plain switch.
+    if is_dialog(&top) {
+        return None;
+    }
+    // moving the content drops the focus, and GTK hands it on: a sidebar
+    // list would select its next row. Kept.
+    let focus = gtk::prelude::GtkWindowExt::focus(win);
+    set_content(win, None);
+    let o = gtk::Overlay::new();
+    o.set_child(Some(&top));
+    set_content(win, Some(o.upcast_ref()));
+    unsafe { win.set_data(FADE_OVERLAY, o.clone()) };
+    if let Some(f) = focus.filter(|f| f.root().as_ref().map(|r| r.upcast_ref::<gtk::Widget>()) == Some(win.upcast_ref())) {
+        f.grab_focus();
+    }
+    Some((o, top))
+}
+
+fn is_dialog(w: &gtk::Widget) -> bool {
+    use adw::prelude::*;
+    w.is::<adw::Dialog>() || w.type_().name().starts_with("AdwDialog")
+}
+
 /// Cross-fade one window: a picture of how it looked, over it, fading out
 /// while the new style shows underneath (GTK runs no CSS transitions for
 /// a stylesheet change, so it is done with a picture).
 fn fade_window(win: &gtk::Window) {
     use adw::prelude::*;
-    let Some(child) = content(win) else { return };
-    // an alert in its own window: libadwaita aborts the app when a dialog
-    // is put in an overlay (Dark Mode switched with an alert open took
-    // Settings down). It keeps its plain switch.
-    if child.is::<adw::Dialog>() || child.type_().name().starts_with("AdwDialog") {
-        return;
-    }
+    let Some(top) = content(win).filter(|t| !is_dialog(t)) else { return };
+    let child = unsafe { win.data::<gtk::Overlay>(FADE_OVERLAY).map(|p| p.as_ref().clone()) }.filter(|o| o.upcast_ref::<gtk::Widget>() == &top).and_then(|o| o.child()).unwrap_or(top);
     let (w, h) = (child.width(), child.height());
     let Some(renderer) = win.renderer() else { return };
     if w <= 0 || h <= 0 {
@@ -462,24 +524,7 @@ fn fade_window(win: &gtk::Window) {
     gtk::WidgetPaintable::new(Some(&child)).snapshot(&snap, w as f64, h as f64);
     let Some(node) = snap.to_node() else { return };
     let tex = renderer.render_texture(&node, Some(&gtk::graphene::Rect::new(0.0, 0.0, w as f32, h as f32)));
-    let over = unsafe { win.data::<gtk::Overlay>(FADE_OVERLAY).map(|p| p.as_ref().clone()) }.filter(|o| o.child().as_ref() == Some(&child));
-    let over = match over {
-        Some(o) => o,
-        None => {
-            // moving the content drops the focus, and GTK hands it on: a
-            // sidebar list would select its next row. Kept.
-            let focus = gtk::prelude::GtkWindowExt::focus(win);
-            set_content(win, None);
-            let o = gtk::Overlay::new();
-            o.set_child(Some(&child));
-            set_content(win, Some(o.upcast_ref()));
-            unsafe { win.set_data(FADE_OVERLAY, o.clone()) };
-            if let Some(f) = focus.filter(|f| f.root().as_ref().map(|r| r.upcast_ref::<gtk::Widget>()) == Some(win.upcast_ref())) {
-                f.grab_focus();
-            }
-            o
-        }
-    };
+    let Some((over, _)) = fade_overlay(win) else { return };
     // the old look at its own size, pinned to the top left: if the layout
     // changes meanwhile it is covered, never stretched
     let pic = gtk::Picture::builder().paintable(&tex).can_target(false).can_shrink(false).content_fit(gtk::ContentFit::Fill).halign(gtk::Align::Start).valign(gtk::Align::Start).build();
@@ -501,10 +546,7 @@ fn start_fade(old: Values) {
     use adw::prelude::*;
     for w in gtk::Window::list_toplevels() {
         let Ok(w) = w.downcast::<gtk::Window>() else { continue };
-        // undecorated: the shell's surfaces (Dock, menu bar, wallpaper...)
-        // -- re-rooted under the pointer they lost their state; only app
-        // windows fade
-        if w.is_visible() && w.is_mapped() && w.is_decorated() && faded(&w) {
+        if fades(&w) {
             fade_window(&w);
         }
     }
@@ -690,6 +732,71 @@ mod look_tests {
         assert!(!crate::menu::any_open());
         assert!(closed.get());
         win.destroy();
+
+        // until laid out (a fade needs the window's content at its size)
+        let spin = |w: &gtk::Button| {
+            for _ in 0..500 {
+                while gtk::glib::MainContext::default().iteration(false) {}
+                if w.width() > 0 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        };
+        let unrealized = |w: &gtk::Button| {
+            let n = std::rc::Rc::new(std::cell::Cell::new(0));
+            let c = n.clone();
+            w.connect_unrealize(move |_| c.set(c.get() + 1));
+            n
+        };
+
+        // every change of look wrapped an app window in one more overlay,
+        // taking its content out and putting it back each time (its hover
+        // and focus lost on every Dark Mode switch)
+        let app_win = gtk::Window::new();
+        let inner = gtk::Button::with_label("in");
+        app_win.set_child(Some(&inner));
+        app_win.present();
+        spin(&inner);
+        assert!(fades(&app_win), "an app window fades");
+        fade_window(&app_win);
+        assert!(app_win.child().is_some_and(|c| c.is::<gtk::Overlay>()), "faded");
+        let out = unrealized(&inner);
+        // (the next change of look: laid out again by then)
+        fade_overlay(&app_win);
+        let top = content(&app_win).and_downcast::<gtk::Overlay>().expect("in the fade's overlay");
+        assert_eq!(top.child().as_ref(), Some(inner.upcast_ref()), "test_every_fade_wrapped_the_window_again");
+        assert_eq!(out.get(), 0, "test_every_fade_wrapped_the_window_again: taken out again");
+        app_win.destroy();
+
+        // Spotlight, the app switcher and Notification Center cross-fade as
+        // in Python; skipped in Rust, as the fade took their content out of
+        // the window and put it back under the pointer, which lost its hover
+        let shell = gtk::Window::builder().decorated(false).build();
+        let row = gtk::Button::with_label("a result");
+        shell.set_child(Some(&row));
+        fade_too(&shell);
+        let out = unrealized(&row);
+        shell.present();
+        spin(&row);
+        assert!(fades(&shell), "test_shell_overlays_did_not_cross_fade");
+        row.set_state_flags(gtk::StateFlags::PRELIGHT, false); // (the pointer on it)
+        fade_window(&shell);
+        let over = content(&shell).and_downcast::<gtk::Overlay>().expect("in the fade's overlay");
+        assert!(over.last_child().is_some_and(|p| p.is::<gtk::Picture>() && !p.can_target()), "the old look over it, letting the pointer through");
+        assert_eq!(out.get(), 0, "test_shell_overlay_lost_its_hover_in_a_fade: taken out of the window");
+        assert!(row.state_flags().contains(gtk::StateFlags::PRELIGHT), "test_shell_overlay_lost_its_hover_in_a_fade");
+        no_fade(&shell);
+        assert!(!fades(&shell), "no_fade wins");
+        shell.destroy();
+
+        // the Dock and the menu bar (undecorated, no opt-in) fade their own
+        // colours: no picture over them
+        let bar = gtk::Window::builder().decorated(false).child(&gtk::Label::new(Some("bar"))).build();
+        bar.present();
+        while gtk::glib::MainContext::default().iteration(false) {}
+        assert!(!fades(&bar), "test_dock_cross_faded_as_a_picture");
+        bar.destroy();
     }
 
     #[test]

@@ -14,6 +14,7 @@ back at once (keep()).
     remember("source", 100)          # system.set_volume does it
     restore("source", "bluez_input.XX")   # audiofollow's "new" events
 """
+import os
 import threading
 import time
 
@@ -31,6 +32,36 @@ _pending = {}                        # kind -> percent not written yet
 _set_at = {}                         # kind -> when Sonata last set it (monotonic)
 _timer = None
 _lock = threading.Lock()
+
+
+def marker(kind: str) -> str:
+    """$XDG_RUNTIME_DIR/sonata2-volume-set-<kind>, touched by every volume
+    Sonata sets. The lock runs in the menu bar, but Settings > Sound's
+    sliders and the volume keys set it from processes of their own: without
+    it the menu bar only learnt the change was Sonata's once
+    devicevolumes.json was written (0.8 s later), and put the slider back
+    while it was being dragged. The Rust build touches the same file."""
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "sonata2-volume-set-" + kind)
+
+
+def _mark(kind: str) -> None:
+    try:
+        path = marker(kind)
+        with open(path, "a"):
+            pass
+        os.utime(path)
+    except OSError:
+        pass
+
+
+def marked(kind: str, wall=None) -> bool:
+    """Any Sonata process set this kind's volume less than LOCK_GRACE_S
+    ago (one stat: it runs on every volume event)."""
+    try:
+        at = os.stat(marker(kind)).st_mtime
+    except OSError:
+        return False
+    return abs((time.time() if wall is None else wall) - at) < LOCK_GRACE_S
 
 
 def _pactl(*args) -> str:
@@ -57,6 +88,17 @@ def remember(kind: str, percent: int) -> None:
         _timer = threading.Timer(SAVE_AFTER_S, flush)
         _timer.daemon = True
         _timer.start()
+    _mark(kind)
+
+
+def recently_set(kind: str, now=None, wall=None) -> bool:
+    """Sonata set this kind's volume just now: in this process (still
+    pending, or within LOCK_GRACE_S) or in another one (marked())."""
+    now = time.monotonic() if now is None else now
+    with _lock:
+        if now - _set_at.get(kind, -1e9) < LOCK_GRACE_S or kind in _pending:
+            return True
+    return marked(kind, wall)
 
 
 def flush(default_name=None) -> None:
@@ -130,16 +172,14 @@ def node_volume(kind: str, index: int):
     return None
 
 
-def keep(kind: str, index: int, state=None, set_volume=None, now=None) -> bool:
+def keep(kind: str, index: int, state=None, set_volume=None, now=None, wall=None) -> bool:
     """Blocking: sink/source #index changed. With the lock on, a volume
     nobody set from Sonata goes back to the device's own (its first
     volume seen counts as its own when none was set yet). True: put back."""
     if kind not in KINDS or not locked():
         return False
-    now = time.monotonic() if now is None else now
-    with _lock:
-        if now - _set_at.get(kind, -1e9) < LOCK_GRACE_S or kind in _pending:
-            return False                          # Sonata's own change
+    if recently_set(kind, now, wall):
+        return False                              # Sonata's own change
     got = (state or node_volume)(kind, index)
     if not got or not usable(got[0]):
         return False

@@ -357,6 +357,41 @@ impl Chooser {
     }
 }
 
+/// Preview's Open / Save panels are these too (preview/window.py opens
+/// ChooserWindow). Preview can't name this crate -- Files uses its picture
+/// loading -- so the panel is handed to it when the program starts: a
+/// constructor in .init_array, run before main wherever this crate is
+/// linked (sonata2-rs), with nothing to call from the outside.
+#[cfg(target_os = "linux")]
+#[used]
+#[link_section = ".init_array"]
+static INSTALL_IN_PREVIEW: extern "C" fn() = {
+    extern "C" fn install() {
+        sonata_preview::panel::install(preview_panel);
+    }
+    install
+};
+
+/// A Preview panel: a sheet of its window (modal) when it has one.
+pub fn preview_panel(app: &gtk::Application, parent: Option<&gtk::Window>, r: sonata_preview::panel::Request, done: sonata_preview::panel::Done) {
+    let o = Options {
+        mode: if r.save { Mode::Save } else { Mode::Open },
+        title: r.title,
+        accept_label: String::new(),
+        multiple: r.multiple,
+        filters: r.filters,
+        current_filter: 0,
+        folder: r.folder,
+        name: r.name,
+    };
+    let ch = Chooser::new(app, o, Box::new(move |uris, _| done(uris)));
+    if let Some(p) = parent {
+        ch.window().set_transient_for(Some(p));
+        ch.window().set_modal(true);
+    }
+    ch.present();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -372,5 +407,14 @@ mod tests {
         assert!(!glob_match("[!a]*", "abc"));
         assert!(matches("x.md", "", &[(GLOB, "*.md".into())]));
         assert!(!matches("x.md", "", &[(MIME, "text/plain".into())]));
+    }
+
+    #[test]
+    fn test_preview_used_gtks_file_dialog() {
+        // Preview's Open, Save As and Export As opened GTK's file dialog
+        // (through the portal, or GTK's own chooser without it), not Files'
+        // panel with its sidebar, "Save As:" field and Format pop-up. Files'
+        // chooser is handed to Preview before main wherever both are linked.
+        assert!(sonata_preview::panel::installed());
     }
 }

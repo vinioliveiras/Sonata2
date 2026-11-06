@@ -260,6 +260,12 @@ def _fade_window(win) -> None:
     out while the new style shows underneath. (GTK doesn't run CSS
     transitions for stylesheet changes, so this is done with a snapshot.)"""
     child = _content(win)
+    over = getattr(win, "_sonata_fade_overlay", None)
+    if over is not None and child is over:
+        # after the first fade the content IS the overlay: wrapped again,
+        # every window was taken apart and rebuilt on each Dark Mode switch,
+        # losing its hover and focus
+        child = over.get_child()
     if hasattr(Adw, "Dialog") and isinstance(child, Adw.Dialog):
         # an alert in its own window: libadwaita aborts the app when a
         # dialog is put in an overlay (Dark Mode switched with "Restart

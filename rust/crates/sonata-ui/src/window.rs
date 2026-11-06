@@ -314,6 +314,72 @@ pub fn show_again(win: &(impl IsA<gtk::Window> + IsA<gtk::Widget>)) {
 /// A toolbar button: (icon, tooltip, callback).
 pub type Tool = (&'static str, String, Box<dyn Fn()>);
 
+/// ui.window.titlebar: the 52 px bar with the traffic lights on the side
+/// Settings > Appearance says (moved there again when that changes), an
+/// optional bold centred title and an end widget. `zoom` None greys the
+/// green button out; Some(true) maximizes / restores.
+pub fn titlebar(win: &(impl IsA<gtk::Window> + Clone + 'static), title: Option<&str>, end: Option<gtk::Widget>, zoom: Option<bool>) -> gtk::WindowHandle {
+    let bar = gtk::CenterBox::builder().css_classes(["sonata-titlebar"]).build();
+    let handle = gtk::WindowHandle::builder().child(&bar).build();
+    if let Some(t) = title {
+        let l = gtk::Label::builder().label(t).css_classes(["sonata-titlebar-title"]).ellipsize(gtk::pango::EllipsizeMode::Middle).max_width_chars(50).build();
+        bar.set_center_widget(Some(&l));
+    }
+    if let Some(e) = &end {
+        e.set_valign(gtk::Align::Center);
+    }
+    let w = win.clone().upcast::<gtk::Window>().downgrade();
+    let b = bar.downgrade();
+    let place = Rc::new(move || {
+        let (Some(win), Some(bar)) = (w.upgrade(), b.upgrade()) else { return };
+        let (wc, wm, wz) = (win.downgrade(), win.downgrade(), win.downgrade());
+        let zoom_cb: Option<Box<dyn Fn()>> = (zoom == Some(true)).then(|| {
+            Box::new(move || {
+                if let Some(w) = wz.upgrade() {
+                    toggle_zoom(&w);
+                }
+            }) as Box<dyn Fn()>
+        });
+        let lights = traffic_lights(
+            move || {
+                if let Some(w) = wc.upgrade() {
+                    w.close();
+                }
+            },
+            move || {
+                if let Some(w) = wm.upgrade() {
+                    w.minimize();
+                }
+            },
+            zoom_cb,
+        );
+        if let Some(e) = &end {
+            if let Some(p) = e.parent().and_downcast::<gtk::Box>() {
+                p.remove(e);
+            }
+        }
+        bar.set_start_widget(None::<&gtk::Widget>);
+        bar.set_end_widget(None::<&gtk::Widget>);
+        if buttons_side() == "right" {
+            // the end widget, then the buttons at the edge
+            if let Some(e) = &end {
+                let both = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                both.append(e);
+                both.append(&lights);
+                bar.set_end_widget(Some(&both));
+            } else {
+                bar.set_end_widget(Some(&lights));
+            }
+        } else {
+            bar.set_start_widget(Some(&lights));
+            bar.set_end_widget(end.as_ref());
+        }
+    });
+    place();
+    crate::theme::on_buttons_change(move || place());
+    handle
+}
+
 /// A toolbar continuing the glass title bar the compositor draws (macOS
 /// unified toolbar), `end` buttons at its end. Returns the handle (to add
 /// to the window), the bar (its centre is free) and the buttons.

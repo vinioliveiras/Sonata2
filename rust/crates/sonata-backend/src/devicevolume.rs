@@ -3,11 +3,13 @@
 //! in use (devicevolumes.json), written once a moment after it was set.
 //! recently_set() tells the lock half (sonata-system's devicevolume) that
 //! a change was Sonata's own, so "Don't let apps change the volume" never
-//! puts back the user's own slider.
+//! puts back the user's own slider -- even one set from another process
+//! (marker()).
 
 use serde_json::{json, Map, Value};
+use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 pub const NAME: &str = "devicevolumes";
 const SAVE_AFTER: Duration = Duration::from_millis(800);
@@ -35,6 +37,30 @@ pub fn usable(name: &str) -> bool {
     !name.is_empty() && !name.ends_with(".monitor") && !name.starts_with("sonata-eq")
 }
 
+/// $XDG_RUNTIME_DIR/sonata2-volume-set-<kind>, touched by every volume
+/// Sonata sets (devicevolume.py's marker(), the same file). The lock runs
+/// in the menu bar, but Settings > Sound's sliders and the volume keys set
+/// the volume from processes of their own: without it the menu bar only
+/// learnt the change was Sonata's once devicevolumes.json was written
+/// (0.8 s later), and put the slider back while it was being dragged.
+pub fn marker(kind: &str) -> PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/tmp")).join(format!("sonata2-volume-set-{kind}"))
+}
+
+fn mark(kind: &str) {
+    if let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(marker(kind)) {
+        let _ = f.set_modified(SystemTime::now());
+    }
+}
+
+/// Any Sonata process set this kind's volume less than LOCK_GRACE before
+/// `now` (one stat: it runs on every volume event).
+pub fn marked_at(kind: &str, now: SystemTime) -> bool {
+    let Ok(at) = std::fs::metadata(marker(kind)).and_then(|m| m.modified()) else { return false };
+    let age = now.duration_since(at).unwrap_or_else(|e| e.duration()); // either way round: clocks
+    age < LOCK_GRACE
+}
+
 /// The default `kind`'s volume ("sink" / "source") was set to `percent`.
 pub fn remember(kind: &str, percent: i64) {
     if kind != "sink" && kind != "source" {
@@ -49,6 +75,7 @@ pub fn remember(kind: &str, percent: i64) {
         p.set_at.push((kind.to_string(), Instant::now()));
         p.serial
     };
+    mark(kind);
     std::thread::spawn(move || {
         std::thread::sleep(SAVE_AFTER);
         let mine = PENDING.lock().unwrap_or_else(|e| e.into_inner()).serial == serial;
@@ -58,13 +85,15 @@ pub fn remember(kind: &str, percent: i64) {
     });
 }
 
-/// Sonata set this kind's volume itself just now: it is still waiting to
-/// be written, or remember() ran less than LOCK_GRACE ago (devicevolume.py
-/// keep()'s grace). The lock leaves such a change alone.
+/// Sonata set this kind's volume itself just now: in this process (still
+/// waiting to be written, or remember() ran less than LOCK_GRACE ago --
+/// devicevolume.py keep()'s grace) or in another one (marked_at). The lock
+/// leaves such a change alone.
 pub fn recently_set(kind: &str) -> bool {
-    recently_set_at(kind, Instant::now())
+    recently_set_at(kind, Instant::now()) || marked_at(kind, SystemTime::now())
 }
 
+/// This process's half of recently_set().
 pub fn recently_set_at(kind: &str, now: Instant) -> bool {
     let p = PENDING.lock().unwrap_or_else(|e| e.into_inner());
     p.values.iter().any(|(k, _)| k == kind) || p.set_at.iter().any(|(k, at)| k == kind && now.saturating_duration_since(*at) < LOCK_GRACE)
@@ -111,13 +140,31 @@ mod tests {
     /// app turning the microphone down stayed down).
     #[test]
     fn test_lock_never_knew_sonata_own_change() {
-        assert!(!recently_set("source"));
+        // (this process's half: the sink's marker is the next test's)
+        assert!(!recently_set_at("source", Instant::now()));
         remember("source", 70);
         assert!(recently_set("source")); // pending, then within the grace
-        assert!(!recently_set("sink")); // only that kind
+        assert!(!recently_set_at("sink", Instant::now())); // only that kind
         flush(Some(&|_: &str| String::new())); // written (no device: nothing saved)
         assert!(recently_set("source"));
         let later = Instant::now() + LOCK_GRACE + Duration::from_millis(10);
         assert!(!recently_set_at("source", later)); // an app's change, later on
+    }
+
+    /// With "Don't let apps change the volume" on, dragging Settings >
+    /// Sound's slider jumped back: the slider sets the volume in Settings'
+    /// process, the lock runs in the menu bar's, and the menu bar only knew
+    /// the change was Sonata's once devicevolumes.json was written, 0.8 s
+    /// later. Another process's change (the marker alone, nothing known
+    /// here) counts as Sonata's at once.
+    #[test]
+    fn test_settings_slider_dragged_was_put_back() {
+        // what Settings' remember() leaves behind, from its own process
+        mark("sink");
+        assert!(!recently_set_at("sink", Instant::now())); // nothing in this process
+        assert!(recently_set("sink"));
+        let at = std::fs::metadata(marker("sink")).unwrap().modified().unwrap();
+        assert!(!marked_at("sink", at + LOCK_GRACE + Duration::from_millis(10))); // an app's, later on
+        assert!(marked_at("sink", at + Duration::from_millis(500)));
     }
 }

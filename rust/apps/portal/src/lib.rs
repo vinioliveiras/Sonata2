@@ -248,6 +248,69 @@ fn access(title: &str, subtitle: &str, body: &str, opts: &glib::VariantDict, don
     sonata_ui::dialog::alert(&heading, &text, &[("deny", deny, ""), ("grant", grant, "default")], move |rid| done(if rid == "grant" { 0 } else { 1 }), None);
 }
 
+/// The window that asked for a panel (the request's parent_window, as the
+/// portal spec writes it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Parent {
+    /// "wayland:<handle>": a toplevel the app exported with xdg-foreign
+    Wayland(String),
+    /// "x11:<xid>", the window id in hex
+    X11(u64),
+    /// "" (no window), or something we can't read
+    None,
+}
+
+pub fn parent_of(parent_window: &str) -> Parent {
+    match parent_window.split_once(':') {
+        Some(("wayland", h)) if !h.is_empty() => Parent::Wayland(h.to_string()),
+        Some(("x11", xid)) => {
+            let hex = xid.trim_start_matches("0x").trim_start_matches("0X");
+            u64::from_str_radix(hex, 16).ok().filter(|x| *x != 0).map_or(Parent::None, Parent::X11)
+        }
+        _ => Parent::None,
+    }
+}
+
+/// Keep the panel on top of the app that asked, as its dialog
+/// ("wayland:<handle>": GDK imports the handle through zxdg_importer and
+/// makes it the panel's parent). Nothing when that isn't possible: an X11
+/// app (Xwayland) has no Wayland surface our panel could name, and on
+/// another GDK backend there is no handle to import -- bring_to_front still
+/// keeps the panel above it then.
+pub fn attach_to_parent(win: &impl IsA<gtk::Window>, parent_window: &str) {
+    let Parent::Wayland(handle) = parent_of(parent_window) else { return };
+    win.as_ref().connect_realize(move |w| {
+        set_transient_for_exported(w, &handle);
+    });
+}
+
+/// gdk_wayland_toplevel_set_transient_for_exported, looked up at run time:
+/// the gtk crate has no GdkWayland binding, and GTK only has the call when
+/// built with its Wayland backend. GDK keeps the import and applies it when
+/// the panel's xdg_toplevel is made (so realize, before it maps, is early
+/// enough).
+fn set_transient_for_exported(win: &gtk::Window, handle: &str) -> bool {
+    use std::ffi::{c_char, c_void};
+    type SetExported = unsafe extern "C" fn(*mut c_void, *const c_char) -> glib::ffi::gboolean;
+    let Some(surface) = win.surface() else { return false };
+    let is_wayland = glib::Type::from_name("GdkWaylandToplevel").is_some_and(|t| surface.type_().is_a(t));
+    let Ok(h) = std::ffi::CString::new(handle) else { return false };
+    if !is_wayland {
+        return false;
+    }
+    // SAFETY: looking a name up among the libraries already loaded (GTK)
+    let f = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c"gdk_wayland_toplevel_set_transient_for_exported".as_ptr()) };
+    if f.is_null() {
+        return false;
+    }
+    // SAFETY: the symbol has this C signature (gdkwayland/gdkwaylandtoplevel.h),
+    // and the surface was just checked to be a GdkWaylandToplevel
+    unsafe {
+        let f = std::mem::transmute::<*mut c_void, SetExported>(f);
+        f(surface.as_ptr() as *mut c_void, h.as_ptr()) != 0
+    }
+}
+
 /// The Open / Save panel always comes up above the app that asked: Wayfire
 /// keeps it on top and focuses it (IPC: our window, found by this process
 /// and its title). Asked again a few times while Wayfire hasn't mapped it.
@@ -386,6 +449,7 @@ impl Portal {
 
 fn open_panel(app: &gtk::Application, conn: &gio::DBusConnection, method: &str, params: &glib::Variant, inv: gio::DBusMethodInvocation) {
     let handle: String = params.child_value(0).get::<glib::variant::ObjectPath>().map(|o| o.as_str().to_string()).unwrap_or_default();
+    let parent: String = params.child_value(2).get().unwrap_or_default();
     let title: String = params.child_value(3).get().unwrap_or_default();
     let opts = glib::VariantDict::new(Some(&params.child_value(4)));
     let args = parse(method, &title, &opts);
@@ -405,6 +469,7 @@ fn open_panel(app: &gtk::Application, conn: &gio::DBusConnection, method: &str, 
             }
         }),
     );
+    attach_to_parent(ch.window(), &parent);
     bring_to_front(ch.window()); // above the asking app, always
     if let Some(node) = gio::DBusNodeInfo::for_xml(REQUEST_XML).ok().and_then(|n| n.lookup_interface("org.freedesktop.impl.portal.Request")) {
         let w = Rc::downgrade(&ch);
@@ -508,6 +573,29 @@ mod tests {
         let r = glib::VariantDict::new(Some(&results(&a, &["file:///dest".into()], 0)));
         let uris: Vec<String> = r.lookup_value("uris", None).unwrap().get().unwrap();
         assert_eq!(uris, ["file:///dest/one.txt", "file:///dest/two.txt"]);
+    }
+
+    #[test]
+    fn test_panel_was_not_attached_to_the_asking_window() {
+        // The Rust portal read the request's parent_window and dropped it:
+        // the Open / Save panel came up as a window of its own, not as the
+        // asking app's dialog (the Python portal attaches it, xdg-foreign).
+        assert_eq!(parent_of("wayland:Xk2fPq9"), Parent::Wayland("Xk2fPq9".into()));
+        assert_eq!(parent_of("wayland:a:b"), Parent::Wayland("a:b".into())); // only the first ':' splits
+        assert_eq!(parent_of("wayland:"), Parent::None);
+        assert_eq!(parent_of("x11:3a00007"), Parent::X11(0x3a00007));
+        assert_eq!(parent_of("x11:0x1f"), Parent::X11(0x1f));
+        assert_eq!(parent_of("x11:zz"), Parent::None);
+        assert_eq!(parent_of(""), Parent::None);
+        assert_eq!(parent_of("mir:1"), Parent::None);
+        // where GTK can start (not on Wayland here): attaching is quietly nothing
+        if gtk::init().is_ok() {
+            let w = gtk::Window::new();
+            attach_to_parent(&w, "wayland:abc");
+            WidgetExt::realize(&w);
+            assert!(!set_transient_for_exported(&w, "abc"));
+            w.destroy();
+        }
     }
 
     #[test]

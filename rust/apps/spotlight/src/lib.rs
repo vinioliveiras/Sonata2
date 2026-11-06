@@ -215,6 +215,7 @@ impl Spotlight {
         fixed.set_halign(gtk::Align::Center);
         fixed.set_valign(gtk::Align::Start);
         win.set_child(Some(&fixed));
+        sonata_ui::theme::fade_too(&win); // (Dark Mode cross-fades it, as Python)
         let me = Rc::new(Self {
             win,
             panel,

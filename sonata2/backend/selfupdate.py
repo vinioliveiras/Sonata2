@@ -136,9 +136,17 @@ def extract(tar: tarfile.TarFile, dest: str) -> None:
         tar.extractall(dest, members=list(safe_members(tar, dest)))
 
 
+def folder_name(tag: str) -> str:
+    """The cache folder for `tag`: one plain name. A tag comes from GitHub or
+    the command line, and the folder is emptied first -- "../.." there would
+    have emptied a folder outside the cache."""
+    name = "".join(c if (c.isascii() and c.isalnum()) or c in "._-+" else "_" for c in tag)
+    return f"_{name}" if not name or set(name) == {"."} else name
+
+
 def download(rel: dict, say=print) -> str:
     """The release's source in the cache; returns the folder with install.sh."""
-    dest = os.path.join(_cache(), rel["tag"])
+    dest = os.path.join(_cache(), folder_name(rel["tag"]))
     shutil.rmtree(dest, ignore_errors=True)
     os.makedirs(dest)
     archive = dest + ".tar.gz"

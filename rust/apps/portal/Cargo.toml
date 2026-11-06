@@ -10,6 +10,7 @@ gtk.workspace = true
 adw.workspace = true
 gio.workspace = true
 glib.workspace = true
+libc.workspace = true
 serde_json.workspace = true
 sonata-backend.workspace = true
 sonata-config = { workspace = true, features = ["watch"] }

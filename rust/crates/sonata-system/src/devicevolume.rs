@@ -209,7 +209,9 @@ mod tests {
         let state = |_: &str, _: i64| Some(("bluez_input.AA".to_string(), 30));
         let set = RefCell::new(Vec::new());
         let set_volume = |k: &str, n: &str, p: i64| set.borrow_mut().push((k.to_string(), n.to_string(), p));
-        // the sink was Sonata's just now; the source wasn't
+        // the sink was Sonata's just now; the source wasn't (no other
+        // test's marker left behind either)
+        let _ = std::fs::remove_file(sonata_backend::devicevolume::marker("source"));
         sonata_backend::devicevolume::remember("sink", 40);
         assert!(keep("source", 5, &recent, &state, &set_volume));
         assert_eq!(set.borrow().last().unwrap().2, 100);

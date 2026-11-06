@@ -89,6 +89,8 @@ class LockTest(unittest.TestCase):
         self.p.start()
         DV._pending.clear()
         DV._set_at.clear()
+        for kind in DV.KINDS:                                     # other tests' remember()
+            pathlib.Path(DV.marker(kind)).unlink(missing_ok=True)
         config.update("sounds", lock_volumes=True)
         data = DV.saved()
         data["source"]["bluez_input.AA"] = 100
@@ -121,6 +123,27 @@ class LockTest(unittest.TestCase):
         DV._pending["source"] = 50                                # still being dragged
         self.assertFalse(self.keep(50))
         self.assertEqual(self.calls, [])
+
+    def test_settings_slider_dragged_was_put_back(self):
+        """With "Don't let apps change the volume" on, dragging Settings >
+        Sound's input slider jumped back: the slider sets the volume in
+        Settings' process, the lock runs in the menu bar's, and the menu
+        bar only knew the change was Sonata's once devicevolumes.json was
+        written, 0.8 s later. A volume set in another process counts as
+        Sonata's own at once."""
+        import subprocess
+        import sys
+        subprocess.run([sys.executable, "-c", "from sonata2.backend import devicevolume as d; "
+                        "d.remember('source', 40)"], check=True, timeout=30,
+                       cwd=str(pathlib.Path(__file__).resolve().parent.parent))
+        self.assertEqual(DV._set_at, {})                          # nothing known in this process
+        self.assertFalse(self.keep(40, now=None))                 # Settings' own drag: left alone
+        self.assertEqual(self.calls, [])
+        self.assertFalse(DV.recently_set("sink"))                 # only that kind
+        later = os.stat(DV.marker("source")).st_mtime + DV.LOCK_GRACE_S + 0.5
+        self.assertTrue(DV.keep("source", 5, state=lambda k, i: ("bluez_input.AA", 40),
+                                set_volume=lambda *a: self.calls.append(a), wall=later))
+        self.assertEqual(self.calls, [("source", "bluez_input.AA", 100)])  # an app's, later on
 
     def test_first_seen_volume_is_its_own(self):
         self.assertFalse(self.keep(70, name="alsa_input.laptop"))

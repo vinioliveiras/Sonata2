@@ -15,8 +15,8 @@
 //! Files: any text file -- the encoding and line endings are detected and
 //! kept on save; both show in the status bar (click to change), with the
 //! cursor's line and column and the word / character count. .docx, .odt and
-//! .rtf open read-only as their plain text. Open and Save go through the
-//! file chooser portal (Sonata's own panels in a Sonata session).
+//! .rtf open read-only as their plain text. Open and Save are Files' own
+//! panels (sonata_files::chooser), as in the Python TextEdit.
 //!
 //! Keyboard (⌘ is Ctrl or Super): N new window, T new tab, W close tab,
 //! Ctrl+Tab / Ctrl+Shift+Tab (or ⌘Shift+] / [, Ctrl+PageDown / PageUp) next /
@@ -32,6 +32,7 @@ use crate::tabs::{Handlers, TabStrip};
 use gtk::gdk::{self, Key, ModifierType};
 use gtk::{gio, glib, prelude::*};
 use serde_json::{json, Map, Value};
+use sonata_files::chooser::{Chooser, Mode, Options, GLOB, MIME};
 use sonata_i18n::{fmt, gettext, language, n_, tr, trn};
 use sonata_ui::{controls, dialog, menu};
 use std::cell::{Cell, RefCell};
@@ -1277,24 +1278,13 @@ impl TeWindow {
         let folder = file.as_ref().and_then(|f| f.parent()).unwrap_or_else(|| {
             gio::File::for_path(glib::user_special_dir(glib::UserDirectory::Documents).unwrap_or_else(glib::home_dir))
         });
-        let mut name = file.as_ref().and_then(|f| f.basename()).map(|b| b.to_string_lossy().into_owned()).unwrap_or_else(|| format!("{}.txt", doc.untitled.borrow()));
-        if doc.readonly.get() {
-            let stem = std::path::Path::new(&name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(name.clone());
-            name = format!("{stem}.txt");
-        }
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        let plain = gtk::FileFilter::new();
-        plain.set_name(Some(&tr!("Plain Text")));
-        plain.add_pattern("*.txt");
-        let all = gtk::FileFilter::new();
-        all.set_name(Some(&tr!("All Files")));
-        all.add_pattern("*");
-        filters.append(&plain);
-        filters.append(&all);
-        let dlg = gtk::FileDialog::builder().title(tr!("Save")).modal(true).initial_folder(&folder).initial_name(name).filters(&filters).build();
+        let name = file.as_ref().and_then(|f| f.basename()).map(|b| b.to_string_lossy().into_owned());
+        let opts = save_options(&folder, name.as_deref(), &doc.untitled.borrow(), doc.readonly.get());
+        let Some(app) = self.window.application() else { return };
         let me = self.me.clone();
-        dlg.save(Some(&self.window), gio::Cancellable::NONE, move |res| {
-            let (Ok(f), Some(t)) = (res, me.upgrade()) else { return };
+        let ch = Chooser::new(&app, opts, Box::new(move |uris, _| {
+            let (Some(uri), Some(t)) = (uris.and_then(|u| u.into_iter().next()), me.upgrade()) else { return };
+            let f = gio::File::for_uri(&uri);
             if doc.readonly.get() {
                 // the converted text becomes an ordinary document
                 doc.readonly.set(false);
@@ -1313,29 +1303,23 @@ impl TeWindow {
             t.update_status(true);
             t.update_title();
             t.save(Some(doc.clone()), then.clone(), false);
-        });
+        }));
+        ch.window().set_transient_for(Some(&self.window));
+        ch.window().set_modal(true);
+        ch.present();
     }
 
     pub fn open_panel(&self) {
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        let text = gtk::FileFilter::new();
-        text.set_name(Some(&tr!("Text Documents")));
-        text.add_mime_type("text/*");
-        let all = gtk::FileFilter::new();
-        all.set_name(Some(&tr!("All Files")));
-        all.add_pattern("*");
-        filters.append(&text);
-        filters.append(&all);
-        let dlg = gtk::FileDialog::builder().title(tr!("Open")).modal(true).filters(&filters).build();
+        let Some(app) = self.window.application() else { return };
         let me = self.me.clone();
-        dlg.open_multiple(Some(&self.window), gio::Cancellable::NONE, move |res| {
-            let (Ok(files), Some(t)) = (res, me.upgrade()) else { return };
-            for i in 0..files.n_items() {
-                if let Some(f) = files.item(i).and_downcast::<gio::File>() {
-                    t.open_file(&f);
-                }
+        let ch = Chooser::new(&app, open_options(), Box::new(move |uris, _| {
+            let Some(t) = me.upgrade() else { return };
+            for uri in uris.unwrap_or_default() {
+                t.open_file(&gio::File::for_uri(&uri));
             }
-        });
+        }));
+        ch.window().set_transient_for(Some(&self.window));
+        ch.present();
     }
 
     /// Files dropped anywhere on the window open as tabs (text drags still
@@ -1962,6 +1946,40 @@ pub fn run(args: &[String]) -> glib::ExitCode {
     app.run_with_args(&argv)
 }
 
+/// Save As's panel (window.py's save_as): the file's folder (Documents for
+/// a new one), its name -- a converted .docx / .odt / .rtf saves as .txt.
+pub fn save_options(folder: &gio::File, name: Option<&str>, untitled: &str, readonly: bool) -> Options {
+    let mut name = name.map(str::to_string).unwrap_or_else(|| format!("{untitled}.txt"));
+    if readonly {
+        let stem = std::path::Path::new(&name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(name.clone());
+        name = format!("{stem}.txt");
+    }
+    Options {
+        mode: Mode::Save,
+        title: tr!("Save"),
+        accept_label: String::new(),
+        multiple: false,
+        filters: vec![(tr!("Plain Text"), vec![(GLOB, "*.txt".into())]), (tr!("All Files"), vec![(GLOB, "*".into())])],
+        current_filter: 0,
+        folder: Some(folder.uri().to_string()),
+        name,
+    }
+}
+
+/// Open's panel: text documents, several at once.
+pub fn open_options() -> Options {
+    Options {
+        mode: Mode::Open,
+        title: tr!("Open"),
+        accept_label: String::new(),
+        multiple: true,
+        filters: vec![(tr!("Text Documents"), vec![(MIME, "text/*".into())]), (tr!("All Files"), vec![(GLOB, "*".into())])],
+        current_filter: 0,
+        folder: None,
+        name: String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2070,6 +2088,61 @@ mod tests {
         reset();
         look_settings(&app);
         reset();
+        panels_are_files_choosers(&app);
+        reset();
+    }
+
+    #[test]
+    fn test_textedit_used_gtks_file_dialog() {
+        // TextEdit's Open and Save opened GTK's file dialog (through the
+        // portal, or GTK's own chooser without it); window.py opens Files'
+        // panel with these filters and names. (The window part:
+        // panels_are_files_choosers, in window_and_session.)
+        let docs = gio::File::for_path("/home/me/Documents");
+        let o = save_options(&docs, None, "Untitled 2", false);
+        assert_eq!((o.mode, o.title.as_str(), o.name.as_str(), o.folder.as_deref()), (Mode::Save, "Save", "Untitled 2.txt", Some("file:///home/me/Documents")));
+        assert_eq!(o.filters, vec![("Plain Text".to_string(), vec![(GLOB, "*.txt".to_string())]), ("All Files".to_string(), vec![(GLOB, "*".to_string())])]);
+        assert_eq!(save_options(&docs, Some("report.docx"), "Untitled", true).name, "report.txt"); // converted: plain text now
+        assert_eq!(save_options(&docs, Some("notes.md"), "Untitled", false).name, "notes.md");
+        let o = open_options();
+        assert_eq!((o.mode, o.multiple, o.title.as_str()), (Mode::Open, true, "Open"));
+        assert_eq!(o.filters, vec![("Text Documents".to_string(), vec![(MIME, "text/*".to_string())]), ("All Files".to_string(), vec![(GLOB, "*".to_string())])]);
+    }
+
+    fn panels_are_files_choosers(app: &adw::Application) {
+        let w = TeWindow::new(app, None, None);
+        w.window.present();
+        settle(50);
+        let before = app.windows().len();
+        let chooser = || app.windows().into_iter().find(|x| x.has_css_class("sonata-chooser"));
+        w.open_panel();
+        settle(100);
+        let panel = chooser().expect("Open is Files' panel");
+        assert_eq!(panel.transient_for().as_ref(), Some(w.window.upcast_ref::<gtk::Window>()));
+        panel.close();
+        settle(50);
+        w.save_as(None, None);
+        settle(100);
+        let panel = chooser().expect("Save is Files' panel");
+        assert!(panel.is_modal());
+        // its "Save As:" field, with the document's name
+        fn entries(w: &gtk::Widget, out: &mut Vec<String>) {
+            if let Some(e) = w.downcast_ref::<gtk::Entry>() {
+                out.push(e.text().to_string());
+            }
+            let mut c = w.first_child();
+            while let Some(ch) = c {
+                entries(&ch, out);
+                c = ch.next_sibling();
+            }
+        }
+        let mut texts = Vec::new();
+        entries(panel.upcast_ref(), &mut texts);
+        let untitled = format!("{}.txt", w.current().unwrap().untitled.borrow());
+        assert!(texts.contains(&untitled), "{texts:?}");
+        panel.close();
+        settle(50);
+        assert_eq!(app.windows().len(), before);
     }
 
     fn session_round_trip(app: &adw::Application) {
