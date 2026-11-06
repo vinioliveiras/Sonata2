@@ -18,6 +18,7 @@ pub mod gallery;
 pub mod glass;
 pub mod icons;
 pub mod menu;
+pub mod module_slider;
 pub mod panel;
 pub mod progress;
 pub mod theme;

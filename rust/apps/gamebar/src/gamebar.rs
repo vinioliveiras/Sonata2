@@ -288,13 +288,50 @@ impl Gate {
         self.opening_gen == Some(self.frost_gen) && !visible
     }
 
+    /// The opening `gen` on screen: no longer waiting for anything. (Vini:
+    /// once it had shown, its opening was never over -- closed again, the
+    /// Game Bar looked "still opening", and the next Super+G was taken as
+    /// a close of that opening: it didn't open.)
+    pub fn shown(&mut self, gen: u64) {
+        if self.opening_gen == Some(gen) {
+            self.opening_gen = None;
+        }
+    }
+
     /// Closed before it showed: it never shows.
     pub fn cancel(&mut self) {
         self.frost_gen += 1;
+        self.opening_gen = None;
     }
 }
 
 // -- the glass ----------------------------------------------------------------------------------
+/// `argv`'s output, read on a worker thread: done(its bytes) on the main
+/// loop, done(None) if it failed. False: no such program, nothing asked.
+///
+/// Why not Gio.Subprocess.communicate_async (frost.capture): it reads the
+/// pipe from the main loop, 8 KB a turn, and grim can't finish while
+/// nobody reads (the pipe holds 64 KB) -- the menu bar busy for a moment
+/// as the Game Bar opened and the picture, ~25 ms of work, came after
+/// FROST_WAIT_MS: the Game Bar opened solid (Vini: "sometimes without the
+/// glass"). Read here, it's all there whatever the main loop is doing, and
+/// comes back in one turn.
+pub fn output_off_loop(argv: Vec<String>, done: impl FnOnce(Option<glib::Bytes>) + 'static) -> bool {
+    if argv.is_empty() || glib::find_program_in_path(&argv[0]).is_none() {
+        return false;
+    }
+    // done goes back to this thread (it holds GTK objects): only the bytes cross
+    let ctx = glib::MainContext::ref_thread_default();
+    let done = glib::thread_guard::ThreadGuard::new(done);
+    std::thread::spawn(move || {
+        let out = std::process::Command::new(&argv[0]).args(&argv[1..]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output();
+        let out = out.ok().filter(|o| o.status.success()).map(|o| o.stdout);
+        // (HIGH: ahead of the FROST_WAIT_MS deadline when both are in after a busy moment)
+        ctx.invoke_with_priority(glib::Priority::HIGH, move || (done.into_inner())(out.map(glib::Bytes::from_owned)));
+    });
+    true
+}
+
 /// The game's picture, blurred, and how much of it shows.
 #[derive(Default)]
 pub struct Frost {
@@ -550,43 +587,25 @@ fn focusables(root: &gtk::Widget) -> Vec<gtk::Widget> {
     found
 }
 
-/// A volume slider with its symbol (topbar._slider_with_icon's look):
+/// A volume slider with its symbol: Control Center's capsule, the symbol
+/// inside it (topbar._slider_with_icon) -- Vini: the Audio widget had GTK's
+/// blue slider while the apps' rows under it had the capsule.
 /// `on_change` only when the user moves it, never when show() puts a level.
 struct Level {
-    scale: gtk::Scale,
-    quiet: Rc<Cell<bool>>,
+    slider: sonata_ui::module_slider::ModuleSlider,
 }
 
 impl Level {
     fn new(icon: fn(f64) -> &'static str, on_change: impl Fn(f64) + 'static) -> (gtk::Widget, Self) {
-        let quiet: Rc<Cell<bool>> = Rc::default();
-        let q = quiet.clone();
-        let img = gtk::Image::builder().icon_name(icon(50.0)).css_classes(["cc-slider-icon"]).build();
-        let im = img.clone();
-        let scale = sonata_ui::controls::slider(
-            50.0,
-            move |v| {
-                im.set_icon_name(Some(icon(v)));
-                if !q.get() {
-                    on_change(v);
-                }
-            },
-            0.0,
-            100.0,
-            None,
-        );
-        scale.set_focusable(true); // the controller: left / right change it
-        scale.set_can_focus(true);
-        let row = gtk::Box::builder().spacing(8).css_classes(["cc-slider-box"]).hexpand(true).build();
-        row.append(&img);
-        row.append(&scale);
-        (row.upcast(), Self { scale, quiet })
+        let (row, slider) = sonata_ui::module_slider::slider_with_icon(move |v| icon(v).to_string(), 50.0, on_change, true, None);
+        slider.add_css_class("sonata-module-slider"); // the controller stops on it and moves it
+        slider.set_focusable(true);
+        slider.set_can_focus(true);
+        (row, Self { slider })
     }
 
     fn show(&self, v: f64) {
-        self.quiet.set(true);
-        self.scale.set_value(v);
-        self.quiet.set(false);
+        self.slider.show_value(v); // (the listeners not told: the level came from the system)
     }
 }
 
@@ -608,7 +627,7 @@ fn mic_icon(v: f64) -> &'static str {
 }
 
 /// The volume feedback sound when the slider is let go (Settings > Sound).
-fn volume_feedback(s: &gtk::Scale) {
+fn volume_feedback(s: &impl IsA<gtk::Widget>) {
     let click = gtk::GestureClick::builder().propagation_phase(gtk::PropagationPhase::Capture).build();
     let play = || {
         gio::spawn_blocking(|| sonata_backend::sounds::play("volume"));
@@ -1069,7 +1088,13 @@ impl GameBar {
     }
 
     pub fn open(self: &Rc<Self>) {
-        remove_source(&self.hide_src);
+        // opened again while it was still going: gone first, then the
+        // game's picture -- taken with the Game Bar still on screen, the
+        // glass was torn off the bar there and the picture had it in it
+        if self.hide_src.borrow().is_some() {
+            remove_source(&self.hide_src);
+            self.hide_now();
+        }
         self.root.remove_css_class("closing");
         // the levels and radios read once it's on screen: their reads (pactl,
         // nmcli, rfkill, DDC/CI) started with it and slowed its opening (Vini)
@@ -1117,6 +1142,15 @@ impl GameBar {
     /// Bar isn't on screen yet, so it's never in the picture.
     fn frost_then(self: &Rc<Self>, show: Rc<dyn Fn()>) {
         let gen = self.gate.borrow_mut().begin();
+        let show: Rc<dyn Fn()> = {
+            let w = Rc::downgrade(self);
+            Rc::new(move || {
+                if let Some(me) = w.upgrade() {
+                    me.gate.borrow_mut().shown(gen); // on screen: this opening is over
+                }
+                show();
+            })
+        };
         self.set_glass(None, 0.0);
         self.root.remove_css_class("frosted");
         if !self.layer {
@@ -1187,14 +1221,19 @@ impl GameBar {
         let id = glib::timeout_add_local_once(Duration::ZERO, move || {
             let Some(me) = w.upgrade() else { return };
             me.hide_src.take();
-            me.show_pins(); // (measured where they are, before hiding)
-            if me.has_mixer.get() {
-                me.host.mixer_listen(me.pins.borrow().contains_key("audio")); // still on screen pinned: still listening
-            }
-            me.win.set_visible(false);
-            me.root.remove_css_class("closing");
+            me.hide_now();
         });
         self.hide_src.replace(Some(id));
+    }
+
+    /// The end of a close: off the screen, the pinned widgets over the game.
+    fn hide_now(self: &Rc<Self>) {
+        self.show_pins(); // (measured where they are, before hiding)
+        if self.has_mixer.get() {
+            self.host.mixer_listen(self.pins.borrow().contains_key("audio")); // still on screen pinned: still listening
+        }
+        self.win.set_visible(false);
+        self.root.remove_css_class("closing");
     }
 
     /// False: nothing on screen, nothing to tick.
@@ -1222,7 +1261,7 @@ impl GameBar {
         let (out, vol) = Level::new(speaker_icon, |v| {
             gio::spawn_blocking(move || system::set_volume(Some(v as i64), Some(false)));
         });
-        volume_feedback(&vol.scale);
+        volume_feedback(&vol.slider);
         let (mic_row, mic) = Level::new(mic_icon, |v| {
             gio::spawn_blocking(move || system::set_input_volume(Some(v as i64), Some(false)));
         });
@@ -1280,7 +1319,7 @@ impl GameBar {
             let levels = me.vol.borrow();
             if let Some((v, m)) = levels.as_ref() {
                 for (slider, level) in [(v, vol), (m, mic)] {
-                    slider.scale.set_sensitive(level.is_some());
+                    slider.slider.set_sensitive(level.is_some());
                     if let Some((pct, _muted)) = level {
                         slider.show(pct as f64);
                     }
@@ -1492,6 +1531,10 @@ impl GameBar {
                     let delta = if name == "right" { SLIDER_STEP } else { -SLIDER_STEP };
                     match s.downcast_ref::<gtk::Range>() {
                         Some(r) => r.set_value(r.value() + delta),
+                        None if s.is::<sonata_ui::module_slider::ModuleSlider>() => {
+                            let m = s.downcast_ref::<sonata_ui::module_slider::ModuleSlider>().expect("checked");
+                            m.set_value(m.value() + delta);
+                        }
                         None => {
                             self.host.step_slider(&s, delta);
                         }
@@ -1641,6 +1684,145 @@ mod tests {
         let second = g.begin();
         assert!(!g.current(first) && g.current(second));
         assert!(!g.opening(true)); // on screen: not "opening"
+    }
+
+    /// test_super_g_after_closing_did_not_open_it -- Vini: closed, the
+    /// Game Bar didn't open again at the next Super+G. Once it had shown,
+    /// its opening was never over: closed (off the screen) it still looked
+    /// "waiting for its picture", and the press was taken as a close.
+    #[test]
+    fn test_super_g_after_closing_did_not_open_it() {
+        let mut g = Gate::default();
+        let gen = g.begin();
+        g.shown(gen); // on screen
+        assert!(!g.opening(false)); // closed again: not opening, the next press opens
+        // an older opening's showing doesn't end a newer one
+        let second = g.begin();
+        g.shown(gen);
+        assert!(g.opening(false) && g.current(second));
+        g.cancel();
+        assert!(!g.opening(false));
+    }
+
+    /// test_glass_missing_when_the_menu_bar_was_busy -- Vini: sometimes the
+    /// Game Bar opened without its glass. grim's picture was read from the
+    /// main loop, and grim can't finish while nobody reads its pipe: the
+    /// menu bar busy for a moment as it opened, the picture came after
+    /// FROST_WAIT_MS and it opened solid. Read on a thread, the picture is
+    /// in before a deadline that waited behind the same busy moment.
+    #[test]
+    fn test_glass_missing_when_the_menu_bar_was_busy() {
+        let ctx = glib::MainContext::new();
+        ctx.with_thread_default(|| {
+            let order: Rc<RefCell<Vec<(&str, Option<usize>)>>> = Rc::default();
+            let o = order.clone();
+            let size = 1920 * 1080 * 3; // a 1080p picture, as grim's PPM
+            let argv = ["head", "-c", &size.to_string(), "/dev/zero"].map(String::from).to_vec();
+            assert!(output_off_loop(argv, move |b| o.borrow_mut().push(("picture", b.map(|b| b.len())))));
+            let o = order.clone();
+            // (on this test's own context: timeout_add_local is the global one's)
+            let o = glib::thread_guard::ThreadGuard::new(o);
+            glib::timeout_source_new(Duration::from_millis(FROST_WAIT_MS), None, glib::Priority::DEFAULT, move || {
+                o.get_ref().borrow_mut().push(("deadline", None));
+                glib::ControlFlow::Break
+            })
+            .attach(Some(&ctx));
+            std::thread::sleep(Duration::from_millis(FROST_WAIT_MS + 50)); // the menu bar busy meanwhile
+            while order.borrow().len() < 2 {
+                ctx.iteration(true);
+            }
+            assert_eq!(order.borrow()[0], ("picture", Some(size)));
+            assert!(!output_off_loop(vec!["sonata2-no-such-program".into()], |_| unreachable!()));
+        })
+        .unwrap();
+    }
+
+    /// A Host that pictures at once (asynchronously, as grim) and notes
+    /// whether the Game Bar was on screen in each picture.
+    #[derive(Default)]
+    struct PictureHost {
+        win: RefCell<Option<gtk::Window>>,
+        pictures: RefCell<Vec<bool>>,
+    }
+
+    impl Host for PictureHost {
+        fn frost(&self, _output: Option<&str>, done: Box<dyn FnOnce(Option<gdk::Texture>)>, _renderer_of: Box<dyn Fn() -> Option<gsk::Renderer>>) -> bool {
+            let on_screen = self.win.borrow().as_ref().is_some_and(|w| w.is_visible());
+            self.pictures.borrow_mut().push(on_screen);
+            glib::timeout_add_local_once(Duration::from_millis(5), move || done(None));
+            true
+        }
+    }
+
+    fn spin(ms: u64) {
+        let ctx = glib::MainContext::default();
+        let until = std::time::Instant::now() + Duration::from_millis(ms);
+        while std::time::Instant::now() < until {
+            ctx.iteration(false);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// Vini: the Audio widget's volume and microphone had GTK's blue
+    /// slider, while the apps' rows under them had Control Center's white
+    /// capsule. Both are the capsule now, and the controller moves them.
+    /// (Only on a display: a failed gtk::init answers Ok the next time, so
+    /// no display is checked before asking.)
+    #[test]
+    fn test_audio_widget_used_the_wrong_slider() {
+        let display = ["WAYLAND_DISPLAY", "DISPLAY", "BROADWAY_DISPLAY"].iter().any(|v| std::env::var_os(v).is_some());
+        if !display || gtk::init().is_err() {
+            return;
+        }
+        let (row, level) = Level::new(speaker_icon, |_| {});
+        assert!(row.first_child().is_some_and(|c| c.is::<sonata_ui::module_slider::ModuleSlider>()));
+        assert!(slider_of(Some(level.slider.clone().upcast())).is_some());
+        level.show(30.0);
+        assert_eq!(level.slider.value(), 30.0);
+    }
+
+    /// On a display (a private broadway one: GDK_BACKEND=broadway). The
+    /// Game Bar opened, closed and opened again, as Super+G does.
+    #[test]
+    fn test_reopened_quickly_after_closing() {
+        // (the display first: testenv moves XDG_RUNTIME_DIR, where broadway's socket is)
+        if gtk::init().is_err() {
+            return; // no display
+        }
+        let _env = crate::testenv::env();
+        let app = gtk::Application::builder().application_id("io.github.vinioliveiras.sonata2rs.test.gamebar").flags(gio::ApplicationFlags::NON_UNIQUE).build();
+        if app.register(gio::Cancellable::NONE).is_err() {
+            return;
+        }
+        let host = Rc::new(PictureHost::default());
+        let gb = GameBar::build(&app, host.clone(), true); // as over a game: the picture first
+        host.win.replace(Some(gb.win.clone()));
+
+        // test_super_g_after_closing_did_not_open_it: the second Super+G
+        // after a close was taken as closing a pending opening
+        gb.toggle();
+        spin(FROST_WAIT_MS + 50);
+        assert!(gb.is_open());
+        gb.toggle(); // closed
+        spin(30);
+        assert!(!gb.win.is_visible());
+        gb.toggle(); // Super+G again: it opens
+        spin(FROST_WAIT_MS + 50);
+        assert!(gb.is_open(), "Super+G after a close didn't open the Game Bar");
+        assert_eq!(*host.pictures.borrow(), [false, false]);
+
+        // test_reopened_while_closing_pictured_itself: opened again while
+        // still going, the game's picture had the Game Bar on screen in it
+        // (and its glass was taken off while it was there)
+        gb.close_bar();
+        gb.open(); // before it had gone
+        spin(FROST_WAIT_MS + 50);
+        assert!(gb.is_open());
+        assert_eq!(host.pictures.borrow().last(), Some(&false), "the picture was taken with the Game Bar on screen");
+        gb.close_bar();
+        spin(30);
+        assert!(!gb.win.is_visible());
+        gb.win.destroy();
     }
 
     #[test]

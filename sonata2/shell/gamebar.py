@@ -674,8 +674,11 @@ class GameBar(Gtk.Window):
 
     def open(self) -> None:
         if self._hide_src:
+            # opened again while it was still going: gone first, then the
+            # game's picture -- taken with the Game Bar still on screen, the
+            # glass was torn off the bar there and the picture had it in it
             GLib.source_remove(self._hide_src)
-            self._hide_src = 0
+            self._gone()
         self.root.remove_css_class("closing")
         # the levels and radios read once it's on screen: their reads (pactl,
         # nmcli, rfkill, DDC/CI) started with it and slowed its opening (Vini)
@@ -709,6 +712,15 @@ class GameBar(Gtk.Window):
         the Game Bar isn't on screen yet, so it's never in the picture."""
         self._frost_gen = getattr(self, "_frost_gen", 0) + 1
         gen = self._opening_gen = self._frost_gen
+        shown_by = show
+
+        def show():
+            # on screen: this opening is over. (Vini: it never was -- closed
+            # again, the Game Bar looked "still opening", and the next
+            # Super+G was taken as a close of that opening: it didn't open)
+            if self._opening_gen == gen:
+                self._opening_gen = None
+            shown_by()
         self._set_glass(None, 0.0)
         self.root.remove_css_class("frosted")
         import shutil
@@ -758,6 +770,7 @@ class GameBar(Gtk.Window):
     def close_bar(self) -> None:
         if self.opening():                              # not on screen yet: it never shows
             self._frost_gen += 1
+            self._opening_gen = None
             if self._read_src:
                 GLib.source_remove(self._read_src)
                 self._read_src = 0
@@ -773,14 +786,16 @@ class GameBar(Gtk.Window):
             GLib.source_remove(self._clock_src)
             self._clock_src = 0
 
-        def gone():
-            self._hide_src = 0
-            self._show_pins()                           # (measured where they are, before hiding)
-            self._mixer_listen("audio" in self.pins)    # still on screen pinned: still listening
-            self.set_visible(False)
-            self.root.remove_css_class("closing")
-            return False
-        self._hide_src = GLib.timeout_add(_close_ms(), gone)
+        self._hide_src = GLib.timeout_add(_close_ms(), self._gone)
+
+    def _gone(self) -> bool:
+        """The end of a close: off the screen, the pinned widgets over the game."""
+        self._hide_src = 0
+        self._show_pins()                               # (measured where they are, before hiding)
+        self._mixer_listen("audio" in self.pins)        # still on screen pinned: still listening
+        self.set_visible(False)
+        self.root.remove_css_class("closing")
+        return False
 
     def _tick(self) -> bool:
         if not self.is_open() and not self.pins:

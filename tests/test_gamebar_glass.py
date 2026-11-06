@@ -130,6 +130,43 @@ class GlassTest(unittest.TestCase):
         self.assertFalse(self.bar.get_visible())
         take_pins.assert_not_called()
 
+    def test_super_g_after_closing_did_not_open_it(self):
+        """Vini: closed, the Game Bar didn't open again at the next Super+G.
+        Once it had shown, its opening was never over: closed (off the
+        screen) it still looked "waiting for its picture", and the press
+        was taken as a close."""
+        with mock.patch.object(G.Gio.Subprocess, "new", side_effect=lambda *a: FakeProc(red_png())):
+            self.bar.toggle()
+            spin(G.FROST_WAIT_MS + 100)
+            self.assertTrue(self.bar.is_open())
+            self.bar.toggle()                                   # closed
+            spin(50)
+            self.assertFalse(self.bar.get_visible())
+            self.assertFalse(self.bar.opening())
+            self.bar.toggle()                                   # Super+G again: it opens
+            spin(G.FROST_WAIT_MS + 100)
+        self.assertTrue(self.bar.is_open())
+
+    def test_reopened_while_closing_pictured_itself(self):
+        """Opened again while it was still going, the game's picture was
+        taken with the Game Bar on screen (and its glass taken off it there).
+        Now it's gone first, then pictured."""
+        seen = []
+
+        def new(*_a):
+            seen.append(self.bar.get_visible())
+            return FakeProc(red_png())
+        with mock.patch.object(G.Gio.Subprocess, "new", side_effect=new):
+            self.bar.toggle()
+            spin(G.FROST_WAIT_MS + 100)
+            self.assertTrue(self.bar.is_open())
+            self.bar.close_bar()
+            self.bar.open()                                     # before it had gone
+            spin(G.FROST_WAIT_MS + 100)
+        self.assertEqual(seen, [False, False])
+        self.assertTrue(self.bar.is_open())
+        self.assertTrue(self.bar.root.has_css_class("frosted"))
+
     def test_grim_shrinking_the_picture_made_the_glass_late(self):
         """Vini: the Game Bar opened solid and turned to glass a moment later.
         grim shrinking the picture itself (-s 0.25) took ~160 ms on a 1080p

@@ -171,8 +171,23 @@ impl gb::Host for MenuBarHost {
 
     fn frost(&self, output: Option<&str>, done: Box<dyn FnOnce(Option<gdk::Texture>)>, renderer_of: Box<dyn Fn() -> Option<gsk::Renderer>>) -> bool {
         // (the menu bar hosts the Game Bar only on a layer-shell display:
-        // host.rs installs it for the layered main bar alone)
-        sonata_mission::frost::capture(output, done, renderer_of)
+        // host.rs installs it for the layered main bar alone). grim read
+        // off the main loop (gb::output_off_loop: with frost::capture's
+        // main-loop read, a busy moment of the menu bar made the picture
+        // late and the Game Bar opened solid); decoded and blurred here
+        use sonata_mission::frost;
+        if !frost::available() {
+            return false;
+        }
+        gb::output_off_loop(frost::frost_command(output), move |out| {
+            let tex = frost::texture_from(out.as_ref());
+            // never the picture unblurred: without a renderer, no glass this time
+            let renderer = renderer_of();
+            done(match (tex, renderer) {
+                (Some(t), Some(r)) => Some(frost::blur_texture(Some(&r), &t)),
+                _ => None,
+            });
+        })
     }
 }
 
