@@ -313,7 +313,7 @@ pub struct Bar {
     pub mru: RefCell<Vec<String>>,
     windows_id: Cell<Option<u64>>,
     icons_src: RefCell<Option<glib::SourceId>>,
-    icons_sig: RefCell<Option<(Option<String>, usize)>>,
+    icons_sig: RefCell<Option<IconsSig>>,
     theme_src: RefCell<Option<glib::SourceId>>,
     cfg_mon: RefCell<Vec<gio::FileMonitor>>,
 }
@@ -370,6 +370,17 @@ fn set_icon(btn: &gtk::Button, name: &str) {
             i.set_icon_name(Some(name));
         }
     }
+}
+
+/// What redraws the icon items when it changes (icons_soon): the window in
+/// front, how many there are, how many minimized and maximized. Vini: Wi-Fi,
+/// Search and Control Center went dark after minimizing or maximizing an
+/// app, or switching windows -- none of which changed the front app or the
+/// count, the only two looked at.
+pub type IconsSig = (Option<i64>, usize, usize, usize);
+
+pub fn icons_signature(tops: &[crate::seams::Toplevel]) -> IconsSig {
+    (tops.iter().find(|t| t.activated).map(|t| t.id), tops.len(), tops.iter().filter(|t| t.minimized).count(), tops.iter().filter(|t| t.maximized).count())
 }
 
 /// Look the item's icon up again and draw it anew. Vini: the Control
@@ -922,9 +933,10 @@ impl Bar {
     /// focused) they are Files' -- File, Go, Window -- like Finder's.
     fn active_changed(self: &Rc<Self>) {
         let tops = self.services.windows.as_ref().map(|w| w.toplevels()).unwrap_or_default();
-        let sig = (tops.iter().find(|t| t.activated).map(|t| t.app_id.clone()), tops.len());
-        // the front app or the number of windows changed -- not a title (a
-        // browser's changes many times a second)
+        let sig = icons_signature(&tops);
+        // the front window, the number of windows or their minimized /
+        // maximized states changed -- not a title (a browser's changes many
+        // times a second)
         if self.icons_sig.borrow().as_ref() != Some(&sig) {
             self.icons_sig.replace(Some(sig));
             self.icons_soon();
