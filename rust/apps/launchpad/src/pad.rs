@@ -1511,13 +1511,7 @@ impl Pad {
                     p.close_launchpad(Some(Box::new(move || sonata_dock::dock_menu::edit_webapp(&wid))));
                 }
             })]);
-            let (w, page) = (Rc::downgrade(self), format!("appicons/{app}"));
-            sections.push(vec![MItem::new(&tr!("Change Icon…"), move || {
-                if let Some(p) = w.upgrade() {
-                    let page = page.clone();
-                    p.close_launchpad(Some(Box::new(move || open_settings(&page))));
-                }
-            })]);
+            // (no Change Icon… here: Vini didn't want it in the menu)
             let (w, a) = (Rc::downgrade(self), app.to_string());
             hide.push(MItem::new(&tr!("Delete Web App…"), move || {
                 if let Some(p) = w.upgrade() {
@@ -1976,6 +1970,20 @@ pub fn centred_editable_label(text: &str) -> gtk::EditableLabel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Vini: a web app's right-click menu in Apps had "Change Icon…",
+    /// which he didn't want there; Edit Web App… and Delete Web App… stay.
+    #[test]
+    fn test_web_app_menu_had_change_icon() {
+        let src = include_str!("pad.rs");
+        let code = &src[..src.find("#[cfg(test)]").unwrap()];
+        let f = &code[code.find("fn app_sections(").unwrap()..];
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        // (the macro's name built: the translation check reads every tr! call)
+        let item = |s: &str| format!("{}!(\"{s}\")", "tr");
+        assert!(!f.contains(&item("Change Icon…")));
+        assert!(f.contains(&item("Edit Web App…")) && f.contains(&item("Delete Web App…")));
+    }
 
     /// Vini: in Launchpad, a right-click on an app inside an open folder
     /// opened no menu. The folder's grid was let go once its panel was
