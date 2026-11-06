@@ -87,6 +87,9 @@ pub const HIDE_MS: u32 = 250;
 /// px strip at the screen edge that reveals a hidden Dock (layer.EDGE_TRIGGER)
 pub const TRIGGER: f64 = 2.0;
 pub const GLIDE_MS: u32 = 260;
+/// After a dragged icon's slot opens or closes, the others' new places are
+/// laid out within a frame or two: not kept before then.
+const SETTLE_LAYOUT: Duration = Duration::from_millis(50);
 
 // Plate padding and running dot, in px. Unlike macOS (where it sits low),
 // the dot is centred between the icon's visible artwork and the plate edge.
@@ -1243,6 +1246,9 @@ pub struct Drag {
     bounds: Option<Vec<(Rc<Tile>, (f64, f64, f64, f64))>>,
     pub from_folder: Option<String>,
     pub folder_index: usize,
+    /// the icons are still moving (a slot opened or closed) until then:
+    /// their places aren't kept (drop_targets)
+    settle_until: Option<Instant>,
 }
 
 /// A folder's panel in the Dock's window, as the host follows it.
@@ -3546,7 +3552,15 @@ impl Dock {
         }
         let Some(tile) = self.tiles.borrow().get(&key).cloned() else { return gdk::DragAction::MOVE };
         if !tile.button.get_visible() {
-            self.set_tile_shown(&tile, true); // back over the Dock: its slot opens again
+            // back over the Dock: its slot opens again, under the pointer --
+            // no folder with a neighbour this time: the others are measured
+            // once they've moved (set_tile_shown)
+            let slot = self.slot_at(x, y, Some(&tile));
+            self.set_tile_shown(&tile, true);
+            if self.app_tiles().iter().position(|t| Rc::ptr_eq(t, &tile)) != Some(slot) {
+                self.move_to_slot(&tile, slot);
+            }
+            return gdk::DragAction::MOVE;
         }
         if self.over_trash(x, y) && Dock::can_uninstall(&tile) {
             // over the Trash: let go to uninstall it (macOS); the icon keeps its place meanwhile
@@ -3613,6 +3627,13 @@ impl Dock {
         if dock_folder::is_folder(&key) || PERMANENT.contains(&key.as_str()) || tile.info.is_none() {
             return None;
         }
+        // just taken out of a folder: it goes where its slot opens, never
+        // into a folder with the app it's over (Vini had to aim to the
+        // pixel: its slot opening moves the Dock half an icon, and the
+        // pointer was over a neighbour's middle)
+        if self.drag.borrow().as_ref().is_some_and(|d| d.from_folder.is_some()) {
+            return None;
+        }
         for (t, (bx, by, bw, bh)) in self.drop_targets(tile) {
             let (pos, start, size) = if self.vertical { (y, by, bh) } else { (x, bx, bw) };
             let (across, a0, alen) = if self.vertical { (x, bx, bw) } else { (y, by, bh) };
@@ -3642,8 +3663,8 @@ impl Dock {
                 out.push((t, (b.x() as f64, b.y() as f64, b.width() as f64, b.height() as f64)));
             }
         }
-        if let Some(d) = self.drag.borrow_mut().as_mut() {
-            d.bounds = Some(out.clone());
+        if let Some(d) = self.drag.borrow_mut().as_mut().filter(|d| d.settle_until.is_none_or(|t| Instant::now() >= t)) {
+            d.bounds = Some(out.clone()); // (not while they move: measured again next time)
         }
         out
     }
@@ -3711,6 +3732,14 @@ impl Dock {
     }
 
     fn set_tile_shown(&self, tile: &Rc<Tile>, shown: bool) {
+        // the others move: where they are is measured again, on the next
+        // motion (measured with its slot closed, an app out of a folder let
+        // go in its own open slot was taken as dropped on its neighbour --
+        // a new folder)
+        if let Some(d) = self.drag.borrow_mut().as_mut() {
+            d.bounds = None;
+            d.settle_until = Some(Instant::now() + SETTLE_LAYOUT);
+        }
         let others: Vec<gtk::Widget> = self.app_tiles().iter().filter(|t| !Rc::ptr_eq(t, tile)).map(|t| t.widget()).collect();
         let before = glide_record(&self.plate, &others);
         tile.button.set_visible(shown);
@@ -5362,6 +5391,46 @@ mod tests {
         assert!(close[..close.find("\n}\n").unwrap()].contains("d.panel_gone(Some(&p))"));
         let end = &folder[folder.find("src.connect_drag_end(").unwrap()..];
         assert!(end[..end.find("b.add_controller(src)").unwrap()].contains("d.panel_gone(Some(&p))"));
+    }
+
+    /// Vini: an app dragged out of a Dock folder opened its slot in the
+    /// Dock, but let go there it went into a new folder with the app beside
+    /// it (dock.log: "drop at ... Some(\"sonata2-settings\")"). The other
+    /// icons' places were measured as the drag began, its slot still
+    /// closed; the slot opening moved them, and the pointer in it counted
+    /// as over the neighbour's middle. Shown or hidden, they're measured again.
+    #[test]
+    fn test_app_out_of_a_folder_dropped_into_a_new_folder() {
+        let src = include_str!("dock.rs");
+        let f = &src[src.find("fn set_tile_shown(&self").unwrap()..];
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        assert!(f.contains("d.bounds = None;") && f.contains("d.settle_until = Some("));
+        let t = &src[src.find("fn drop_targets(&self").unwrap()..];
+        assert!(t[..t.find("\n    }\n").unwrap()].contains("d.settle_until.is_none_or("));
+        // and before the others move
+        assert!(f.find("d.bounds = None;").unwrap() < f.find("tile.button.set_visible(shown)").unwrap());
+        // the motion that opens its slot looks for no folder: the others
+        // haven't moved yet (measured then, the old places were kept)
+        let m = &src[src.find("fn drag_motion(&self").unwrap()..];
+        let m = &m[..m.find("\n    }\n").unwrap()];
+        let shown = &m[m.find("if !tile.button.get_visible() {").unwrap()..];
+        let shown = &shown[..shown.find("\n        }\n").unwrap()];
+        assert!(shown.contains("return gdk::DragAction::MOVE;") && !shown.contains("folder_candidate"));
+        assert!(m.find("if !tile.button.get_visible() {").unwrap() < m.find("self.folder_candidate(").unwrap());
+    }
+
+    /// Vini: an app out of a Dock folder stayed on the Dock only when let
+    /// go just so -- elsewhere it went into a new folder with the app beside
+    /// it. Its slot opening grows and re-centres the Dock, which puts the
+    /// pointer over a neighbour's middle (the "make a folder" zone, 60% of
+    /// an icon). Taken out of a folder, it makes none: it goes to its slot.
+    #[test]
+    fn test_app_out_of_a_folder_needed_pixel_aim() {
+        let src = include_str!("dock.rs");
+        let f = &src[src.find("fn folder_candidate(&self").unwrap()..];
+        let f = &f[..f.find("\n    }\n").unwrap()];
+        let no = f.find("d.from_folder.is_some()").unwrap();
+        assert!(no < f.find("self.drop_targets(tile)").unwrap());
     }
 
     /// Seen on a (headless) Wayfire while making the panel: once a folder's
