@@ -1,0 +1,28 @@
+[package]
+name = "sonata-dock"
+description = "The Dock (sonata2/shell/dock.py and dock_*.py, poof.py)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib.workspace = true
+gtk4-layer-shell.workspace = true
+libc.workspace = true
+serde_json.workspace = true
+sonata-backend.workspace = true
+sonata-config = { workspace = true, features = ["watch"] }
+sonata-desktop.workspace = true
+sonata-files.workspace = true
+sonata-i18n.workspace = true
+sonata-sessionui.workspace = true
+sonata-shell.workspace = true
+sonata-tweaks.workspace = true
+sonata-ui.workspace = true
+sonata-webapps.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

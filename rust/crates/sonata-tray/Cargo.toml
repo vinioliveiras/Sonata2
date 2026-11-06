@@ -1,0 +1,21 @@
+[package]
+name = "sonata-tray"
+description = "The menu bar's status icons (sonata2/shell/tray.py): StatusNotifierWatcher and host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib.workspace = true
+serde_json.workspace = true
+sonata-backend.workspace = true
+sonata-config = { workspace = true, features = ["watch"] }
+sonata-i18n.workspace = true
+sonata-shell.workspace = true
+sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

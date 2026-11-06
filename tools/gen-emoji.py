@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build sonata2/data/emoji.tsv (group, emoji, name) for the Character
+"""Build data/emoji.tsv (group, emoji, name) for the Character
 Viewer from Unicode's emoji-test.txt: fully-qualified, no skin-tone
 variants, up to Emoji 14.0 (what common emoji fonts draw).
   tools/gen-emoji.py path/to/emoji-test.txt"""
@@ -8,7 +8,7 @@ import re
 import sys
 
 SKIN = re.compile("[\U0001F3FB-\U0001F3FF]")
-OUT = os.path.join(os.path.dirname(__file__), "..", "sonata2", "data", "emoji.tsv")
+OUT = os.path.join(os.path.dirname(__file__), "..", "data", "emoji.tsv")
 group, rows = "", []
 for line in open(sys.argv[1], encoding="utf-8"):
     if line.startswith("# group:"):

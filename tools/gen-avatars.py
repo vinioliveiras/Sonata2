@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Sonata's stock user pictures (sonata2/data/avatars/*.png, 256 px):
+"""Generate Sonata's stock user pictures (data/avatars/*.png, 256 px):
 a Noto Color Emoji glyph (Apache 2.0 / OFL) on a soft Big Sur-style gradient.
   tools/gen-avatars.py [path/to/NotoColorEmoji.ttf]"""
 import os
@@ -8,7 +8,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 FONT = sys.argv[1] if len(sys.argv) > 1 else "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
-OUT = os.path.join(os.path.dirname(__file__), "..", "sonata2", "data", "avatars")
+OUT = os.path.join(os.path.dirname(__file__), "..", "data", "avatars")
 SIZE = 256
 # (name, emoji, gradient top, gradient bottom)
 PICTURES = [

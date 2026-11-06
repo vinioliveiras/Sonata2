@@ -10,3 +10,6 @@ Claude outputs/
 /textedit/
 /notes/
 /music/
+
+# a build of a committed state next to the work in progress (rust/target is the usual one)
+rust/target-snap/

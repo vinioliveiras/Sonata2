@@ -1,21 +1,22 @@
 # Sonata design system
 
 Reference: macOS Big Sur/Monterey (Apple HIG) -- never Liquid Glass.
-Code: [`sonata2/ui/`](../sonata2/ui). Gallery: `python3 -m sonata2 gallery`
-(`tools/wl-preview.sh gallery --dark --menu 0 --submenu` for a screenshot).
+Code: the `sonata-ui` crate ([`rust/crates/sonata-ui/`](../rust/crates/sonata-ui)).
+Gallery: `sonata2 gallery [--dark]`.
 
 ## Rules
 
-1. **Every visual value comes from `ui/tokens.py`.** No colour, radius,
-   font, shadow or timing literal anywhere else. A new need = a new token.
-2. **Build UI from `ui` components.** A new kind of control is added to
-   `ui/` (with its CSS, a constructor, a gallery row and a section below)
+1. **Every visual value comes from the tokens** (`rust/crates/sonata-ui/tokens.json`).
+   No colour, radius, font, shadow or timing literal anywhere else. A new
+   need = a new token.
+2. **Build UI from `sonata-ui` components.** A new kind of control is added to
+   `sonata-ui` (with its CSS, a constructor, a gallery row and a section below)
    before a surface uses it. Never use GTK/libadwaita widgets or system
    dialogs that bring their own look (Gtk.ColorDialog, Gtk.FileDialog's
-   own chrome, Adw.AlertDialog...): they come out in another theme. The
-   colour picker is `ui.colorpicker`, alerts are `ui.dialog`.
+   own chrome, Adw.AlertDialog...): they come out in another theme. Alerts
+   are `sonata_ui::dialog`.
 3. **Light/dark is automatic.** Components never check the appearance;
-   `ui/theme.py` refills all CSS with the other palette on change.
+   `sonata_ui::theme` refills all CSS with the other palette on change.
 4. **Component parity with macOS.** Each shell component ships with the
    full macOS behaviour: interactions, animations, drag and drop, menus,
    keyboard -- tracked in ROADMAP before it's called done.
@@ -23,8 +24,8 @@ Code: [`sonata2/ui/`](../sonata2/ui). Gallery: `python3 -m sonata2 gallery`
    what already exists -- functions, layout patterns, animations, the way
    a component behaves -- and use it. Never duplicate code: a variant of
    something that exists is the same component with another layout (the
-   Apps Menu is Launchpad's own PageGrids, tiles, search, keys and drags in
-   a panel; only `shell/launchpad_window.py`'s look is its own). If the
+   Apps Menu is Launchpad's own page grids, tiles, search, keys and drags in
+   a panel; only its window's look is its own). If the
    thing you need is almost there, extend it in place.
 6. Sonata settings (look/behaviour) live in `~/.config/sonata2`; Linux
    settings stay in the system (see README).
@@ -32,11 +33,21 @@ Code: [`sonata2/ui/`](../sonata2/ui). Gallery: `python3 -m sonata2 gallery`
 ## Themes
 
 Two visual themes are planned: **mac** (now) and **windows** (later, with
-the "Task Bar" mode). Each is a set of LIGHT / DARK / SHARED token dicts in
-`tokens.THEMES`; components read tokens only, so a new theme is new values,
+the "Task Bar" mode). Each is a set of light / dark token tables in
+`tokens.json`; components read tokens only, so a new theme is new values,
 not new code. Selected in `~/.config/sonata2/appearance.json` (`theme`).
 
-## Tokens (`ui/tokens.py`)
+## Tokens (`tokens.json`)
+
+`rust/crates/sonata-ui/tokens.json` is where a value is changed: `light`,
+`dark`, `accents`, `animation_speed` and `frame`. `sonata_ui::tokens` reads
+it (built into the binary). The CSS templates are
+`rust/crates/sonata-ui/css.json`: one list of blocks (`key`, `css` with
+`%(token)s` placeholders, `local` values) per module, filled from the tokens
+into one CSS provider that is refilled when the appearance changes. Both
+files were exported from the Python Sonata while it existed; they are the
+sources now (the module keys keep the Python file names, e.g.
+`"clock/window.py"`, because `sonata_ui::css::register_module` uses them).
 
 | Group | Tokens |
 |---|---|
@@ -52,14 +63,18 @@ not new code. Selected in `~/.config/sonata2/appearance.json` (`theme`).
 | Spacing (layout code) | `SPACE`: xxs 2, xs 4, s 6, m 8, l 12, xl 16, xxl 20 |
 | Window frame | `FRAME`: corners + shadow (`radius` 10, `shadow_radius`, `shadow_color`), buttons (`buttons` order from the edge inwards, `buttons_side` left/right -- both the user's in `frame()`, `dot` 12, `dot_gap` 8, `dot_left` 13, `dot_top` 14), title (`title_h` 52, `title_align`, `title_font`), Wayfire's own bars (`fallback_title_h`, `fallback_font`); `TL_COLORS`. `r_window`, `button_layout()` and the GSettings button layout / title font follow it |
 
-**Window frame: one place.** Change `FRAME` (or `TL_COLORS`) and every window
-follows: Sonata's own (`ui/window.py`), the title bars Wayfire draws (pixdecor,
-sonata-corners, Wayfire's own bars: set by `tools/wayfire-config.sh` at login
-through `wfconfig.frame_options`), other GTK 4 apps (`adwstyle.py`), GTK/GNOME
-apps' button layout (`prefs.py`). A Windows-style theme is a different FRAME
+**Window frame: one place.** Change `frame` in tokens.json and every window
+follows: Sonata's own (`sonata_ui::window`), the title bars Wayfire draws (pixdecor,
+sonata-corners, Wayfire's own bars: set by `sonata2 wayfire-config frame` at
+login), other GTK 4 apps (adwstyle), GTK/GNOME apps' button layout (prefs).
+(`sonata-backend`'s wfconfig keeps copies of the frame numbers; a test keeps
+them equal to tokens.json.) A Windows-style theme is a different FRAME
 (buttons on the right, title on the left...); Sonata's own windows still place
-their traffic lights on the left by code. The dot pictures are files: run `tools/gen-decor.py` after
-changing `dot` or the colours (a test fails until they match).
+their traffic lights on the left by code. The dot pictures Wayfire's title bars
+use are files (`data/decor/*.png`): their generator was Python
+(tools/gen-decor.py, drawing with the Python Sonata's traffic lights) and went
+with it, so a change to `dot` or the colours needs new pictures made by hand
+(or a Rust generator, not written yet).
 
 ## Components
 
@@ -76,16 +91,19 @@ changing `dot` or the colours (a test fails until they match).
 | `ui/window.py` | Traffic lights (close / minimize / zoom, zoom greyed for fixed windows), in the user's side and order (`tokens.frame()`) | `traffic_lights(close, minimize, zoom=None)` |
 | `ui/window.py` | Button order picker: the three dots, dragged to another place (Settings > Appearance > Button order) | `order_lights(order, right, on_change)` |
 
-Shell components (Dock, Launchpad, ...) register their own CSS through
-`ui.register(template, key=..., **geometry)` using the same tokens.
-Widgets that paint in `do_snapshot` use `ui.rgba()`, `ui.shadow()`,
-`ui.px()` and redraw on `ui.on_change()`.
+The table names the Python modules the components were ported from; their
+Rust counterparts are the `sonata-ui` modules of the same name (`menu`,
+`label`, `controls`, `dialog`, `progress`, `fmt`, `fixed`, `window`).
+Shell components (Dock, Launchpad, ...) register their CSS with
+`sonata_ui::css::register_module("<module>")` (css.json) or
+`sonata_ui::theme::register(key, template)`, using the same tokens.
 
 ## Adding a component
 
-1. CSS template with `%(token)s` placeholders -> `theme.register(...)`.
-2. Constructor/class in the same module; plain GTK widgets underneath.
-3. A row in `ui/gallery.py`; screenshot light + dark.
+1. CSS template with `%(token)s` placeholders: a block in css.json (or
+   `sonata_ui::theme::register(...)`).
+2. Constructor in the same `sonata-ui` module; plain GTK widgets underneath.
+3. A row in `sonata-ui`'s gallery (`sonata2 gallery`); screenshot light + dark.
 4. A section in this file.
 
 ## Principles
@@ -93,8 +111,8 @@ Widgets that paint in `do_snapshot` use `ui.rgba()`, `ui.shadow()`,
 - **Independent look.** A first Sonata login looks right whatever GNOME/KDE
   themes, fonts or scaling the user has: themes, icons, cursors (Sonata-Cursors)
   and fonts (Inter) are bundled; the session seeds every visual gsettings key
-  into its own dconf layer once (`tools/session-env.sh`, bump
-  `SONATA_DEFAULTS` to re-seed), forces the Qt platform theme, and never reads
+  into its own dconf layer once (`tools/session-env.sh` through
+  `sonata2 prefs session-env`), forces the Qt platform theme, and never reads
   ~/.config/wayfire.ini. Known leak: a user `~/.config/gtk-4.0/gtk.css`
   still applies to third-party GTK4 apps (Sonata's own UI is above it).
 - **Every click animates (Vini).** Anything clickable gives press feedback

@@ -62,41 +62,11 @@ if has_plugin autostart; then
     done
     sed -i -E "0,/^plugins *=.*/ s//plugins =$keep/" "$out"
 fi
-# Window frame (corners, traffic lights) from tokens.FRAME -- one place for
-# every window: the title bars Wayfire draws follow Sonata's own windows.
-PYTHONPATH="$here" python3 - "$out" <<'PY' || true
-import importlib.util, os, sys
-from sonata2 import wfconfig
-spec = importlib.util.spec_from_file_location("tokens", os.path.join(os.environ["PYTHONPATH"], "sonata2", "ui", "tokens.py"))
-tokens = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(tokens)
-wfconfig._wayfire_files = lambda: [sys.argv[1]]       # write only the resolved copy
-for sec, key, val in wfconfig.frame_options(tokens.frame()):     # the user's radius
-    wfconfig.wayfire_set(sec, key, val)
-# zoom (maximize / restore): sonata-resize animates the frame; grid's crossfade
-# showed two title bars over each other (Vini) -- off when sonata-resize is in
-import re
-with open(sys.argv[1], encoding="utf-8") as f:
-    m = re.search(r"^plugins *=(.*)$", f.read(), re.M)
-if m and "sonata-resize" in m.group(1).split():
-    wfconfig.wayfire_set("grid", "type", "none")
-# Super+Tab is Mission Control now (a wayfire.ini kept from before had it on
-# the app switcher); scale keeps room for the desktops bar (spaces.py)
-with open(sys.argv[1], encoding="utf-8") as f:
-    text = f.read()
-moved = wfconfig.migrate_mission_control(text, 134)
-if moved != text:
-    with open(sys.argv[1], "w", encoding="utf-8") as f:
-        f.write(moved)
-# X11 apps (XWayland: Electron in X11 mode, GTK 2/3, Wine...) get Sonata's
-# look from its XSETTINGS manager, started with each XWayland (Vini: their
-# GTK menu bars were light in Dark Mode). A script of the user's stays.
-with open(sys.argv[1], encoding="utf-8") as f:
-    own = re.search(r"^xwayland_startup_script *= *(\S.*)$", f.read(), re.M)
-if not own:
-    here = os.environ["PYTHONPATH"]
-    wfconfig.wayfire_set("core", "xwayland_startup_script", f"env PYTHONPATH={here} python3 -m sonata2.xsettings")
-PY
+# Window frame (corners, traffic lights) from the tokens' frame -- one place
+# for every window: the title bars Wayfire draws follow Sonata's own
+# windows. Also grid's crossfade off with sonata-resize, the old Mission
+# Control and screenshot keys migrated, XWayland's XSETTINGS manager.
+sonata2-rs wayfire-config frame "$out" "$here" || true
 over="${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/wayfire-overrides.ini"
 # Keyboard: the system's layout (localectl) until one is picked in Settings.
 if ! grep -qs '^xkb_layout' "$over" && command -v localectl >/dev/null; then
@@ -108,21 +78,22 @@ if ! grep -qs '^xkb_layout' "$over" && command -v localectl >/dev/null; then
         sed -i "0,/^\[input\]/s//[input]\nxkb_layout = $lay${var:+\nxkb_variant = $var}${mdl:+\nxkb_model = $mdl}/" "$out"
     fi
 fi
+# The options changed in Settings, on top (old key names migrated in the
+# overrides file too).
 if [ -f "$over" ]; then
-    PYTHONPATH="$here" python3 - "$out" "$over" <<'PY'
-import sys
-from sonata2 import wfconfig as system
-out, over = sys.argv[1], sys.argv[2]
-system._wayfire_files = lambda: [out]          # write only the resolved copy
-sec = None
-for line in open(over, encoding="utf-8"):
-    s = line.strip()
-    if s.startswith("[") and s.endswith("]"):
-        sec = s[1:-1]
-    elif sec and "=" in s and not s.startswith("#"):
-        k, v = s.split("=", 1)
-        if sec in ("pixdecor", "decoration") and k.strip() in system.BUTTON_KEYS:
-            continue                           # set from the side above (an old right offset cut the close button)
-        system.wayfire_set(sec, k.strip(), v.strip())
-PY
+    sonata2-rs wayfire-config overrides "$out" "$over"
 fi
+# Sonata's commands run its binary by name (`sonata2 x` -> `sonata2-rs x`):
+# whatever `sonata2` on the PATH is -- a Python Sonata's launcher left
+# behind by an older install -- the keys, the supervisor and the login
+# items are this Sonata. The XSETTINGS line of a wayfire.ini kept from the
+# Python Sonata the same (the frame step rewrites it too).
+sed -i -E 's/(^|[=[:space:]])sonata2 /\1sonata2-rs /g' "$out"
+sed -i -E 's/^(xwayland_startup_script *= *)env PYTHONPATH=[^ ]* python3 -m sonata2\.xsettings$/\1sonata2-rs xsettings/' "$out"
+# Title-bar pictures named by another place: Sonata's data lived inside
+# its Python package (sonata2/data/), and a build once wrote the tree it
+# was built from (Settings' title-bar colours, in wayfire-overrides.ini; a
+# binary built elsewhere left the window buttons invisible). Whatever
+# folder a wayfire.ini or the overrides name, this Sonata's data/decor is
+# used. Only the resolved copy changes; your files stay as they are.
+sed -i -E "s#[^ =]*/data/decor/#$here/data/decor/#g" "$out"

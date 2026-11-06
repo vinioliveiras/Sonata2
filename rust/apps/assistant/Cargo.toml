@@ -1,0 +1,26 @@
+[package]
+name = "sonata-assistant"
+description = "Assistant (sonata2/assistant/): its own binary, so libsoup and libsecret are needed only to run it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sonata2-rs-assistant"
+path = "src/main.rs"
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib.workspace = true
+serde_json.workspace = true
+soup3 = "0.7"
+libsecret = "0.6"
+fancy-regex = "0.14"
+sonata-config.workspace = true
+sonata-i18n.workspace = true
+sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

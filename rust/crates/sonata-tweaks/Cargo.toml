@@ -1,0 +1,27 @@
+[package]
+name = "sonata-tweaks"
+description = "Desktop-wide choices Settings applies (sonata2/*.py: title bars, traffic lights, cursors, GPU, game mode, keyring, backups, default apps...)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+regex.workspace = true
+zip.workspace = true
+base64.workspace = true
+image = { workspace = true, features = ["png"] }
+sonata-backend.workspace = true
+sonata-config = { workspace = true, features = ["watch"] }
+sonata-desktop.workspace = true
+sonata-i18n.workspace = true
+sonata-shell.workspace = true
+sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

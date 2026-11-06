@@ -1,0 +1,24 @@
+[package]
+name = "sonata-desktop"
+description = "What the shell and apps share about apps and windows (sonata2/badges.py, applock.py, windowapps.py, launchwatch.py, open_apps.py, sandbox.py, appscope.py, folder_link.py, names.py, steamgames.py, launchpad_model.py)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+regex.workspace = true
+sonata-backend.workspace = true
+sonata-config = { workspace = true, features = ["watch"] }
+sonata-i18n.workspace = true
+sonata-session.workspace = true
+sonata-shell.workspace = true
+sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

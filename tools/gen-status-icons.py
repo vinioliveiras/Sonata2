@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Generate Sonata's menu-bar icons (original drawings in the SF Symbols
 spirit: filled speaker, fan-shaped Wi-Fi, proportional battery) into
-sonata2/data/icons/Sonata/status/symbolic. Symbolic SVGs: black is
+data/icons/Sonata/status/symbolic. Symbolic SVGs: black is
 recoloured to the label colour; class="success"/"error" to green/red.
 Run after editing:  python3 tools/gen-status-icons.py"""
 import math
 import os
 import sys
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "sonata2", "data", "icons", "Sonata", "status", "symbolic")
+OUT = os.path.join(os.path.dirname(__file__), "..", "data", "icons", "Sonata", "status", "symbolic")
 HEAD = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
 FADED = 'opacity="0.25"'
 

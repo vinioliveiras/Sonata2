@@ -1,0 +1,25 @@
+[package]
+name = "sonata-shell"
+description = "Pieces the shell's surfaces share (sonata2/shell/): layer-shell, the login intro, the login and lock screens' look"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib.workspace = true
+gtk4-layer-shell.workspace = true
+gtk4-session-lock.workspace = true
+image = { workspace = true, features = ["jpeg", "png"] }
+libc.workspace = true
+serde_json.workspace = true
+sonata-backend.workspace = true
+sonata-config.workspace = true
+sonata-i18n.workspace = true
+sonata-session.workspace = true
+sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

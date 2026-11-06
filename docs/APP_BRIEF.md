@@ -1,5 +1,9 @@
 # Brief for building a Sonata app
 
+> **History.** This brief is from the Python Sonata, which is gone: Sonata
+> is Rust now (`rust/`, docs/GUIDE.md "Development", docs/RUST_PORT.md).
+> Its rules on design and behaviour still hold; its paths and commands don't.
+
 Sonata 2 is a macOS-Ventura-style Linux desktop shell: Python 3, GTK 4,
 libadwaita, on Wayfire. Repo: /home/claude/sonata2 (package `sonata2`).
 Read docs/DESIGN.md, sonata2/calculator/window.py, sonata2/textedit/window.py

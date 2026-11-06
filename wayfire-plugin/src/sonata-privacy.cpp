@@ -10,7 +10,9 @@
  * own shell; apps go through the portals, which ask first.
  *
  * Here the same: those globals are hidden from every client except
- *   - Sonata's own processes (python3 -m sonata2 ...),
+ *   - Sonata's own processes (sonata2-rs and its helper binaries
+ *     sonata2-rs-terminal, -camera...; and the Python Sonata's
+ *     `python3 -m sonata2 ...`, while an older install still runs one),
  *   - the screen-sharing portal (xdg-desktop-portal-wlr: it asks with
  *     Sonata's picker),
  *   - the helper tools Sonata runs (grim, wf-recorder, wl-copy, wtype...)
@@ -159,7 +161,15 @@ bool same_mount_namespace(pid_t pid)
 
 bool is_sonata(pid_t pid)
 {
-    if (exe_name(pid).rfind("python", 0) != 0)
+    std::string exe = exe_name(pid);
+    /* the Rust Sonata: the binary itself, installed as sonata2-rs (`sonata2`
+     * is a link to it, and /proc/<pid>/exe names the file) */
+    if ((exe == "sonata2-rs") || (exe.rfind("sonata2-rs-", 0) == 0))
+    {
+        return true;
+    }
+
+    if (exe.rfind("python", 0) != 0)
     {
         return false;
     }

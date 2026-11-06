@@ -47,11 +47,12 @@ fi
 plug_home="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install"
 export WAYFIRE_PLUGIN_XML_PATH="$plug_home/share/wayfire/metadata${WAYFIRE_PLUGIN_XML_PATH:+:$WAYFIRE_PLUGIN_XML_PATH}"
 # Polkit authentication agent (password prompts for system actions):
-# Sonata's own (started by `sonata2 autostart`) when polkit's
-# introspection data is there; otherwise the first other agent installed.
+# Sonata's own (started by `sonata2 autostart`) when polkit's agent library
+# is there (it opens libpolkit-agent-1 itself); otherwise the first other
+# agent installed.
 sonata_agent=""
-for t in /usr/lib/girepository-1.0 /usr/lib64/girepository-1.0 /usr/lib/*/girepository-1.0; do
-    [ -f "$t/PolkitAgent-1.0.typelib" ] && sonata_agent=1
+for t in /usr/lib /usr/lib64 /usr/lib/*-linux-gnu /lib/*-linux-gnu; do
+    [ -e "$t/libpolkit-agent-1.so.0" ] && sonata_agent=1
 done
 [ -n "$sonata_agent" ] || for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
              /usr/libexec/polkit-gnome-authentication-agent-1 \
@@ -64,15 +65,15 @@ done
 # Saved passwords (Chrome, VS Code, Wi-Fi secrets): GNOME's keyring, unlocked
 # by the login screen's PAM with your password (no prompt); make sure its
 # secrets service runs. KeePassXC instead while it is still your keyring
-# (sonata2/keyring.py: backend; it starts KeePassXC at login).
-keyring_backend="$(PYTHONPATH="$SONATA_REPO" python3 -m sonata2 keyring backend 2>/dev/null || echo gnome)"
+# (`sonata2 keyring backend`, from keyring.json; autostart starts KeePassXC).
+keyring_backend="$(sonata2-rs keyring backend 2>/dev/null || echo gnome)"
 if [ "$keyring_backend" != keepassxc ] && command -v gnome-keyring-daemon >/dev/null; then
     eval "$(gnome-keyring-daemon --start --components=secrets,pkcs11 2>/dev/null)" || true
     export SSH_AUTH_SOCK
 fi
 # Session log (Wayfire + every Sonata component started from it); the
 # previous one is kept as session.old.log. Logs off (the default, Settings >
-# About > Logs; sonata2/logs.py): in memory, gone at logout; on: kept in
+# About > Logs): in memory, gone at logout; on: kept in
 # ~/.cache/sonata2. The GPU markers below stay there either way.
 state="${XDG_CACHE_HOME:-$HOME/.cache}/sonata2"; mkdir -p "$state"
 if [ "${SONATA_DEBUG:-}" = 1 ] || [ -e "${XDG_CONFIG_HOME:-$HOME/.config}/sonata2/debug-logging" ]; then
@@ -82,7 +83,7 @@ else
 fi
 mkdir -p "$logs"
 [ -f "$logs/session.log" ] && mv -f "$logs/session.log" "$logs/session.old.log"
-# The login intro (sonata2/shell/intro.py): the welcome screen, then the
+# The login intro: the welcome screen, then the
 # Dock and menu bar slide in. Only at login, never on a restart of Sonata.
 touch "${XDG_RUNTIME_DIR:-/tmp}/sonata2-intro"
 # Portals still running from the previous session (another desktop's
@@ -94,9 +95,18 @@ if command -v systemctl >/dev/null; then
     systemctl --user stop xdg-desktop-portal.service xdg-desktop-portal-gnome.service \
         xdg-desktop-portal-gtk.service xdg-desktop-portal-kde.service 2>/dev/null || true
 fi
+# What D-Bus starts (the portal, its share picker, Files' FileManager1)
+# gets the session's look and desktop.
+# (SONATA2_RS_SESSION / SONATA2_RS_SIDE_BY_SIDE: set only by the "Sonata
+# (Rust preview)" entry of an install from before install.sh built the
+# Rust Sonata -- its binaries and launcher still read them -- and passed on
+# as they are. Sonata itself no longer reads them.)
+keep_rs=""
+[ -n "${SONATA2_RS_SESSION:-}" ] && keep_rs="SONATA2_RS_SESSION SONATA2_RS_SIDE_BY_SIDE"
 command -v dbus-update-activation-environment >/dev/null && \
     dbus-update-activation-environment --systemd XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_DATA_DIRS \
-        DCONF_PROFILE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH QT_QPA_PLATFORMTHEME SONATA_GLASS 2>/dev/null || true
+        DCONF_PROFILE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH QT_QPA_PLATFORMTHEME SONATA_GLASS \
+        $keep_rs 2>/dev/null || true
 # Hybrid laptops: draw with the GPU the displays are connected to. wlroots
 # renders on the first GPU it finds -- often the integrated one -- and then
 # copies every frame to the other GPU's screens (a 180 Hz external display
@@ -159,7 +169,7 @@ elif [ -z "${WLR_DRM_DEVICES:-}" ] && [ "${SONATA_PRIMARY_GPU:-}" != off ]; then
 fi
 # Sonata crashed (not a log-out, nor the shutdown's SIGTERM / SIGHUP / Ctrl+C):
 # leave a note for the next login, which opens Feedbacker with a report
-# (feedback/report.py), and keep the kernel's lines from this session
+# (Feedbacker's report), and keep the kernel's lines from this session
 # (a GPU reset or a driver error shows only there).
 record_crash() {
     case "$1" in 0|129|130|143) return ;; esac
@@ -207,7 +217,7 @@ run_wayfire() {
 # The end of a session. A crash after it had been running a while starts
 # Sonata again at once -- the same login, no password (Vini: a GPU reset
 # took him back to the login screen) -- and Feedbacker then offers to reopen
-# the apps (open_apps.py). At most RESTARTS times in RESTART_WINDOW seconds:
+# the apps (open_apps). At most RESTARTS times in RESTART_WINDOW seconds:
 # a crash loop ends at the login screen as before.
 RESTARTS=3
 RESTART_WINDOW=600

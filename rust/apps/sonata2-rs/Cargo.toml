@@ -1,0 +1,56 @@
+[package]
+name = "sonata2-rs"
+description = "Sonata 2 in Rust: one binary, `sonata2-rs <component>` (as `sonata2 <component>`)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sonata2-rs"
+path = "src/main.rs"
+
+[dependencies]
+sonata-calculator.workspace = true
+sonata-clock.workspace = true
+sonata-textedit.workspace = true
+sonata-preview.workspace = true
+sonata-notes.workspace = true
+sonata-welcome.workspace = true
+sonata-lock.workspace = true
+sonata-spotlight.workspace = true
+sonata-polkit.workspace = true
+sonata-feedback.workspace = true
+sonata-diskutil.workspace = true
+sonata-calendar.workspace = true
+sonata-files.workspace = true
+sonata-portal.workspace = true
+sonata-greeter.workspace = true
+sonata-notifications.workspace = true
+sonata-clipboard.workspace = true
+sonata-gamebar.workspace = true
+sonata-desktop-icons.workspace = true
+sonata-mission.workspace = true
+sonata-webapps.workspace = true
+sonata-capture.workspace = true
+sonata-sessionui.workspace = true
+sonata-dock.workspace = true
+sonata-topbar.workspace = true
+sonata-tweaks.workspace = true
+sonata-system.workspace = true
+sonata-gamepad.workspace = true
+sonata-ui.workspace = true
+gtk.workspace = true
+adw.workspace = true
+serde_json.workspace = true
+sonata-backend.workspace = true
+sonata-desktop.workspace = true
+sonata-shell.workspace = true
+sonata-launchpad.workspace = true
+sonata-settings.workspace = true
+sonata-activity.workspace = true
+sonata-config.workspace = true
+sonata-session.workspace = true
+sonata-i18n.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

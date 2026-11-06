@@ -1,0 +1,23 @@
+[package]
+name = "sonata-calendar"
+description = "Calendar (sonata2/calendar/)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+gio.workspace = true
+glib = { workspace = true, features = ["v2_68"] }
+libc.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+pangocairo.workspace = true
+regex.workspace = true
+sonata-config.workspace = true
+sonata-i18n.workspace = true
+sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "sonata-config"
+description = "Sonata's settings: $XDG_CONFIG_HOME/sonata2/<name>.json (sonata2/config.py)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# watch(): follow a file with a Gio monitor (needs GLib's main loop)
+watch = ["dep:gio"]
+
+[dependencies]
+serde_json.workspace = true
+libc.workspace = true
+gio = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

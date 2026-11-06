@@ -1,0 +1,134 @@
+# Sonata 2 (docs/GUIDE.md): the whole desktop, one workspace. ../install.sh
+# builds and installs it.
+[workspace]
+resolver = "2"
+members = [
+    "crates/sonata-config",
+    "crates/sonata-i18n",
+    "crates/sonata-ui",
+    "crates/sonata-session",
+    "crates/sonata-backend",
+    "crates/sonata-shell",
+    "apps/calculator",
+    "apps/clock",
+    "apps/textedit",
+    "apps/preview",
+    "apps/notes",
+    "apps/welcome",
+    "apps/lock",
+    "apps/spotlight",
+    "apps/polkit",
+    "apps/terminal",
+    "apps/feedback",
+    "apps/diskutil",
+    "apps/camera",
+    "apps/videos",
+    "apps/assistant",
+    "apps/calendar",
+    "apps/activity",
+    "apps/files",
+    "apps/portal",
+    "apps/topbar",
+    "apps/greeter",
+    "apps/dock",
+    "apps/launchpad",
+    "apps/settings",
+    "crates/sonata-notifications",
+    "crates/sonata-system",
+    "crates/sonata-tweaks",
+    "crates/sonata-gamepad",
+    "apps/mission",
+    "apps/capture",
+    "apps/gamebar",
+    "apps/desktop",
+    "apps/clipboard",
+    "crates/sonata-sessionui",
+    "apps/webapps",
+    "crates/sonata-desktop",
+    "crates/sonata-tray",
+    "apps/sonata2-rs",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+rust-version = "1.80"
+
+[workspace.dependencies]
+# GTK 4.12: Sonata's minimum (docs/GUIDE.md); libadwaita 1.5 for AlertDialog
+# (the Python code falls back to MessageDialog on 1.4: docs/RUST_PORT.md, risks)
+gtk = { package = "gtk4", version = "0.9", features = ["v4_12"] }
+adw = { package = "libadwaita", version = "0.7", features = ["v1_5"] }
+gio = "0.20"
+glib = "0.20"
+# preserve_order: keys keep their order, as Python writes them; float_roundtrip:
+# numbers read back exactly (the fast parser was a bit off: Notes' timestamps
+# changed on every save)
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+libc = "0.2"
+num-bigint = "0.4"
+num-traits = "0.2"
+regex = "1"
+tempfile = "3"
+sourceview5 = "0.9"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+roxmltree = "0.20"
+image = { version = "0.25", default-features = false }
+kamadak-exif = "0.6"
+pangocairo = "0.20"
+memmap2 = "0.9"
+flate2 = "1"
+base64 = "0.22"
+gtk4-layer-shell = "0.5"
+gtk4-session-lock = "0.1.2"
+vte4 = "0.8"
+gstreamer = "0.23"
+gstreamer-video = "0.23"
+gstreamer-pbutils = "0.23"
+# Calendar's naive local times (zones through GLib's own tz database)
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+sonata-config = { path = "crates/sonata-config" }
+sonata-i18n = { path = "crates/sonata-i18n" }
+sonata-ui = { path = "crates/sonata-ui" }
+sonata-session = { path = "crates/sonata-session" }
+sonata-backend = { path = "crates/sonata-backend" }
+sonata-shell = { path = "crates/sonata-shell" }
+sonata-calculator = { path = "apps/calculator" }
+sonata-clock = { path = "apps/clock" }
+sonata-textedit = { path = "apps/textedit" }
+sonata-preview = { path = "apps/preview" }
+sonata-notes = { path = "apps/notes" }
+sonata-welcome = { path = "apps/welcome" }
+sonata-lock = { path = "apps/lock" }
+sonata-spotlight = { path = "apps/spotlight" }
+sonata-polkit = { path = "apps/polkit" }
+sonata-feedback = { path = "apps/feedback" }
+sonata-diskutil = { path = "apps/diskutil" }
+sonata-calendar = { path = "apps/calendar" }
+sonata-activity = { path = "apps/activity" }
+sonata-files = { path = "apps/files" }
+sonata-portal = { path = "apps/portal" }
+sonata-topbar = { path = "apps/topbar" }
+sonata-greeter = { path = "apps/greeter" }
+sonata-dock = { path = "apps/dock" }
+sonata-launchpad = { path = "apps/launchpad" }
+sonata-settings = { path = "apps/settings" }
+sonata-notifications = { path = "crates/sonata-notifications" }
+sonata-system = { path = "crates/sonata-system" }
+sonata-tweaks = { path = "crates/sonata-tweaks" }
+sonata-gamepad = { path = "crates/sonata-gamepad" }
+sonata-mission = { path = "apps/mission" }
+sonata-capture = { path = "apps/capture" }
+sonata-gamebar = { path = "apps/gamebar" }
+sonata-desktop-icons = { path = "apps/desktop" }
+sonata-clipboard = { path = "apps/clipboard" }
+sonata-sessionui = { path = "crates/sonata-sessionui" }
+sonata-webapps = { path = "apps/webapps" }
+sonata-desktop = { path = "crates/sonata-desktop" }
+sonata-tray = { path = "crates/sonata-tray" }
+
+[profile.release]
+lto = "thin"
+strip = true

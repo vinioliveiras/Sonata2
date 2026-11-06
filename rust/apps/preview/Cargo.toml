@@ -1,0 +1,24 @@
+[package]
+name = "sonata-preview"
+description = "Preview (pictures: view, mark up, edit) -- ported from sonata2/preview/"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gtk.workspace = true
+adw.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+image.workspace = true
+kamadak-exif.workspace = true
+pangocairo.workspace = true
+memmap2.workspace = true
+flate2.workspace = true
+base64.workspace = true
+sonata-config = { workspace = true, features = ["watch"] }
+sonata-i18n.workspace = true
+sonata-ui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
