@@ -1,6 +1,6 @@
 //! Sonata's design system in Rust: tokens + themed CSS, the counterpart of
-//! `sonata2/ui/` (docs/DESIGN.md). Every value comes from the tokens, which
-//! come from `sonata2/ui/tokens.py` (tools/export_tokens.py).
+//! Python Sonata's `ui/` (docs/DESIGN.md). Every value comes from the
+//! tokens (tokens.json); the CSS templates are css.json's.
 //!
 //! ```no_run
 //! sonata_ui::setup();                          // once per process, after the app started

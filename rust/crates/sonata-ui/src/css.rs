@@ -1,6 +1,9 @@
-//! The CSS of the parts already ported, taken from the Python modules
-//! themselves (tools/export_tokens.py -> css.json): one source for both,
-//! so a style changed in Python is the Rust one's after an export.
+//! Sonata's CSS templates: `css.json` next to this crate, one list of
+//! blocks per module. The keys are the Python files they were exported
+//! from ("clock/window.py"...) -- kept as names, since every
+//! register_module() call uses them. css.json is where a style is changed
+//! now (docs/GUIDE.md, "Design tokens and CSS"); `%(token)s` placeholders
+//! are filled from tokens.json.
 //!
 //! ```no_run
 //! sonata_ui::css::register_module("clock/pages.py");
@@ -15,7 +18,7 @@ const TOKENS_JSON: &str = include_str!("../tokens.json");
 
 fn table() -> &'static Value {
     static T: OnceLock<Value> = OnceLock::new();
-    T.get_or_init(|| serde_json::from_str(CSS_JSON).expect("css.json is generated: valid JSON"))
+    T.get_or_init(|| serde_json::from_str(CSS_JSON).expect("css.json: valid JSON"))
 }
 
 /// FRAME's numbers as CSS lengths ("52px"), for a template's own placeholders.
@@ -37,7 +40,7 @@ fn frame() -> &'static Values {
 /// The templates of `module` ("ui/controls.py"...): (key, css, local placeholders).
 pub fn blocks(module: &str) -> Vec<(String, String, Values)> {
     let Some(list) = table()[module].as_array() else {
-        eprintln!("sonata-ui: no CSS exported for {module} (tools/export_tokens.py)");
+        eprintln!("sonata-ui: no CSS for {module} in css.json");
         return Vec::new();
     };
     list.iter()

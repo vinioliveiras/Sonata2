@@ -1,6 +1,8 @@
-//! Design tokens -- the values of `sonata2/ui/tokens.py`, exported to
-//! `tokens.json` by `tools/export_tokens.py`. tokens.py stays the one
-//! place a value is changed (docs/RUST_PORT.md, "The design system").
+//! Design tokens: `tokens.json` next to this crate is where a colour,
+//! radius or speed is changed (light, dark, accents, the window frame). It
+//! was exported from the Python Sonata's ui/tokens.py while both existed;
+//! the Rust build is the only Sonata now, so the JSON is the source
+//! (docs/GUIDE.md, "Design tokens and CSS").
 
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -30,7 +32,7 @@ fn strings(v: &Value) -> Values {
 fn table() -> &'static Table {
     static T: OnceLock<Table> = OnceLock::new();
     T.get_or_init(|| {
-        let v: Value = serde_json::from_str(TOKENS_JSON).expect("tokens.json is generated: valid JSON");
+        let v: Value = serde_json::from_str(TOKENS_JSON).expect("tokens.json: valid JSON");
         let accents = v["accents"]
             .as_object()
             .map(|m| m.iter().map(|(k, a)| (k.clone(), (strings(&a["light"]), strings(&a["dark"])))).collect())

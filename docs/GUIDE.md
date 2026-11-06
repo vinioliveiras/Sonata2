@@ -287,13 +287,19 @@ The Settings app keeps this split in its sidebar.
 
 ## Themes and design system
 
-- **Tokens** ([sonata2/ui/tokens.py](../sonata2/ui/tokens.py)): colours,
+- **Tokens** ([tokens.json](../rust/crates/sonata-ui/tokens.json)): colours,
   materials (glass tints), sizes, radii, font sizes and animation timings,
-  for light and dark. Themes are entries in `THEMES`. Today there is
-  `mac`; `windows` is next.
-- **Components** ([sonata2/ui/](../sonata2/ui)): menus, alerts, sliders,
-  switches, windows, traffic lights and transitions. They are all styled
-  from tokens, never from hard-coded values.
+  for light and dark, the accents and the window frame. Today there is
+  the `mac` look; `windows` is next.
+- **CSS** ([css.json](../rust/crates/sonata-ui/css.json)): every
+  component's CSS template, `%(token)s` filled from the tokens. **This is
+  where a style is edited** (and tokens.json where a value is): both are
+  built into the binary, so a change shows after `cargo build`. They were
+  exported from the Python Sonata while it existed and are the sources now;
+  there is no generator to run.
+- **Components** ([sonata-ui](../rust/crates/sonata-ui/src)): menus, alerts,
+  sliders, switches, windows, traffic lights and transitions. They are all
+  styled from tokens, never from hard-coded values.
 - **Rules**: [docs/DESIGN.md](DESIGN.md). A standard spacing
   everywhere, responsive layouts that fit any screen size, and every
   change animated.
