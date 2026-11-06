@@ -632,8 +632,11 @@ stay behind `--features ui-tests` and run only under
   `sonata_config::prefs`, the port of prefs.py's reading half, and
   org.freedesktop.appearance; SettingChanged when system.json or
   appearance.json change) and Access. Never on trial: the Python portal
-  owns the bus name. The panel is kept above the asking app through
-  Wayfire's IPC; the xdg-foreign parenting (GdkWayland) isn't there yet.
+  owns the bus name. The panel is made transient for the asking window
+  (its `parent_window` wayland handle, xdg-foreign through GdkWayland, as
+  portal.py) and kept above it through Wayfire's IPC. TextEdit and Preview
+  open and save with this panel too (Preview through a hook Files
+  installs: no crate cycle).
 
 ### Step 5 so far: the login screen
 
@@ -735,3 +738,26 @@ the window frame, grid off with sonata-resize, the Mission Control
 migration, the XWayland script, the overrides without the button keys),
 byte for byte the Python's (tests/wfconfig_golden.rs runs the script's own
 heredocs next to them); Python only when sonata2-rs isn't on the PATH.
+
+### Lessons from the preview session
+
+Bugs Vini met in the Rust session that the tests had missed, and what
+to keep in mind:
+
+- Wayfire's IPC sends geometry as floats (`{"y": 32.0}`), and serde's
+  `as_i64` reads a float as nothing: read positions and sizes with
+  `as_f64` (Mission Control's desktops bar sat over the menu bar, its
+  close x never showed). Ids, pids and timestamps are integers.
+- A GTK 4 widget with a layout manager is allocated through it: an
+  overridden `size_allocate` is never called. The desktop's bin never
+  learnt its size and laid out no icon; it measures and allocates its
+  child itself now.
+- Something an object's callbacks reach only through a weak reference
+  must be kept alive by its owner: the password sheet, dropped by its
+  callers, left a window that took the keyboard and answered nothing.
+- polkit's Subject is `(sa{sv})`: a tuple with a `VariantDict` member goes
+  out boxed, `(sv)`, and polkit refuses the agent -- pkexec then fails.
+- CSS registered inside a Python function is exported too
+  (tools/export_tokens.py reads function bodies, not ones filled with
+  computed values): Files' tag dots were square without it.
+
