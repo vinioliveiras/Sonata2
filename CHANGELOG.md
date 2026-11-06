@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Search closes again with a click beside it, or on its menu bar icon again.
+- Menu bar: clicking a menu keeps the app in front's name and menus (with Chrome in front they turned into Files').
+>>>>>>> a329551062e8e77c339f39fd913cdecf161e7bef
 - Menu bar: Wi-Fi, Search and Control Center no longer turn dark after minimizing or maximizing an app or switching windows.
 - Dock: an app in a folder can be dragged out again -- after making a folder, no app in it could be picked up.
 - Apps: a folder's menu has Ungroup, like the Dock's folders (a locked folder asks for the password first); its apps take its place.
