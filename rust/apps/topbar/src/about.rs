@@ -367,6 +367,16 @@ pub fn storage_text(free: u64, total: u64) -> String {
     fmt(&tr!("{free} available of {total}"), &[("free", &size(free)), ("total", &size(total))])
 }
 
+/// The bar's height: Disk Manager's.
+const ABOUT_BAR_H: i32 = 22;
+
+/// The bar's segments, as Disk Manager draws a mounted volume: Used in the
+/// first volume colour, then Free (the empty part).
+pub fn usage_segments(free: u64, total: u64) -> Vec<(String, u64, &'static str)> {
+    let free = free.min(total);
+    vec![(String::new(), total - free, "sys_blue"), (String::new(), free, "free")]
+}
+
 /// The used part of the bar, 0..1.
 pub fn used_fraction(free: u64, total: u64) -> f64 {
     if total == 0 { 0.0 } else { (total.saturating_sub(free)) as f64 / total as f64 }
@@ -404,7 +414,8 @@ fn volume_row(v: &Volume) -> gtk::Box {
     top.append(&gtk::Label::builder().label(&v.name).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::Middle).tooltip_text(&v.mount).css_classes(["about-key"]).build());
     top.append(&gtk::Label::builder().label(storage_text(v.free, v.total)).xalign(1.0).css_classes(["about-detail"]).build());
     col.append(&top);
-    let bar = sonata_ui::progress::meter(used_fraction(v.free, v.total));
+    // Disk Manager's own capacity bar (Vini: the same meter as there)
+    let bar = sonata_ui::progress::capacity_bar(std::rc::Rc::new(std::cell::RefCell::new(usage_segments(v.free, v.total))), ABOUT_BAR_H);
     bar.add_css_class("about-usage");
     col.append(&bar);
     row.append(&col);
@@ -614,6 +625,16 @@ tmpfs /tmp tmpfs rw 0 0
         assert_eq!(used_fraction(25, 100), 0.75);
         assert_eq!(used_fraction(0, 0), 0.0);
         assert_eq!(used_fraction(200, 100), 0.0); // (a filesystem's odd answer)
+    }
+
+    /// Vini: Storage's meter should be Disk Manager's -- the same capacity
+    /// bar (sonata-ui's), Used in the first volume colour, Free empty.
+    #[test]
+    fn test_storage_meter_not_disk_managers() {
+        assert_eq!(usage_segments(25, 100), vec![(String::new(), 75, "sys_blue"), (String::new(), 25, "free")]);
+        assert_eq!(usage_segments(200, 100), vec![(String::new(), 0, "sys_blue"), (String::new(), 100, "free")]);
+        let src = include_str!("about.rs");
+        assert!(src.contains("sonata_ui::progress::capacity_bar(") && !src[..src.find("#[cfg(test)]").unwrap()].contains("progress::meter("));
     }
 
     /// Displays: the panel is the Built-in Display, a monitor its model;
