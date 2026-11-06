@@ -398,30 +398,101 @@ pub fn lock_badge(size: i32) -> gtk::DrawingArea {
 
 // -- the open folder -------------------------------------------------------------------------------
 
-/// The folder's panel over its icon.
+/// Room around the panel's glass for its shadow (inside the Dock's window).
+pub const PANEL_MARGIN: i32 = 24;
+/// Between the folder's icon and the panel's glass: 8 px off the Dock's
+/// plate (the icon sits PAD_TOP inside it).
+pub const PANEL_GAP: i32 = 8 + crate::dock::PAD_TOP as i32;
+
+/// The folder's panel over its icon. It is drawn in the Dock's own window
+/// (an overlay over the plate, the window growing for it), not in a popover:
+/// an app dragged out of a popover began on the popover's surface, and a
+/// drag never crossed into the Dock's -- dropped on the Dock, the app went
+/// back into its folder (Vini). Dragged from here it is the Dock's own drag,
+/// on the Dock's own surface, like reordering.
 pub struct Panel {
-    pub pop: gtk::Popover,
-    view: gtk::Box,
+    /// what the Dock's overlay places: the glass, with room for its shadow
+    pub frame: gtk::Box,
+    /// the glass (.dock-folder-panel): the only part that takes clicks
+    pub view: gtk::Box,
     flow: RefCell<Option<gtk::FlowBox>>,
-    sig: (String, Vec<String>),
     title: gtk::Label,
     editable: Cell<bool>,
     rename: Cell<bool>,
     dock: Weak<Dock>,
     tile: Weak<Tile>,
     dots: RefCell<Vec<(gtk::Box, String)>>,
-    dragging_out: Cell<bool>,
+    /// zoomed in: once the window has grown enough for it
+    pub shown: Cell<bool>,
+    closing: Cell<bool>,
+    /// one of its apps is being dragged out
+    dragging: Cell<bool>,
 }
 
-fn signature(f: &Map<String, Value>) -> (String, Vec<String>) {
-    (folder_name(f), folder_apps(f))
+impl Panel {
+    /// The folder's tile it opened from.
+    pub fn tile(&self) -> Option<Rc<Tile>> {
+        self.tile.upgrade()
+    }
+
+    pub fn is_dragging(&self) -> bool {
+        self.dragging.get()
+    }
+
+    /// Zoom in (the class comes on the next frame, so the animation starts
+    /// once it is where it belongs).
+    pub fn zoom_in(self: &Rc<Self>) {
+        if self.shown.replace(true) {
+            return;
+        }
+        let p = Rc::downgrade(self);
+        glib::idle_add_local_once(move || {
+            if let Some(p) = p.upgrade() {
+                p.view.set_opacity(1.0);
+                p.view.add_css_class("dock-folder-view");
+            }
+        });
+    }
+}
+
+/// How much thicker the Dock's window gets for a panel `across` px deep
+/// (its size away from the screen edge, shadow room included). Enough with
+/// the folder's icon fully magnified: the window is already thick enough
+/// for that icon, so the panel needs only its own depth and the gap.
+pub fn panel_extent(across: i32) -> i32 {
+    across.max(0) + PANEL_GAP
+}
+
+/// Where the panel (`size`, with `margin` px of shadow room on every side)
+/// goes in the Dock's window (`win`): beside the folder's `tile` on the
+/// side away from the screen edge, `gap` px between the icon and the glass,
+/// centred on the icon along the Dock and kept inside the window. Also
+/// whether it fits there yet -- the window grows for it first.
+pub fn panel_place(edge: &str, win: (i32, i32), tile: (i32, i32, i32, i32), size: (i32, i32), gap: i32, margin: i32) -> (i32, i32, bool) {
+    let (ww, wh) = win;
+    let (tx, ty, tw, th) = tile;
+    let (pw, ph) = size;
+    let along = |centre: i32, len: i32, room: i32| (centre - len / 2).clamp(0, (room - len).max(0));
+    match edge {
+        "left" => {
+            let x = tx + tw + gap - margin;
+            (x, along(ty + th / 2, ph, wh), x + pw <= ww)
+        }
+        "right" => {
+            let x = tx - gap + margin - pw;
+            (x, along(ty + th / 2, ph, wh), x >= 0)
+        }
+        _ => {
+            let y = ty - gap + margin - ph;
+            (along(tx + tw / 2, pw, ww), y, y >= 0)
+        }
+    }
 }
 
 /// The folder's apps in a panel over its icon, zooming in from it (a
 /// locked folder asks for the password first -- ask_password; `then`: ask,
-/// then run it instead of showing the apps). An unlocked folder's panel is
-/// built once and opened again as it is while its apps don't change.
-/// None while the password is asked.
+/// then run it instead of showing the apps). None while the password is
+/// asked.
 pub fn open_panel(dock: &Dock, tile: &Rc<Tile>, then: Option<Rc<dyn Fn()>>, rename: bool, passed: bool) -> Option<Rc<Panel>> {
     tile.label.popdown();
     let key = tile.key()?;
@@ -430,29 +501,13 @@ pub fn open_panel(dock: &Dock, tile: &Rc<Tile>, then: Option<Rc<dyn Fn()>>, rena
         ask_password(dock, tile, then, rename);
         return None;
     }
-    let reuse = then.is_none() && !folder_locked(&folder);
-    let cached = tile.folder_pop.borrow_mut().take();
-    if let Some(cached) = cached {
-        if reuse && cached.sig == signature(&folder) && !cached.pop.get_visible() {
-            replay(&cached);
-            if rename {
-                edit_title(&cached);
-            }
-            tile.folder_pop.replace(Some(cached.clone()));
-            return Some(cached);
-        }
-        if !cached.pop.get_visible() {
-            cached.pop.unparent();
-        }
-    }
-    let pop = gtk::Popover::builder().css_classes(["dock-folder-panel"]).has_arrow(false).position(dock.away).build();
-    let (ox, oy) = match dock.away {
-        gtk::PositionType::Left => (-8, 0),
-        gtk::PositionType::Right => (8, 0),
-        _ => (0, -8),
-    };
-    pop.set_offset(ox, oy);
-    let view = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["dock-folder-view"]).build();
+    let view = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["dock-folder-panel"]).opacity(0.0).build();
+    let frame = gtk::Box::builder().css_classes(["dock-folder-frame"]).build();
+    frame.set_margin_top(PANEL_MARGIN);
+    frame.set_margin_bottom(PANEL_MARGIN);
+    frame.set_margin_start(PANEL_MARGIN);
+    frame.set_margin_end(PANEL_MARGIN);
+    frame.append(&view);
     // the name, centred: click it to rename (Vini) -- once the apps show.
     // Typed in an alert of its own: the Dock's panel never got the keys
     let title = gtk::Label::builder()
@@ -466,20 +521,19 @@ pub fn open_panel(dock: &Dock, tile: &Rc<Tile>, then: Option<Rc<dyn Fn()>>, rena
         .tooltip_text(tr!("Rename"))
         .build();
     view.append(&title);
-    pop.set_child(Some(&view));
-    pop.set_parent(&tile.button);
     let panel = Rc::new(Panel {
-        pop: pop.clone(),
-        view,
+        frame,
+        view: view.clone(),
         flow: RefCell::default(),
-        sig: signature(&folder),
         title: title.clone(),
         editable: Cell::new(false),
         rename: Cell::new(rename),
         dock: dock.weak(),
         tile: Rc::downgrade(tile),
         dots: RefCell::default(),
-        dragging_out: Cell::new(false),
+        shown: Cell::new(false),
+        closing: Cell::new(false),
+        dragging: Cell::new(false),
     });
     let click = gtk::GestureClick::new();
     let p = Rc::downgrade(&panel);
@@ -493,58 +547,21 @@ pub fn open_panel(dock: &Dock, tile: &Rc<Tile>, then: Option<Rc<dyn Fn()>>, rena
         }
     });
     title.add_controller(click);
-    if reuse {
-        tile.folder_pop.replace(Some(panel.clone())); // kept (unparented with the tile)
-    } else {
-        // a locked folder's, after its password: never kept
-        pop.connect_closed(|p| {
-            let p = p.clone();
-            glib::idle_add_local_once(move || p.unparent());
-        });
-    }
-    let pw = Rc::downgrade(&panel);
-    pop.connect_closed(move |_| {
-        if crate::dock::debug_on() && pw.upgrade().is_some_and(|p| p.dragging_out.get()) {
-            eprintln!("dock: folder panel closed while an app was dragged out of it");
+    // an app dragged out: the panel fades once the pointer leaves it (it
+    // stays in the window, taking no clicks, until the drag is over)
+    let motion = gtk::DropControllerMotion::new();
+    let p = Rc::downgrade(&panel);
+    motion.connect_leave(move |_| {
+        if let Some(p) = p.upgrade() {
+            if p.dragging.get() {
+                drag_left(&p);
+            }
         }
     });
-    dock::menu_opened(&pop); // keeps an auto-hiding Dock visible
-    // the keyboard while it's open (the Dock takes none): Esc closes it
-    let t = Rc::downgrade(tile);
-    pop.connect_closed(move |_| {
-        if let Some(t) = t.upgrade() {
-            keyboard(&t, false);
-        }
-    });
+    view.add_controller(motion);
     apps_view(dock, tile, &panel);
-    keyboard(tile, true);
-    pop.popup();
+    dock.show_panel(&panel); // the window grows, the keyboard is taken (Esc)
     Some(panel)
-}
-
-fn keyboard(tile: &Tile, on: bool) {
-    if let Some(win) = tile.button.root().and_downcast::<gtk::Window>() {
-        sonata_shell::layer::set_keyboard(&win, on);
-    }
-}
-
-/// Open a kept panel with its zoom-in again (the class comes back on the
-/// next frame, so the animation starts over; hidden until then).
-fn replay(p: &Rc<Panel>) {
-    if let Some(t) = p.tile.upgrade() {
-        keyboard(&t, true);
-    }
-    for c in ["closing", "dock-folder-view"] {
-        p.view.remove_css_class(c);
-    }
-    p.view.set_opacity(0.0);
-    dock::menu_opened(&p.pop);
-    p.pop.popup();
-    let v = p.view.clone();
-    glib::idle_add_local_once(move || {
-        v.set_opacity(1.0);
-        v.add_css_class("dock-folder-view");
-    });
 }
 
 /// Password first, in the sheet every login-password prompt shares (a
@@ -572,12 +589,13 @@ pub fn ask_password(dock: &Dock, tile: &Rc<Tile>, then: Option<Rc<dyn Fn()>>, re
 }
 
 fn apps_view(dock: &Dock, tile: &Rc<Tile>, p: &Rc<Panel>) {
-    let Some(folder) = tile.key().and_then(|k| dock.folder(&k)) else { return };
+    let Some(fkey) = tile.key() else { return };
+    let Some(folder) = dock.folder(&fkey) else { return };
     let keys: Vec<String> = folder_apps(&folder).into_iter().filter(|k| sonata_ui::apps::lookup(k).is_some()).collect();
     let cols = keys.len().clamp(1, PANEL_COLS) as u32;
     let flow = gtk::FlowBox::builder().max_children_per_line(cols).min_children_per_line(cols).selection_mode(gtk::SelectionMode::None).homogeneous(true).column_spacing(2).row_spacing(2).build();
     for k in &keys {
-        flow.append(&app_button(dock, tile, k, p));
+        flow.append(&app_button(dock, &fkey, k, p));
     }
     let rows = keys.len().div_ceil(cols as usize) as i32;
     let scroll = gtk::ScrolledWindow::builder()
@@ -597,12 +615,17 @@ fn apps_view(dock: &Dock, tile: &Rc<Tile>, p: &Rc<Panel>) {
     }
 }
 
+/// The panel is still the one open in its Dock (not closing).
+fn is_open(p: &Rc<Panel>) -> bool {
+    !p.closing.get() && p.dock.upgrade().and_then(|d| d.panel.borrow().clone()).is_some_and(|o| Rc::ptr_eq(&o, p))
+}
+
 /// "Rename…" for a locked folder: asked once its apps show.
 fn edit_title(p: &Rc<Panel>) {
     let p = Rc::downgrade(p);
     glib::idle_add_local_once(move || {
         let Some(p) = p.upgrade() else { return };
-        if p.pop.get_visible() && p.editable.get() {
+        if is_open(&p) && p.editable.get() {
             if let (Some(d), Some(t)) = (p.dock.upgrade(), p.tile.upgrade()) {
                 ask_rename(&d, &t, Some(&p));
             }
@@ -623,28 +646,35 @@ pub fn ask_rename(dock: &Dock, tile: &Rc<Tile>, p: Option<&Rc<Panel>>) {
             }
         }, "", None);
     };
-    match p.filter(|p| p.pop.get_visible()) {
+    match p.filter(|p| is_open(p)) {
         Some(p) => close_panel(p, Some(Box::new(ask))),
         None => ask(),
     }
 }
 
-/// Fade the panel out, then close it (then(): after it's gone).
+/// Fade the panel out, then take it out of the Dock's window -- which
+/// shrinks back and gives the keyboard back (Dock::panel_gone; then():
+/// after it's gone).
 pub fn close_panel(p: &Rc<Panel>, then: Option<Box<dyn Fn()>>) {
-    if p.view.has_css_class("closing") {
+    if p.closing.replace(true) {
         return;
     }
     p.view.add_css_class("closing");
-    let pop = p.pop.clone();
+    p.view.set_can_target(false);
+    let pw = Rc::downgrade(p);
     glib::timeout_add_local_once(Duration::from_millis(CLOSE_MS), move || {
-        pop.popdown();
+        if let Some(p) = pw.upgrade() {
+            if let Some(d) = p.dock.upgrade() {
+                d.panel_gone(Some(&p));
+            }
+        }
         if let Some(f) = then {
             f();
         }
     });
 }
 
-fn app_button(dock: &Dock, tile: &Rc<Tile>, key: &str, p: &Rc<Panel>) -> gtk::Button {
+fn app_button(dock: &Dock, fkey: &str, key: &str, p: &Rc<Panel>) -> gtk::Button {
     let info = sonata_ui::apps::lookup(key).expect("listed apps exist");
     let b = gtk::Button::builder().css_classes(["dock-folder-app"]).build();
     let col = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -658,9 +688,10 @@ fn app_button(dock: &Dock, tile: &Rc<Tile>, key: &str, p: &Rc<Panel>) -> gtk::Bu
     p.dots.borrow_mut().push((dot, key.to_string()));
     b.set_child(Some(&col));
     let open = {
-        let (w, t, pw, key) = (dock.weak(), Rc::downgrade(tile), Rc::downgrade(p), key.to_string());
+        let (w, pw, key) = (dock.weak(), Rc::downgrade(p), key.to_string());
         move || {
-            let (Some(p), w, t, key) = (pw.upgrade(), w.clone(), t.clone(), key.clone()) else { return };
+            let (Some(p), w, key) = (pw.upgrade(), w.clone(), key.clone()) else { return };
+            let t = p.tile.clone();
             close_panel(&p, Some(Box::new(move || {
                 if let (Some(d), Some(t)) = (w.upgrade(), t.upgrade()) {
                     d.open_app(&key, Some(&t));
@@ -672,56 +703,54 @@ fn app_button(dock: &Dock, tile: &Rc<Tile>, key: &str, p: &Rc<Panel>) -> gtk::Bu
     let o = open.clone();
     b.connect_clicked(move |_| o());
     let menu = gtk::GestureClick::builder().button(gdk::BUTTON_SECONDARY).build();
-    let (w, t, pw, k) = (dock.weak(), Rc::downgrade(tile), Rc::downgrade(p), key.to_string());
+    let (w, fk, k) = (dock.weak(), fkey.to_string(), key.to_string());
     menu.connect_pressed(move |g, _, x, y| {
         let Some(widget) = g.widget() else { return };
         let o = open.clone();
-        let (w, t, pw, k) = (w.clone(), t.clone(), pw.clone(), k.clone());
+        let (w, fk, k) = (w.clone(), fk.clone(), k.clone());
         dock_menu::popup_at(&widget, vec![vec![
             Item::new(&tr!("Open"), move || o()),
             Item::new(&tr!("Remove from Folder"), move || {
-                if let Some(p) = pw.upgrade() {
-                    p.pop.popdown();
-                }
-                if let (Some(d), Some(t)) = (w.upgrade(), t.upgrade()) {
-                    if let Some(fk) = t.key() {
+                let (w, fk, k) = (w.clone(), fk.clone(), k.clone());
+                // (after the menu is done with its item: the panel holds it)
+                glib::idle_add_local_once(move || {
+                    if let Some(d) = w.upgrade() {
+                        d.panel_gone(None);
                         d.remove_from_folder(&fk, &k, true);
                     }
-                }
+                });
             }),
         ]], (x, y));
     });
     b.add_controller(menu);
-    // dragged out of the panel: out of the folder, into the Dock (Vini)
+    // dragged out of the panel: out of the folder, into the Dock (Vini) --
+    // the Dock's own drag, begun on the Dock's own surface
     let src = gtk::DragSource::new();
     src.set_actions(gdk::DragAction::MOVE);
     let k = key.to_string();
     src.connect_prepare(move |_, _, _| Some(gdk::ContentProvider::for_value(&k.to_value())));
-    let (w, t, pw, k) = (dock.weak(), Rc::downgrade(tile), Rc::downgrade(p), key.to_string());
+    let (w, fk, pw, k, bw) = (dock.weak(), fkey.to_string(), Rc::downgrade(p), key.to_string(), b.downgrade());
     src.connect_drag_begin(move |_, drag| {
-        if let (Some(d), Some(t), Some(p)) = (w.upgrade(), t.upgrade(), pw.upgrade()) {
-            drag_out(&d, &t, &k, &p, drag);
+        if let (Some(d), Some(p), Some(b)) = (w.upgrade(), pw.upgrade(), bw.upgrade()) {
+            drag_out(&d, &fk, &k, &p, &b, drag);
         }
     });
     src.connect_drag_cancel(|_, _, reason| {
         if crate::dock::debug_on() {
             eprintln!("dock: panel drag cancelled: {reason:?}");
         }
-        true // no snap back into a closed panel
+        true // no snap back: it goes back into its folder (folder_app_drag_end)
     });
-    let (w, t, pw, k) = (dock.weak(), Rc::downgrade(tile), Rc::downgrade(p), key.to_string());
+    let (w, fk, pw, k) = (dock.weak(), fkey.to_string(), Rc::downgrade(p), key.to_string());
     src.connect_drag_end(move |_, _, deleted| {
         if crate::dock::debug_on() {
-            eprintln!("dock: panel drag end (deleted {deleted}): dock {}, folder tile {}, panel {}", w.upgrade().is_some(), t.upgrade().is_some(), pw.upgrade().is_some());
+            eprintln!("dock: panel drag end (deleted {deleted}): dock {}, panel {}", w.upgrade().is_some(), pw.upgrade().is_some());
         }
-        if let (Some(d), Some(t), Some(p)) = (w.upgrade(), t.upgrade(), pw.upgrade()) {
-            if p.dragging_out.get() {
-                hold_open(&p, false); // closed now, the drag over
-            }
-            if let Some(fk) = t.key() {
-                d.folder_app_drag_end(&fk, &k);
-            }
+        let Some(d) = w.upgrade() else { return };
+        if let Some(p) = pw.upgrade() {
+            d.panel_gone(Some(&p)); // over now: the window shrinks back
         }
+        d.folder_app_drag_end(&fk, &k);
     });
     b.add_controller(src);
     b
@@ -735,33 +764,29 @@ pub fn show_running(dock: &Dock, p: &Panel) {
     }
 }
 
-/// The panel holds the drag's source: closing it now ended the drag at
-/// once on Wayland -- its surface went, so the drag did (Vini). It only goes
-/// invisible and lets the pointer through until the drag ends.
-fn drag_out(dock: &Dock, tile: &Rc<Tile>, key: &str, p: &Rc<Panel>, drag: &gdk::Drag) {
-    hold_open(p, true);
-    let fk = tile.key().unwrap_or_default();
-    if !dock.folder_app_drag_begin(&fk, key, drag) {
-        hold_open(p, false);
+/// An app picked up from the panel: out of its folder, its own icon in the
+/// Dock, dragged like any Dock icon (Dock::folder_app_drag_begin). The panel
+/// stays in the window meanwhile -- its place in it empty -- and fades once
+/// the pointer leaves it.
+fn drag_out(dock: &Dock, fkey: &str, key: &str, p: &Rc<Panel>, button: &gtk::Button, drag: &gdk::Drag) {
+    if !dock.folder_app_drag_begin(fkey, key, drag) {
         drag.drop_done(false);
+        return;
     }
+    p.dragging.set(true);
+    button.set_opacity(0.0);
+    dock.panel_dragged();
 }
 
-/// While an app is dragged out of it: invisible, clicks and drags through
-/// -- its surface takes no pointer at all (an empty input region).
-fn hold_open(p: &Panel, on: bool) {
-    p.dragging_out.set(on);
-    p.pop.set_opacity(if on { 0.0 } else { 1.0 });
-    if let Some(c) = p.pop.child() {
-        c.set_can_target(!on);
+/// The pointer left the panel with an app: it fades out, taking no clicks,
+/// and goes for good when the drag is over (the window keeps its size till
+/// then -- nothing under the drag changes).
+pub fn drag_left(p: &Rc<Panel>) {
+    if p.closing.replace(true) {
+        return;
     }
-    // (its input region stays: emptied under a drag that began on it, the
-    // compositor took the drag's origin for gone and cancelled the drop --
-    // GTK said Error, and an app dropped on the Dock went back into its
-    // folder (Vini). The panel sits above the Dock, never over its icons.)
-    if !on {
-        p.pop.popdown();
-    }
+    p.view.add_css_class("closing");
+    p.view.set_can_target(false);
 }
 
 // -- menus -------------------------------------------------------------------------------------
@@ -863,20 +888,71 @@ pub fn app_items(dock: &Dock, key: &str) -> Vec<Item> {
 #[cfg(test)]
 mod tests {
 
-    /// Vini: an app dragged out of a Dock folder and dropped on the Dock
-    /// went back into its folder (dock.log: the drag cancelled, Error) --
-    /// the panel the drag began on had its input region emptied mid-drag.
-    #[test]
-    fn test_dropped_on_the_dock_went_back_into_its_folder() {
-        let src = include_str!("dock_folder.rs");
-        let f = &src[src.find("fn hold_open(").unwrap()..];
-        let body = &f[..f.find("\n}\n").unwrap()];
-        assert!(!body.contains("set_input_region"));
-    }
-
-
     use super::*;
     use serde_json::json;
+
+    /// Vini: an app dragged out of a Dock folder and dropped on the Dock
+    /// went back into its folder (dock.log: the Dock's drop target saw the
+    /// drag enter and leave, then the drag cancelled, Error). The drag began
+    /// on the folder's popover -- a surface of its own -- and never crossed
+    /// into the Dock's. The panel is drawn in the Dock's own window now, so
+    /// the drag is the Dock's own (as reordering), and a drop on the Dock
+    /// keeps the app there.
+    #[test]
+    fn test_app_dropped_on_the_dock_went_back_into_its_folder() {
+        use crate::dock::{folder_drag_end, ungroup_after, FolderDragEnd};
+        assert_eq!(folder_drag_end(true), FolderDragEnd::OnTheDock);
+        assert_eq!(folder_drag_end(false), FolderDragEnd::BackIntoFolder); // let go elsewhere, or cancelled
+        // the folder left with one app is undone only once the app is on the Dock
+        assert!(ungroup_after(FolderDragEnd::OnTheDock, 1));
+        assert!(!ungroup_after(FolderDragEnd::OnTheDock, 2));
+        assert!(!ungroup_after(FolderDragEnd::BackIntoFolder, 1));
+        // no popover any more: the panel is an overlay of the Dock's window
+        let src = include_str!("dock_folder.rs");
+        let code = &src[..src.find("#[cfg(test)]").unwrap()];
+        let panel = &code[code.find("pub struct Panel").unwrap()..code.find("pub fn open_panel").unwrap()];
+        assert!(!panel.contains("Popover"));
+        let open = &code[code.find("pub fn open_panel").unwrap()..];
+        assert!(open[..open.find("\n}\n").unwrap()].contains("dock.show_panel(&panel)"));
+        let dock = include_str!("dock.rs");
+        let show = &dock[dock.find("pub fn show_panel(").unwrap()..];
+        assert!(show[..show.find("\n    }\n").unwrap()].contains("self.root.add_overlay(&p.frame)"));
+    }
+
+    /// The panel sits beside its folder's icon on the side away from the
+    /// screen edge, PANEL_GAP px off it, centred on it and inside the
+    /// window; it fits only once the window has grown by panel_extent --
+    /// enough even with the icon fully magnified.
+    #[test]
+    fn folder_panel_beside_its_icon_on_every_edge() {
+        let (gap, m) = (PANEL_GAP, PANEL_MARGIN);
+        let (pw, ph) = (400, 300);
+        // bottom: a 1920-wide window, base thickness 120, the icon's top at 17 (magnified)
+        let e = panel_extent(ph);
+        let tile = (900, 17 + e, 80, 98);
+        let (x, y, fits) = panel_place("bottom", (1920, 120 + e), tile, (pw, ph), gap, m);
+        assert!(fits);
+        assert_eq!(y + ph - m, tile.1 - gap); // the glass ends gap px over the icon
+        assert_eq!(x + pw / 2, tile.0 + tile.2 / 2); // centred on it
+        assert!(!panel_place("bottom", (1920, 120), (900, 17, 80, 98), (pw, ph), gap, m).2); // not grown yet
+        // near the screen's corner: kept inside the window
+        assert_eq!(panel_place("bottom", (1920, 120 + e), (10, 17 + e, 80, 98), (pw, ph), gap, m).0, 0);
+        assert_eq!(panel_place("bottom", (1920, 120 + e), (1880, 17 + e, 40, 98), (pw, ph), gap, m).0, 1920 - pw);
+        // left: the window grows to the right, the panel right of the icon
+        let e = panel_extent(pw);
+        let tile = (16, 500, 98, 80);
+        let (x, y, fits) = panel_place("left", (120 + e, 1080), tile, (pw, ph), gap, m);
+        assert!(fits);
+        assert_eq!(x + m, tile.0 + tile.2 + gap);
+        assert_eq!(y + ph / 2, tile.1 + tile.3 / 2);
+        assert!(!panel_place("left", (120, 1080), tile, (pw, ph), gap, m).2);
+        // right: the window grows to the left (the icon moves right with it)
+        let tile = (e + 6, 500, 98, 80);
+        let (x, _, fits) = panel_place("right", (120 + e, 1080), tile, (pw, ph), gap, m);
+        assert!(fits);
+        assert_eq!(x + pw - m, tile.0 - gap);
+        assert!(!panel_place("right", (120, 1080), (6, 500, 98, 80), (pw, ph), gap, m).2);
+    }
 
     #[test]
     fn folder_keys_and_ids() {
