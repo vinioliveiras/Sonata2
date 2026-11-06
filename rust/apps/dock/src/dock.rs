@@ -1581,13 +1581,28 @@ impl Dock {
         // a string) must reach the file-list target that pins it
         let drop = gtk::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
         let w = self.weak();
-        drop.connect_accept(move |_, _| w.upgrade().is_some_and(|d| d.drag.borrow().is_some()));
+        drop.connect_accept(move |_, _| {
+            let ok = w.upgrade().is_some_and(|d| d.drag.borrow().is_some());
+            if verbose() {
+                eprintln!("dock: drop target accept {ok}");
+            }
+            ok
+        });
         let w = self.weak();
         drop.connect_motion(move |_, x, y| w.upgrade().map(|d| d.drag_motion(x, y)).unwrap_or(gdk::DragAction::empty()));
         let w = self.weak();
-        drop.connect_enter(move |_, x, y| w.upgrade().map(|d| d.drag_motion(x, y)).unwrap_or(gdk::DragAction::empty()));
+        drop.connect_enter(move |_, x, y| {
+            let a = w.upgrade().map(|d| d.drag_motion(x, y)).unwrap_or(gdk::DragAction::empty());
+            if verbose() {
+                eprintln!("dock: drop target enter at {x:.0},{y:.0}: {a:?}");
+            }
+            a
+        });
         let w = self.weak();
         drop.connect_leave(move |_| {
+            if verbose() {
+                eprintln!("dock: drop target leave");
+            }
             if let Some(d) = w.upgrade() {
                 d.drag_leave();
             }

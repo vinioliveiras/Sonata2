@@ -13,3 +13,4 @@ Claude outputs/
 
 # a build of a committed state next to the work in progress (rust/target is the usual one)
 rust/target-snap/
+rust/target-about/
