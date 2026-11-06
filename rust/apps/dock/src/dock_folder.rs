@@ -735,11 +735,15 @@ fn app_button(dock: &Dock, fkey: &str, key: &str, p: &Rc<Panel>) -> gtk::Button 
             drag_out(&d, &fk, &k, &p, &b, drag);
         }
     });
-    src.connect_drag_cancel(|_, _, reason| {
+    let w = dock.weak();
+    src.connect_drag_cancel(move |_, _, reason| {
         if crate::dock::debug_on() {
             eprintln!("dock: panel drag cancelled: {reason:?}");
         }
-        true // no snap back: it goes back into its folder (folder_app_drag_end)
+        if let Some(d) = w.upgrade() {
+            d.folder_app_drag_cancel(reason); // over the Dock: it stays there
+        }
+        true // no snap back: on the Dock, or back into its folder (folder_app_drag_end)
     });
     let (w, fk, pw, k) = (dock.weak(), fkey.to_string(), Rc::downgrade(p), key.to_string());
     src.connect_drag_end(move |_, _, deleted| {
@@ -917,6 +921,27 @@ mod tests {
         let dock = include_str!("dock.rs");
         let show = &dock[dock.find("pub fn show_panel(").unwrap()..];
         assert!(show[..show.find("\n    }\n").unwrap()].contains("self.root.add_overlay(&p.frame)"));
+    }
+
+    /// Vini, again: dragged out of a folder, the app opened its slot in the
+    /// Dock, but let go there it went back into its folder. dock.log: the
+    /// Dock's drop target saw it enter, then the drag cancelled (Error)
+    /// with no drop -- the compositor never sent it. Cancelled over the
+    /// Dock, it's let go where its slot opened.
+    #[test]
+    fn test_app_let_go_on_the_dock_went_back_into_its_folder() {
+        use crate::dock::drop_on_cancel;
+        use gdk::DragCancelReason as R;
+        let at = Some((180.0, 29.0));
+        assert_eq!(drop_on_cancel(R::Error, false, at), at); // over the Dock: stays there
+        assert_eq!(drop_on_cancel(R::NoTarget, false, at), at);
+        assert_eq!(drop_on_cancel(R::Error, true, at), None); // had left the Dock: back into its folder
+        assert_eq!(drop_on_cancel(R::UserCancelled, false, at), None); // Esc: back
+        assert_eq!(drop_on_cancel(R::Error, false, None), None); // never over the Dock
+        // the panel's drag hands its cancel to the Dock
+        let src = include_str!("dock_folder.rs");
+        let cancel = &src[src.find("src.connect_drag_cancel(").unwrap()..];
+        assert!(cancel[..cancel.find("});").unwrap()].contains("d.folder_app_drag_cancel(reason)"));
     }
 
     /// The panel sits beside its folder's icon on the side away from the

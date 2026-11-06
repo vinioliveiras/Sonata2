@@ -1314,6 +1314,18 @@ pub enum FolderDragEnd {
     BackIntoFolder,
 }
 
+/// A folder's app whose drag the compositor cancelled (Error) while it was
+/// over the Dock -- its slot open there, (x, y) its last place -- is let go
+/// there, as a drop: on Vini's session the drop never arrived (the Dock saw
+/// the drag enter, then the cancel) and it went back into its folder. Esc
+/// still takes it back; so does a cancel once it had left the Dock.
+pub fn drop_on_cancel(reason: gdk::DragCancelReason, left: bool, at: Option<(f64, f64)>) -> Option<(f64, f64)> {
+    if reason == gdk::DragCancelReason::UserCancelled || left {
+        return None;
+    }
+    at
+}
+
 pub fn folder_drag_end(dropped_on_dock: bool) -> FolderDragEnd {
     if dropped_on_dock {
         FolderDragEnd::OnTheDock
@@ -3081,6 +3093,18 @@ impl Dock {
         true
     }
 
+    /// The drag of an app out of a folder was cancelled: over the Dock, it
+    /// stays where its slot opened (drop_on_cancel).
+    pub fn folder_app_drag_cancel(&self, reason: gdk::DragCancelReason) {
+        let at = self.drag.borrow().as_ref().filter(|d| d.from_folder.is_some() && !d.dropped).and_then(|d| drop_on_cancel(reason, d.left, d.x.zip(d.y)));
+        if verbose() {
+            eprintln!("dock: folder drag cancelled ({reason:?}): {}", if at.is_some() { "let go on the Dock" } else { "back into its folder" });
+        }
+        if let Some((x, y)) = at {
+            self.drag_drop(x, y);
+        }
+    }
+
     pub fn folder_app_drag_end(&self, fkey: &str, key: &str) {
         let ours = self.drag.borrow().as_ref().is_some_and(|d| d.from_folder.as_deref() == Some(fkey));
         if verbose() {
@@ -3693,7 +3717,7 @@ impl Dock {
         glide_play(&self.plate, before, GLIDE_MS);
     }
 
-    fn drag_drop(&self, x: f64, y: f64) -> bool {
+    pub(crate) fn drag_drop(&self, x: f64, y: f64) -> bool {
         if verbose() {
             eprintln!("dock: drop at {x:.0},{y:.0}: {:?}", self.drag.borrow().as_ref().map(|d| (d.key.clone(), d.target.as_ref().and_then(|t| t.key()), d.trash)));
         }
