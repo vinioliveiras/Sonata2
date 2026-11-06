@@ -50,8 +50,8 @@ pub fn seconds() -> i64 {
 pub fn set_seconds(value: i64) {
     let _ = sonata_config::update(NAME, &json!({"off_after": value}));
     compositor_off();
-    // (the login screen going dark after the same time -- monitors.share_with_login_screen --
-    // isn't ported yet: the Python menu bar shares it at login)
+    // (the login screen going dark after the same time is shared with it by
+    // Settings > Displays: monitors.share_with_login_screen)
 }
 
 /// Wayfire never powers the display off itself; true when it had to be changed.

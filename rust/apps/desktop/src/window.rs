@@ -4,9 +4,8 @@
 //! with the desktop's icons on top. A video plays there too (video.rs):
 //! its poster shows first, the video fades in over it once it has a frame.
 //!
-//! `sonata2-rs wallpaper [--preview]`. On trial (or with --preview) it is a
-//! plain window: the Python wallpaper stays the desktop's background, and
-//! the icons' spots are written to the trial's own desktop.json.
+//! `sonata2-rs wallpaper [--preview]`. With --preview it is a plain
+//! window, to try it next to the running desktop.
 
 use crate::desktop::Desktop;
 use crate::video::{self, DisplayCover, VideoWallpaper};
@@ -468,8 +467,8 @@ pub fn app_flags() -> gio::ApplicationFlags {
 }
 
 /// `sonata2-rs wallpaper [--preview]`: the wallpaper and the desktop's
-/// icons on every display (layer-shell background surfaces). --preview, and
-/// always on trial: one plain window, next to the Python desktop.
+/// icons on every display (layer-shell background surfaces). --preview:
+/// one plain window.
 pub fn run_wallpaper(args: &[String]) -> glib::ExitCode {
     let preview = args.iter().any(|a| a == "--preview");
     if !preview {

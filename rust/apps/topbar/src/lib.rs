@@ -17,16 +17,11 @@
 //! What lives in Python modules or crates not ported yet comes in through
 //! [`seams::Services`].
 //!
-//! # Trial
-//!
-//! Side by side with the Python Sonata (`sonata_config::side_by_side()`),
-//! `sonata2-rs topbar` runs as `io.github.vinioliveiras.sonata2rs.topbar`
-//! (never the Python bar's bus name), on a layer surface of its own under
-//! the Python bar (window.rs), writes its settings to `sonata2-rs/` only
-//! (sonata-config), serves notifications only on its own connection
-//! (sonata-notifications), owns no StatusNotifierWatcher (sonata-tray) and
-//! doesn't listen for logind's Lock (the Python bar starts the lock
-//! screen). `sonata2-rs topbar --preview` shows it in a normal window.
+//! `sonata2-rs topbar` runs as `io.github.vinioliveiras.sonata2.topbar`,
+//! serves notifications (sonata-notifications), owns the
+//! StatusNotifierWatcher (sonata-tray) and listens for logind's Lock (it
+//! starts the lock screen). `sonata2-rs topbar --preview` shows it in a
+//! normal window.
 
 pub mod about;
 pub mod bar;

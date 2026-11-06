@@ -55,7 +55,7 @@ pub fn write_dir() -> PathBuf {
 }
 
 /// Where settings are read from, first match wins (one folder; a list
-/// since the trial build read two).
+/// for the callers that follow every place a file could be).
 pub fn read_dirs() -> Vec<PathBuf> {
     vec![write_dir()]
 }
@@ -254,8 +254,7 @@ pub fn save(name: &str, data: &Map<String, Value>) -> io::Result<()> {
 
 /// Change some keys of `<name>.json`, keeping every other key as stored
 /// (read, change and write under one lock: no lost update). `values` must
-/// be a JSON object. On trial, what the Python Sonata stored is the
-/// starting point and the result goes to `sonata2-rs/`.
+/// be a JSON object.
 pub fn update(name: &str, values: &Value) -> io::Result<()> {
     let _l = lock(name)?;
     let mut data = stored(name);
@@ -268,9 +267,8 @@ pub fn update(name: &str, values: &Value) -> io::Result<()> {
 }
 
 /// Where Sonata's apps keep your data (userdata.py):
-/// `$XDG_DATA_HOME/sonata2-data/<app>`, created. Shared with the Python
-/// apps on trial too (Vini's call for Clock: its alarms and timers ring
-/// from the menu bar, so both Clocks edit the same ones).
+/// `$XDG_DATA_HOME/sonata2-data/<app>`, created -- the folder the Python
+/// Sonata's apps used, so their data is there as it was.
 pub fn data_dir(app: &str) -> PathBuf {
     let base = match std::env::var_os("XDG_DATA_HOME") {
         Some(v) if !v.is_empty() => PathBuf::from(v),
@@ -356,10 +354,8 @@ fn data_path_in(installed: Option<&Path>, name: &str) -> PathBuf {
 }
 
 /// Finder's "Set Desktop Picture" (prefs.set_wallpaper): the picture for
-/// Light and Dark, in system.json -- the desktop's own setting, so the
-/// shared `~/.config/sonata2` even on trial (the user asked for it in so
-/// many words: the trial build has no wallpaper of its own) -- mirrored to
-/// GSettings, then the desktop's wallpaper is started again.
+/// Light and Dark, in system.json -- the desktop's own setting --
+/// mirrored to GSettings, then the desktop's wallpaper is started again.
 pub fn set_wallpaper(uri: &str) -> io::Result<()> {
     const BG: &str = "org.gnome.desktop.background";
     let dir = config_home().join(NAME);
@@ -417,7 +413,7 @@ pub fn watch_path<F: Fn() + 'static>(path: &Path, callback: F) -> Option<gio::Fi
 }
 
 /// Call `callback` when `<name>.json` changes on disk (e.g. from Settings).
-/// Keep the returned monitors alive. On trial both folders are followed.
+/// Keep the returned monitors alive.
 #[cfg(feature = "watch")]
 pub fn watch<F: Fn() + 'static>(name: &str, callback: F) -> Vec<gio::FileMonitor> {
     use gio::prelude::*;

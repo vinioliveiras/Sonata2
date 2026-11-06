@@ -29,9 +29,8 @@ thread_local! {
     static HOST: OnceCell<Rc<Host>> = const { OnceCell::new() };
 }
 
-/// The process's host, on the session bus. On trial (the Python menu bar
-/// owns the watcher) it is a host only; once final it also exports the
-/// watcher, as tray.py does.
+/// The process's host, on the session bus; it also exports the watcher,
+/// as tray.py did.
 pub fn host() -> Rc<Host> {
     HOST.with(|h| {
         h.get_or_init(|| {
@@ -90,7 +89,7 @@ impl Host {
         h
     }
 
-    /// The watcher this host exports, if it does (not on trial).
+    /// The watcher this host exports, if it does.
     pub fn watcher(&self) -> Option<&Rc<Watcher>> {
         self.watcher.as_ref()
     }

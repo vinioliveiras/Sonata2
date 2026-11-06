@@ -2,8 +2,7 @@
 //! trackpad, displays... Sonata's overrides file (kept apart from the
 //! installed wayfire.ini; tools/wayfire-config.sh merges it in at login)
 //! and, while a session runs, the resolved copy Wayfire reads and reloads
-//! live. These are the compositor's own settings: the same files on trial
-//! too (there is one compositor).
+//! live.
 
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
@@ -203,11 +202,11 @@ pub fn remove_section(section: &str) -> bool {
 }
 
 // -- the login's steps (tools/wayfire-config.sh) -------------------------------------------
-// wayfire-config.sh builds the session's copy at every login; its two Python
-// steps run here in the Rust session (`sonata2-rs wayfire-config`), so that
-// session needs no python3 or clone at login. They give the same bytes as
-// the Python for the same files (the golden test runs both): Python's
-// whitespace, line splitting and rounding are copied, not Rust's own.
+// wayfire-config.sh builds the session's copy at every login; its two steps
+// that were Python run here (`sonata2-rs wayfire-config`). They give the
+// same bytes the Python gave for the same files (the golden test's recorded
+// cases): Python's whitespace, line splitting and rounding are copied, not
+// Rust's own.
 
 /// str.isspace(): Rust's whitespace plus the separators \x1c-\x1f, without
 /// the bidi marks U+200E/U+200F.

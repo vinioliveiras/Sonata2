@@ -177,8 +177,8 @@ impl History {
         Rc::new(Self { items: RefCell::default(), listeners: RefCell::default(), available: false, proc: RefCell::default() })
     }
 
-    /// What is on the clipboard now, added as a copy (once: the trial's
-    /// stand-in for the watcher, which the Python menu bar runs).
+    /// What is on the clipboard now, added as a copy (once, without the
+    /// watcher: what the panel reads when nothing watches).
     pub fn snapshot(self: &Rc<Self>) {
         if self.available {
             self.read(&["sh", "-c", WATCH.trim_start_matches("cat >/dev/null; ")], false);
@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn snapshot_reads_without_the_watchers_stdin() {
-        // the trial's one-shot read: the same script without the `cat`
+        // the one-shot read: the same script without the `cat`
         // that eats the copy wl-paste --watch hands it (it would read ours)
         let once = WATCH.trim_start_matches("cat >/dev/null; ");
         assert!(WATCH.starts_with("cat >/dev/null; ") && !once.contains("cat"));

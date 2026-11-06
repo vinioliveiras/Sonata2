@@ -23,26 +23,26 @@
 //!   sonata2-rs autostart                          login items, at login
 //!   sonata2-rs clipboard [--background]           clipboard history picker
 //!   sonata2-rs emoji [--background]               Character Viewer
-//!   sonata2-rs gamebar [--preview]                the game bar (on trial: its own overlay)
+//!   sonata2-rs gamebar [--preview]                the game bar (the menu bar shows it)
 //!   sonata2-rs wallpaper [--preview]              the desktop: wallpaper (video too) and icons
 //!   sonata2-rs switcher [next|prev] [--preview]   the app switcher
-//!   sonata2-rs mission [--preview]                Mission Control (on trial: --preview only)
+//!   sonata2-rs mission [--preview]                Mission Control
 //!   sonata2-rs webapp new | edit ID | ID          web apps (WebKit opened at run time)
 //!   sonata2-rs capture [toolbar|screen|area|...]  screenshots, recording, live drawing
 //!   sonata2-rs share-picker                       the screen-sharing picker (portal)
 //!   sonata2-rs lock-wait                          swayidle's lock command
 //!   sonata2-rs setup [--preview]                  first-login setup
 //!   sonata2-rs session-try corners|blackout|alarm|timer|idle|nightshift|displays  try a session helper (writes nothing)
-//!   sonata2-rs dock [--preview] [--set K=V] ...   the Dock (on trial: try it with --preview)
+//!   sonata2-rs dock [--preview] [--set K=V] ...   the Dock (--preview: in a window)
 //!   sonata2-rs topbar [--preview] [--menu N]      the menu bar and Control Center
 //!   sonata2-rs keyring ...                        the login keyring (keyring.py)
 //!   sonata2-rs prefs session-env                  defaults filled in, the session's environment
 //!   sonata2-rs launchpad [--preview] [--search T] Launchpad (again: toggles it)
 //!   sonata2-rs settings [--page ID]               Settings
 //!   sonata2-rs show-desktop                       Super+D: every window away, and back
-//!   sonata2-rs notifications [--preview] [--center]  notifications (on trial: off the real bus name)
+//!   sonata2-rs notifications [--preview] [--center]  notifications (--preview: off the real bus name)
 //!   sonata2-rs greeter                            the login screen (SONATA_GREETER_FAKE=1: preview)
-//!   sonata2-rs portal                             the portal backend (not on trial)
+//!   sonata2-rs portal                             the portal backend
 //!   sonata2-rs chooser [open|save|folder]         an Open / Save panel, to try
 //!   sonata2-rs activity                            Task Manager
 //!   sonata2-rs assistant                           Assistant (sonata2-rs-assistant: libsoup, libsecret)
@@ -243,7 +243,7 @@ fn main() -> ExitCode {
         "dock" => {
             // __main__.run_dock: Sonata's desktop entries as the Dock starts
             // (here: the Dock can't depend on Settings, Capture and the web
-            // apps that depend on it); nothing on trial
+            // apps that depend on it)
             desktop::write_at_dock_start();
             let code = sonata_dock::run(&args[1..]);
             ExitCode::from(code.value() as u8)

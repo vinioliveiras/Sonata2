@@ -3,8 +3,6 @@
 //! ($XDG_RUNTIME_DIR/sonata2-logs, gone at logout) -- `sonata2 doctor` and a
 //! bug report still have them; on (the flag file, or SONATA_DEBUG=1):
 //! detailed logs in ~/.cache/sonata2, kept between sessions.
-//!
-//! On trial the Rust build's folders are `sonata2-rs` ones, next to them.
 
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -38,8 +36,8 @@ pub fn log_dir() -> PathBuf {
     log_dir_named(name())
 }
 
-/// The session's own logs (the Python Sonata's, which runs it: Wayfire's,
-/// the crash notes tools/sonata-session leaves) -- on trial too.
+/// The session's own logs (Wayfire's, the crash notes tools/sonata-session
+/// leaves).
 pub fn session_log_dir() -> PathBuf {
     log_dir_named("sonata2")
 }
@@ -54,7 +52,7 @@ fn log_dir_named(name: &str) -> PathBuf {
 }
 
 /// Settings > About > Logs on / off (from the next start of each part).
-/// The session's one switch: the Python Sonata's flag file, on trial too.
+/// The session's one switch: ~/.config/sonata2/debug-logging.
 pub fn set_verbose(on: bool) {
     let path = flag_path();
     if on {

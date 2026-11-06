@@ -9,8 +9,8 @@
 //! to (foreign-toplevel's set_rectangle) -- wlr.rs does that part, on
 //! GTK's own connection.
 //!
-//! Both Docks can watch at once (each its own socket): nothing here
-//! clashes with the Python one on trial.
+//! Each watcher has its own socket: anything else watching the IPC (a
+//! second Dock in --preview) never clashes with this one.
 
 use serde_json::{json, Value};
 use std::cell::{Cell, RefCell};

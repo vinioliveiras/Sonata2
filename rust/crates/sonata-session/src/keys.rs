@@ -6,8 +6,8 @@ use gio::prelude::*;
 use sonata_backend::{sounds, system, wfipc};
 use sonata_i18n::tr;
 
-/// The Python shell's app ids: the menu bar and Files aren't ported, so
-/// these are theirs on trial too.
+/// Sonata's app ids (the menu bar's, Files'...): the same the Python
+/// shell had.
 fn python_app_id(component: &str) -> String {
     format!("io.github.vinioliveiras.sonata2.{component}")
 }

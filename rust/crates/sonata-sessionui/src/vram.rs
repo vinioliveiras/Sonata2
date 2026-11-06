@@ -166,8 +166,7 @@ pub struct VramWatch {
 
 impl VramWatch {
     /// The menu bar's, made once and looking every EVERY_S seconds; None
-    /// without an NVIDIA card (or nvidia-smi), and on trial: the Python
-    /// menu bar already watches the card -- the user would be warned twice.
+    /// without an NVIDIA card (or nvidia-smi).
     pub fn start(notify: Notify) -> Option<Rc<Self>> {
         let usage = sonata_backend::procfs::NvidiaUsage::new(std::path::Path::new("/sys"));
         let tool = usage.tool.clone()?;
@@ -257,8 +256,7 @@ impl Drop for VramWatch {
 /// The GPU notices at login (the menu bar's `_gpu_notice`): Sonata started
 /// on the other card (the last resort), or crashed on the displays' card
 /// last time. Tried every 4 s, up to 6 times, until the notification
-/// server answers. Nothing on trial: the markers are the Python session's,
-/// and its menu bar tells them.
+/// server answers.
 pub fn start_gpu_notices() {
     let tries = Cell::new(0);
     glib::timeout_add_seconds_local(4, move || {

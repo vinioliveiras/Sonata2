@@ -86,8 +86,7 @@ pub fn open_uris(app: &gtk::Application, uris: &[String]) {
 /// downloads, VS Code, Steam, portals...); without it D-Bus starts GNOME
 /// Files for them. The name is taken by the running Files process; when
 /// none runs, D-Bus starts `files --service` through the service file the
-/// installer writes. Served only by the real Files, never on trial (the
-/// Python one keeps it).
+/// installer writes.
 fn serve_file_manager(app: &gtk::Application) {
     const XML: &str = r#"<node><interface name="org.freedesktop.FileManager1">
   <method name="ShowFolders"><arg type="as" name="URIs" direction="in"/><arg type="s" name="StartupId" direction="in"/></method>

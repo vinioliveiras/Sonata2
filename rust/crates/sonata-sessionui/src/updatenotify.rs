@@ -55,8 +55,7 @@ pub struct UpdateNotifier {
 }
 
 impl UpdateNotifier {
-    /// None on trial: the Python menu bar checks and notifies; the trial's
-    /// own selfupdate.json would tell every release a second time.
+    /// The menu bar's, one per session: two would tell every release twice.
     pub fn start(check: Check) -> Option<Rc<Self>> {
         let me = Rc::new_cyclic(|w| UpdateNotifier { check, id: Rc::default(), sub: RefCell::default(), timer: RefCell::default(), me: w.clone() });
         me.later(FIRST_S);

@@ -5,8 +5,8 @@
 //! bar makes them from here ([`gamebar::GameBar::new`] with its
 //! [`gamebar::Host`], [`fpsmodule::module`], [`kbdmodule::KeyboardModule`],
 //! [`memorywatch::MemoryWatch::start`]). `sonata2-rs gamebar` is
-//! `sonata2 gamebar`: it asks the running menu bar to show it -- on trial,
-//! a Game Bar of its own instead (see [`run_gamebar`]).
+//! `sonata2 gamebar`: it asks the running menu bar to show it (see
+//! [`run_gamebar`]).
 
 pub mod fpsmodule;
 pub mod gamebar;
@@ -20,7 +20,7 @@ use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// Start Sonata Settings (its own process; the Python one until Settings is ported).
+/// Start Sonata Settings (its own process).
 pub fn open_settings(page: &str) {
     let mut cmd = vec!["sonata2", "settings"];
     if !page.is_empty() {
@@ -29,7 +29,8 @@ pub fn open_settings(page: &str) {
     sonata_backend::run::spawn(&cmd);
 }
 
-/// The trial Game Bar's own id: never the menu bar's, never Python's.
+/// The id of a Game Bar process of its own (the --preview one, a test):
+/// never the menu bar's, which hosts the session's Game Bar.
 pub fn app_id() -> &'static str {
     "io.github.vinioliveiras.sonata2rs.gamebar"
 }
@@ -45,17 +46,10 @@ pub fn app_action(app_id: &str, name: &str) -> bool {
 
 /// `sonata2-rs gamebar [--preview]` (Super+G).
 ///
-/// - Final mode: the menu bar shows it (its "gamebar" action), as
-///   `sonata2 gamebar` does; exit 1 when no menu bar runs.
-/// - Trial (side by side): the Python menu bar keeps Super+G and its own
-///   Game Bar; this one is a process of its own
-///   (io.github.vinioliveiras.sonata2rs.gamebar) over the game, with what
-///   the Game Bar can do without a menu bar (no capture, mixer, Now
-///   Playing or quick controls yet). Run again, it opens or closes (single
-///   instance); it stays running, idle, between the two, as it would in
-///   the menu bar.
-/// - `--preview`: the same in a plain window (no layer shell), for a look;
-///   it ends when the window closes.
+/// - The menu bar shows it (its "gamebar" action); exit 1 when no menu
+///   bar runs.
+/// - `--preview`: a Game Bar of its own in a plain window (no layer
+///   shell), for a look; it ends when the window closes.
 pub fn run_gamebar(args: &[String]) -> glib::ExitCode {
     let preview = args.iter().any(|a| a == "--preview");
     if !preview {

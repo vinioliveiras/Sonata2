@@ -166,8 +166,6 @@ fn wanted_days() -> Option<i64> {
 /// The menu bar's timer: purge when the setting is on. Started once by the
 /// main display's menu bar (shell/topbar.py) and kept for its life; dropping
 /// it (or `stop`) ends the timers. Each look runs in a thread.
-///
-/// None on trial: the Python menu bar already empties the same Trash.
 pub struct Housekeeping {
     srcs: Rc<RefCell<Vec<glib::SourceId>>>,
 }

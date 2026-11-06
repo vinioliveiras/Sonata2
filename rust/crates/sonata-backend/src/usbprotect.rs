@@ -102,8 +102,7 @@ pub const STALE_CHECK_S: u32 = 30;
 /// quiet.paused(): locked (nothing stale then) or a game in front -- that
 /// look is skipped, the next one comes. `is_locked` is idlelock's.
 /// The marker's D-Bus call runs in a thread: USBGuard can take its 2 s.
-/// None on trial: the Python menu bar runs the same check on the same
-/// marker, and two of them would race to restore one policy.
+/// One per session (the menu bar's): two would race to restore one policy.
 pub struct StaleCheck {
     src: std::cell::RefCell<Option<glib::SourceId>>,
 }

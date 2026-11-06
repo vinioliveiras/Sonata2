@@ -23,15 +23,11 @@
 //!
 //! welcome.py is `sonata-welcome` (apps/welcome).
 //!
-//! # Side by side (trial)
-//!
-//! While the Python shell runs, its menu bar already keeps swayidle, the
-//! idle darkening, wlsunset, the screen corners, the alarms and the update
-//! check; its Dock quits apps on close. A second copy would fight it (two
-//! idle timers, two gamma clients, every alarm ringing twice). So on trial
-//! (`sonata_config::side_by_side()`) the services' `start()` return None and
-//! change nothing; `sonata2-rs session-try <what>` ([`run_try`]) shows the
-//! parts that can be looked at safely.
+//! One copy of each service runs, in the menu bar's process (the Dock's
+//! for quit-on-close): two would fight (two idle timers, two gamma
+//! clients, every alarm ringing twice). `sonata2-rs session-try <what>`
+//! ([`run_try`]) shows the parts that can be looked at safely, writing
+//! nothing.
 
 pub mod alarmservice;
 pub mod blackout;
@@ -56,13 +52,12 @@ use std::rc::Rc;
 
 /// What [`start_fullscreen_services`] started; keep it for the process' life.
 pub struct FullscreenServices {
-    /// Ctrl+Super+F (the menu bar's "fullscreen" action: `rules.toggle()`);
-    /// None on trial
+    /// Ctrl+Super+F (the menu bar's "fullscreen" action: `rules.toggle()`)
     pub rules: Option<Rc<fullscreen::Rules>>,
     /// fullscreen first: `active()`, `output()`, `connect(|full| ...)` --
     /// the menu bar pauses its polling while it's on
     pub first: Rc<fullscreenfirst::FullscreenFirst>,
-    /// a full NVIDIA card; None without one, and on trial
+    /// a full NVIDIA card; None without one
     pub vram: Option<Rc<vram::VramWatch>>,
 }
 

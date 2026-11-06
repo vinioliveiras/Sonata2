@@ -44,8 +44,7 @@ pub fn main_for(want: &str) -> Option<gdk::Monitor> {
 
 /// The login screen runs before the session, as another user: it can't
 /// read ~/.config. Copy the main display there, like the wallpaper; nothing
-/// to do without the login screen's folder. Not on trial: the Python
-/// session shares the same values already.
+/// to do without the login screen's folder.
 pub fn share_with_login_screen() {
     share_in(std::path::Path::new(GREETER));
 }
@@ -328,8 +327,6 @@ pub fn refresh_plan(displays: &[Display], get: &dyn Fn(&str, &str) -> String, au
 /// is the user's. Runs in the menu bar (always there). Never cap the rate
 /// to spare the GPU: some monitors glitch below their top rate (Vini's
 /// external one does); a user's own mode or scale in Settings wins.
-///
-/// Not on trial: it writes Wayfire's config, which the Python menu bar keeps.
 pub fn ensure_refresh() {
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::default();
     let soon = {

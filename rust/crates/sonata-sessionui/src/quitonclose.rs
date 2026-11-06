@@ -228,7 +228,7 @@ pub struct QuitOnClose {
 }
 
 impl QuitOnClose {
-    /// None on trial: the Python Dock quits closed apps already.
+    /// (Started by the Dock: one per session.)
     pub fn start(windows: Rc<dyn Windows>) -> Option<Rc<Self>> {
         Some(Self::with(windows, Effects::default()))
     }

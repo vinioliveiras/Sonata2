@@ -92,9 +92,8 @@ pub fn write(ui_lines: &[String]) {
     write_to(&path(), &lines);
 }
 
-/// The menu bar's start: the report written in a thread. False on trial:
-/// the Python menu bar writes the same file, and the Rust build's versions
-/// would replace the session's real ones.
+/// The menu bar's start: the report written in a thread. False when the
+/// thread can't start.
 pub fn start(ui_lines: Vec<String>) -> bool {
     std::thread::Builder::new().name("env-report".into()).spawn(move || write(&ui_lines)).is_ok()
 }

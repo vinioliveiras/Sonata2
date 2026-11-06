@@ -234,8 +234,7 @@ pub struct NightShift {
 }
 
 impl NightShift {
-    /// None on trial: the Python menu bar's wlsunset holds the gamma; a
-    /// second gamma client would fight it.
+    /// The menu bar's, one per session: a second gamma client would fight it.
     pub fn start() -> Option<Rc<Self>> {
         let me = Rc::new_cyclic(|w| NightShift { st: RefCell::default(), me: w.clone(), _mons: RefCell::default() });
         let w = me.me.clone();

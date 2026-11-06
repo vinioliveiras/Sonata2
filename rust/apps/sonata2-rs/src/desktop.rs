@@ -69,8 +69,7 @@ fn quote(arg: &str) -> String {
     q.replace('\\', "\\\\") // the file's own string escape comes on top
 }
 
-/// The Calculator's entry, named "(Rust)" on trial so it is told apart
-/// from the Python one in Launchpad.
+/// The Calculator's entry.
 pub fn calculator_entry(exec: &str) -> (String, String) {
     let id = sonata_calculator::app_id();
     let name = "Calculator";
@@ -83,7 +82,7 @@ pub fn calculator_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// Clock's entry ("Clock (Rust)" on trial).
+/// Clock's entry.
 pub fn clock_entry(exec: &str) -> (String, String) {
     let id = sonata_clock::app_id();
     let name = "Clock";
@@ -96,9 +95,7 @@ pub fn clock_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// TextEdit's entry ("TextEdit (Rust)" on trial). On trial it claims no
-/// file types: the Python TextEdit stays what opens text files; try the
-/// Rust one with `sonata2-rs textedit FILE`.
+/// TextEdit's entry: what opens text files.
 pub fn textedit_entry(exec: &str) -> (String, String) {
     let id = sonata_textedit::app_id();
     let name = "TextEdit";
@@ -143,8 +140,7 @@ pub fn feedback_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// Videos' entry (videos_desktop_file). On trial it takes no file
-/// types: the Python Videos stays what opens movies.
+/// Videos' entry (videos_desktop_file): what opens movies and songs.
 pub fn videos_entry(exec: &str) -> (String, String) {
     let id = "io.github.vinioliveiras.sonata2.videos";
     let name = "Videos";
@@ -171,8 +167,7 @@ pub fn activity_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// Files' entry (files_desktop_file). On trial it takes no file types:
-/// the Python Files stays what opens folders and the Trash.
+/// Files' entry (files_desktop_file): what opens folders and the Trash.
 pub fn files_entry(exec: &str) -> (String, String) {
     let id = sonata_files::app_id();
     let name = "Files";
@@ -185,8 +180,7 @@ pub fn files_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// Calendar's entry (calendar_desktop_file). On trial it takes no file
-/// types: the Python Calendar stays what opens .ics files.
+/// Calendar's entry (calendar_desktop_file): what opens .ics files.
 pub fn calendar_entry(exec: &str) -> (String, String) {
     let id = sonata_calendar::app_id();
     let name = "Calendar";
@@ -224,8 +218,8 @@ pub fn camera_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// Terminal's entry (terminal_desktop_file). On trial it isn't a
-/// TerminalEmulator: the Python Terminal stays the one the system picks.
+/// Terminal's entry (terminal_desktop_file): a TerminalEmulator, the one
+/// the system picks.
 pub fn terminal_entry(exec: &str) -> (String, String) {
     let id = "io.github.vinioliveiras.sonata2.terminal";
     let name = "Terminal";
@@ -239,8 +233,7 @@ pub fn terminal_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// Preview's entry ("Preview (Rust)" on trial, claiming no file types:
-/// the Python Preview stays what opens pictures).
+/// Preview's entry: what opens pictures.
 pub fn preview_entry(exec: &str) -> (String, String) {
     let id = sonata_preview::app_id();
     let name = "Preview";
@@ -253,7 +246,7 @@ pub fn preview_entry(exec: &str) -> (String, String) {
     (format!("{id}.desktop"), text)
 }
 
-/// Notes' entry ("Notes (Rust)" on trial).
+/// Notes' entry.
 pub fn notes_entry(exec: &str) -> (String, String) {
     let id = sonata_notes::app_id();
     let name = "Notes";
@@ -347,8 +340,7 @@ fn session_command() -> String {
 /// What the Dock does as it starts (__main__.run_dock): every Sonata entry
 /// written -- Screenshot was missing from Apps, and so were Settings, the
 /// web apps and Launchpad's own tile, with only the Rust Dock running --
-/// the retired ones taken away. On trial nothing: the Python Dock writes
-/// the real entries, and the "(Rust)" names must never replace them.
+/// the retired ones taken away.
 pub fn write_at_dock_start() {
     let folder = data_home().join("applications");
     let exec = session_command();

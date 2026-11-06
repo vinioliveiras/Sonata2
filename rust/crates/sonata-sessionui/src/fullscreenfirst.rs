@@ -35,8 +35,8 @@ pub struct FullscreenFirst {
     ipc: Rc<dyn Ipc>,
     later: Later,
     /// writes the state file, raises the energy mode, lightens the
-    /// effects, registers with GameMode; off on trial (the Python menu
-    /// bar does all that already: only the listeners hear of it)
+    /// effects, registers with GameMode; off: only the listeners hear of
+    /// it (a copy that must not undo the menu bar's)
     acts: bool,
     power: PowerBoost,
     light: RefCell<LightEffects>,
@@ -53,10 +53,9 @@ pub struct FullscreenFirst {
 }
 
 impl FullscreenFirst {
-    /// The menu bar's, made once. On trial it only follows Wayfire for its
-    /// listeners: the Python menu bar writes the state, owns the energy
-    /// mode and the effects, and registers games -- two copies would undo
-    /// each other.
+    /// The menu bar's, made once: it writes the state, owns the energy mode
+    /// and the effects, and registers games (two copies would undo each
+    /// other).
     pub fn start() -> Rc<Self> {
         Self::with(
             Rc::new(wfevents::WayfireIpc::default()),
@@ -318,8 +317,8 @@ mod tests {
         gamemode::set_boosted(false);
     }
 
-    /// On trial the Python menu bar owns the state file, the energy mode
-    /// and GameMode: the Rust one only listens.
+    /// A copy that doesn't act (`acts` off) only listens: the state file,
+    /// the energy mode and GameMode stay the acting one's.
     #[test]
     fn trial_listens_and_changes_nothing() {
         let e = crate::testenv::env();

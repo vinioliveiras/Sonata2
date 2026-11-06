@@ -316,8 +316,8 @@ mod tests {
 
     #[test]
     fn recent_shared_with_the_python_picker() {
-        // emoji.json is the Python picker's file: read from sonata2/ on
-        // trial, written as config.save writes it
+        // emoji.json is the Python picker's file too: read as it is,
+        // written as config.save writes it
         let _e = crate::testenv::env();
         let py = sonata_config::config_home().join("sonata2");
         std::fs::create_dir_all(&py).unwrap();

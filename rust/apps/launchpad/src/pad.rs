@@ -79,8 +79,7 @@ fn is_hidden_folder(f: &Folder) -> bool {
     f.kept.contains_key("locked")
 }
 
-/// Settings and the web app form: the Rust ones in the Rust session, the
-/// Python Sonata's on trial (sonata_dock's spawn_sonata).
+/// Settings and the web app form (sonata_dock's spawn_sonata).
 pub fn spawn_sonata(args: &[&str]) {
     sonata_dock::dock_menu::spawn_sonata(args);
 }
@@ -803,8 +802,8 @@ impl Pad {
         }
     }
 
-    /// The Dock of this build (on trial: the Rust Dock, never the Python
-    /// one's name). Never in a preview: no Dock is asked anything.
+    /// The session's Dock (sonata_dock::app_id). Never in a preview: no
+    /// Dock is asked anything.
     fn tell_dock(&self, action: &str, on: bool) {
         if self.preview {
             return;

@@ -1059,7 +1059,7 @@ pub fn edit(app: &str) {
 }
 
 /// Every web app's desktop entry (the Dock at login: Sonata's command may
-/// have moved). Nothing written on trial (see write_desktop).
+/// have moved).
 pub fn write_all(command: Option<&str>) {
     for app in apps().keys() {
         fix_moved_icon(app);

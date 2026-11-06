@@ -573,9 +573,8 @@ pub fn check_keyboard(r: &mut Report) {
 const ERROR_MARKS: [&str; 6] = ["Traceback", "Error", "CRITICAL", "EE ", "cannot", "failed"];
 const SESSION_LOGS: [&str; 7] = ["login.log", "session.log", "topbar.log", "dock.log", "launchpad.log", "wallpaper.log", "spotlight.log"];
 
-/// The error lines of the last session's logs, `n` per log at most. The
-/// session and the Python parts log in the Python Sonata's folder; on trial
-/// this build's parts in their own (logs.rs): both are read.
+/// The error lines of the last session's logs, `n` per log at most: the
+/// session's folder, and this build's own when that is another (logs.rs).
 pub fn last_session_errors(n: usize) -> String {
     let mut dirs = vec![logs::session_log_dir()];
     let own = logs::log_dir();
@@ -630,7 +629,7 @@ pub fn doctor(args: &[String]) -> i32 {
     let r = build();
     let tty = unsafe { libc::isatty(1) } == 1;
     println!("{}", r.text(tty));
-    // the logs' folder of this build (logs.rs): ~/.cache/sonata2-rs with Logs on, on trial
+    // the logs' folder of this build (logs.rs)
     let d = logs::log_dir();
     let _ = std::fs::create_dir_all(&d);
     let _ = std::fs::write(d.join("doctor.txt"), report_text(&r));

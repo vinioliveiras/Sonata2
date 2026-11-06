@@ -3,27 +3,14 @@
 //! [--label N] [--menu N [--submenu]] [--stack] [--magnify X]`, as
 //! `sonata2 dock` (__main__.run_dock).
 //!
-//! On trial (sonata_config::side_by_side) it runs next to the Python Dock
-//! and must never fight it. What a second Dock process could clash on, and
-//! what this one does:
-//! - the D-Bus name: its own app id (`io.github.vinioliveiras.sonata2rs.dock`),
-//!   so Launchpad's "above" / "launcher-open" and `sonata2 show-desktop`
-//!   still reach the Python Dock;
-//! - dock.json: read from ~/.config/sonata2 (your pins and look), written
-//!   only to ~/.config/sonata2-rs -- pins, folders and stacks changed here
-//!   stay in the trial's copy;
-//! - the screen edge: --preview is a normal window over a wallpaper (the
-//!   way to try it); without --preview the layer surface takes the
-//!   namespace "sonata2rs-dock" and reserves no space (the Python Dock
-//!   already moved the windows up), so the two would overlap at the edge;
-//! - the session's lists: it never writes open-apps.json (for "Reopen
-//!   Apps") nor reopens the last session's apps -- the Python Dock does,
-//!   twice would open every app twice; the login intro and the app scope
-//!   slice are left to it too;
-//! - windows: both follow Wayfire's IPC (a socket each); a click here
-//!   minimizes / brings forward the real windows, as it should;
-//! - minimize targets (wlr.rs): only in the Rust session -- on trial the
-//!   Python Dock aims the windows, and two Docks writing would fight.
+//! dock.json (your pins, folders, stacks and look) is in ~/.config/sonata2;
+//! the Dock owns `io.github.vinioliveiras.sonata2.dock` (Launchpad's
+//! "above" / "launcher-open" and `sonata2 show-desktop` reach it there),
+//! the layer namespace "sonata2-dock" and its edge's exclusive zone, writes
+//! open-apps.json and reopens the last session's apps once a session.
+//! --preview is a normal window over a wallpaper: the way to try it next
+//! to the running Dock. Windows come from Wayfire's IPC; minimize targets
+//! from wlr.rs.
 //!
 //! The desktop entries run_dock writes are written by `sonata2-rs dock`
 //! before it runs this (apps/sonata2-rs/src/desktop.rs: Settings, Capture
@@ -213,8 +200,7 @@ impl Displays {
 
 /// Desktop & Windows: an app quits with its last window (run_dock starts
 /// QuitOnClose on the Dock's manager). It was never started here: the
-/// setting (on by default) did nothing and Steam kept running. None on
-/// trial (QuitOnClose::start): the Python Dock does it.
+/// setting (on by default) did nothing and Steam kept running.
 fn start_quit_on_close(manager: Option<&Rc<toplevels::Manager>>, keep: &RefCell<Vec<Box<dyn std::any::Any>>>) -> bool {
     let Some(m) = manager else { return false };
     let Some(q) = sonata_sessionui::quitonclose::QuitOnClose::start(Rc::new(toplevels::QuitWindows(m.clone()))) else { return false };
@@ -482,7 +468,7 @@ mod tests {
         assert!(hot.contains("ds.sync()") && !hot.contains("ds.rebuild()"));
     }
 
-    /// On trial the Rust Dock never takes the Python Dock's D-Bus name.
+    /// The Dock's D-Bus name is Sonata's own (Launchpad and show-desktop ask it).
     #[test]
     fn its_own_name_on_trial() {
         let id = app_id();

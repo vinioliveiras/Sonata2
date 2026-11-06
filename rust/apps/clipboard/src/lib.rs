@@ -13,14 +13,9 @@
 //! starts it without opening anything: the clipboard one then keeps the
 //! history from login on.
 //!
-//! On trial (sonata_config::side_by_side) the Python menu bar keeps the
-//! clipboard history, and two watchers of one clipboard would be two
-//! programs answering for it: the Rust clipboard process never watches.
-//! Each time its panel opens it reads what is on the clipboard now (one
-//! `wl-paste`, as the watcher reads each copy) and adds it to its own
-//! history, so the panel can be tried with real copies. Emoji's "Frequently
-//! Used" is the Python one's emoji.json on trial too (read there, written
-//! to `sonata2-rs/`).
+//! The clipboard process watches the clipboard (one watcher: two would be
+//! two programs answering for it). Emoji's "Frequently Used" is
+//! ~/.config/sonata2/emoji.json.
 
 pub mod clip_picker;
 pub mod clipboard;
@@ -77,7 +72,7 @@ pub fn run_clipboard(args: &[String]) -> glib::ExitCode {
         args,
         |app| {
             sonata_ui::css::register_module("shell/clip_picker.py");
-            // on trial the Python menu bar watches the clipboard (see above)
+            // this process watches the clipboard (see above)
             let history = clipboard::History::new(true);
             let history_c = history.clone();
             app.connect_shutdown(move |_| history_c.stop());

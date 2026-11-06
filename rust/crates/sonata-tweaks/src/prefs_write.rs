@@ -3,8 +3,7 @@
 //! set and started again, and `session-env` (every login). The reading
 //! half is sonata_config::prefs.
 //!
-//! system.json is the desktop's own setting: the shared
-//! `~/.config/sonata2/system.json` even on trial (there is one desktop),
+//! system.json is the desktop's own setting (`~/.config/sonata2/system.json`),
 //! written under the same `.system.lock` as Python's config.update.
 
 use gio::prelude::*;

@@ -7,9 +7,6 @@
 //! Menu), a few Sonata choices, then "Get Started". Every choice applies at
 //! once and stays in Settings. Shown once: setup.json "done".
 //! `sonata2-rs setup` shows it while it isn't done; `--preview` any time.
-//!
-//! On trial the choices land in the trial's own settings folder
-//! (~/.config/sonata2-rs): the Python Sonata keeps its own.
 
 use adw::prelude::*;
 use gtk::gdk;

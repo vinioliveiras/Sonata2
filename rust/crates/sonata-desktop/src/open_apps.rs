@@ -12,8 +12,8 @@
 //! reopens them (reopen_after_login), leaving out the apps already open by
 //! then ("Open at Login" ones).
 //!
-//! The same files as the Python Sonata's (~/.cache/sonata2, on trial too):
-//! one session, one list, whichever Dock or Feedbacker reads it.
+//! The same files as the Python Sonata's (~/.cache/sonata2): one session,
+//! one list, whichever Dock or Feedbacker reads it.
 //!
 //! ```text
 //! note(&ids)                         // the Dock (debounced)

@@ -7,14 +7,11 @@
 //!
 //! - `sonata2-rs capture [toolbar|screen|area|edit|display|window|rec-display|
 //!   rec-window|rec-area|stop|draw|replay-save|quit]` ([`run_capture`]): a
-//!   resident host for Capture until the Rust menu bar exists. On trial
-//!   (side by side) its app id is `io.github.vinioliveiras.sonata2rs.capture`,
-//!   so it never takes the Python menu bar's name: the Python menu bar keeps
-//!   Super+Shift+3/4/5, Print and its pills; this one is only reached by
-//!   running the command (and writes `~/.config/sonata2-rs/capture.json`).
+//!   resident host for Capture of its own (the menu bar's process hosts
+//!   Capture in the session: host.rs in sonata2-rs).
 //! - `sonata2-rs share-picker` ([`run_share_picker`]): the ScreenCast
-//!   portal's chooser (stdin lines in, the chosen one out). The portal keeps
-//!   calling the Python one until its config points here; to try it:
+//!   portal's chooser (stdin lines in, the chosen one out; install.sh points
+//!   xdg-desktop-portal-wlr's config at it). To try it:
 //!   `printf 'Monitor: eDP-1\n' | sonata2-rs share-picker`.
 
 pub mod capture;

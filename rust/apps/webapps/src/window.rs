@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-/// The form's application id (the trial's own, like every trial app's).
+/// The form's application id.
 pub fn new_app_id() -> &'static str {
     "io.github.vinioliveiras.sonata2.webapps"
 }

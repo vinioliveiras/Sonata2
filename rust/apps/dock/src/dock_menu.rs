@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-/// Sonata's Files (the Python one: folders open there on trial too).
+/// Sonata's Files: folders open there.
 pub const FILES_ID: &str = "io.github.vinioliveiras.sonata2.files.desktop";
 
 /// A menu on `widget`, on the Dock's side; it keeps an auto-hiding Dock up.

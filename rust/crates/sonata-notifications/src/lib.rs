@@ -25,16 +25,14 @@
 //! nc.server()                               // the list, close / invoke / clear
 //! ```
 //!
-//! Trial: while the Python menu bar runs (`sonata_config::side_by_side()`)
-//! it is the session's notification server, so the Rust one never takes
-//! the name, never writes the Dock's badges file or the kept list. It
-//! still serves the interface at /org/freedesktop/Notifications on its
-//! own connection: `sonata2-rs notifications --preview` shows sample
-//! banners, `--center` opens Notification Center too, and any
-//! notification can be sent to it with
+//! The menu bar's is the session's notification server (the name, the
+//! Dock's badges file, the kept list). `sonata2-rs notifications --preview`
+//! serves the interface at /org/freedesktop/Notifications on its own
+//! connection without the name: it shows sample banners, `--center` opens
+//! Notification Center too, and any notification can be sent to it with
 //!
 //! ```text
-//! gdbus call --session --dest io.github.vinioliveiras.sonata2rs.notifications \
+//! gdbus call --session --dest io.github.vinioliveiras.sonata2.notifications \
 //!   --object-path /org/freedesktop/Notifications \
 //!   --method org.freedesktop.Notifications.Notify Firefox 0 '' Hi 'Hello there' '[]' '{}' -1
 //! ```
@@ -108,8 +106,7 @@ fn register_css() {
 }
 
 impl Notifications {
-    /// The session's notification server -- or, on trial, the same without
-    /// the bus name (see the crate's doc).
+    /// The session's notification server.
     pub fn new(app: &gtk::Application) -> Rc<Self> {
         Self::with_mode(app, true)
     }
@@ -214,8 +211,8 @@ fn samples(server: &Server) {
 
 /// `sonata2-rs notifications [--preview] [--center]`: the server and its
 /// surfaces on their own (the menu bar normally embeds them). --preview:
-/// sample banners; --center: Notification Center open too. On trial it
-/// never takes the bus name (see the crate's doc).
+/// sample banners, without the bus name; --center: Notification Center
+/// open too.
 pub fn run(args: &[String]) -> glib::ExitCode {
     let preview = args.iter().any(|a| a == "--preview");
     let open_center = args.iter().any(|a| a == "--center");

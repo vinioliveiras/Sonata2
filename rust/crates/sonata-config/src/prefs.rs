@@ -2,8 +2,7 @@
 //! cursor, title bar buttons... in `~/.config/sonata2/system.json`, keyed
 //! like the settings every Linux app knows
 //! (`"org.gnome.desktop.interface/color-scheme": "prefer-dark"`). Apps get
-//! them from Sonata's settings portal. The desktop's own setting: the
-//! shared `sonata2` folder even on trial.
+//! them from Sonata's settings portal.
 
 use serde_json::{Map, Value};
 

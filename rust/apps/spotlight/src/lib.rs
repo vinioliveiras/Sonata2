@@ -88,9 +88,7 @@ pub fn end_warm_up(win: &gtk::Window, warming: &Cell<bool>) {
     }
 }
 
-/// Sonata's Files: folders open there. The Rust session's Files has the
-/// same id; on trial the Python Files keeps folders (the Rust one takes no
-/// file types then).
+/// Sonata's Files: folders open there.
 const FILES_ID: &str = "io.github.vinioliveiras.sonata2.files.desktop";
 
 pub fn app_id() -> &'static str {

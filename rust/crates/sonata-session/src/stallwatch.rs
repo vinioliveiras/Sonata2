@@ -15,9 +15,8 @@
 //! says what it was doing.
 //!
 //! Who starts it: every Sonata process, once, on its main thread after GTK
-//! is set up (Python: ui/theme.setup). On trial too, unlike the menu bar's
-//! services: it only writes a log line, and closelag.sh's report is more
-//! useful with the Rust processes in it.
+//! is set up (Python: ui/theme.setup): it only writes a log line, and
+//! closelag.sh's report wants every process in it.
 
 use gio::prelude::*;
 use std::path::{Path, PathBuf};
@@ -36,8 +35,8 @@ thread_local! {
     static KEPT: std::cell::RefCell<Option<Watch>> = const { std::cell::RefCell::new(None) };
 }
 
-/// The flag tools/closelag.sh makes (the Python Sonata's cache: one flag
-/// for every process, on trial too).
+/// The flag tools/closelag.sh makes (~/.cache/sonata2: one flag for every
+/// process).
 pub fn flag_path() -> PathBuf {
     let cache = std::env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from);
     cache.unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache")).join("sonata2").join("stallwatch")

@@ -19,12 +19,9 @@
 //! (__main__.run_launchpad): single instance and resident; running it again
 //! (or the app's "toggle" action over D-Bus) toggles it, "close" closes it.
 //!
-//! On trial (sonata_config::side_by_side) it runs next to the Python
-//! Launchpad: its own app id (`io.github.vinioliveiras.sonata2rs.launchpad`)
-//! and layer namespace (`sonata2rs-launchpad`); launchpad.json (and the
-//! Dock's pins and linked folders it edits) is read from ~/.config/sonata2
-//! and written only to ~/.config/sonata2-rs; it asks the Dock of its own
-//! build (sonata_dock::app_id) to sit above it. `--preview` is a normal
+//! launchpad.json (and the Dock's pins and linked folders it edits) is in
+//! ~/.config/sonata2; it asks the Dock (sonata_dock::app_id) to sit above
+//! it. `--preview` is a normal
 //! window (PREVIEW_SIZE, default 1280x800) over the sample wallpaper,
 //! without layer-shell, Wayfire or a word to the Dock: the way to try it.
 //!
@@ -32,8 +29,7 @@
 //! invisibly (prewarm, layer.prewarm) and every page's icons are decoded
 //! (warm_icons). Re-ordered icons glide to their place (glide.rs); a
 //! dragged icon hangs translucent under the pointer (ui.drag). New / Edit
-//! Web App and Settings open the Rust ones in the Rust session and the
-//! Python Sonata's on trial (sonata_dock's spawn_sonata).
+//! Web App and Settings open Sonata's own (sonata_dock's spawn_sonata).
 
 pub mod glide;
 pub mod logic;

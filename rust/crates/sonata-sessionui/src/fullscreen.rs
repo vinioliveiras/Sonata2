@@ -188,9 +188,8 @@ pub struct Rules {
 }
 
 impl Rules {
-    /// The menu bar's, made once. None on trial: the Python menu bar
-    /// already answers Ctrl+Super+F and puts games in full screen -- a
-    /// second copy would toggle every window twice.
+    /// The menu bar's, made once: a second copy would toggle every window
+    /// twice.
     pub fn start() -> Option<Rc<Self>> {
         Some(Self::with(Rc::new(wfevents::WayfireIpc::default()), wfevents::main_loop_later()))
     }

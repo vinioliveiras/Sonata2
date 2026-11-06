@@ -15,9 +15,9 @@
 //!
 //! Records are kept as JSON objects, so keys this version doesn't know stay.
 //!
-//! On trial the Rust Notes keeps its own copy (`sonata2-rs-data/notes`),
-//! filled from the Python Notes' data the first time: two Notes writing
-//! the same files at once would undo each other's edits.
+//! One Notes writes them: two writing the same files at once would undo
+//! each other's edits (the Rust trial kept its own copy for that, merged
+//! back by `sonata2 migrate`).
 
 use crate::markup;
 use serde_json::{json, Map, Value};

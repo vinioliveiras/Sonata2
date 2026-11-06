@@ -8,9 +8,8 @@
 //! place of yours; yours go to the Trash first.
 //!
 //! The session's own files (wayfire.ini and the like) are never in a
-//! backup: each computer makes its own. On trial the export holds what the
-//! trial build reads (its own settings over the Python Sonata's) and a
-//! restore writes only the trial's folders (factory_reset's).
+//! backup: each computer makes its own. A restore writes factory_reset's
+//! folders.
 
 use crate::factory_reset::SESSION_FILES;
 use serde_json::{json, Map, Value};

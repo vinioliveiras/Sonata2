@@ -266,8 +266,7 @@ fn timestamp(t: NaiveDateTime) -> f64 {
 }
 
 impl AlarmService {
-    /// None on trial: the Python menu bar rings the same alarms.json (and
-    /// turns one-time alarms off in it); two would ring every alarm twice.
+    /// The menu bar's, one per session: two would ring every alarm twice.
     pub fn start(app: &gtk::Application) -> Option<Rc<Self>> {
         let me = Self::with(Box::new(CardUi::new(app)), now(), true);
         let mut mons = Vec::new();

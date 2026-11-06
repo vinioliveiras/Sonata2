@@ -423,9 +423,8 @@ pub fn check_and_notify(notify: fn(&str, &str, &str) -> bool) -> Vec<String> {
 /// every `INTERVAL_S` (an app updated meanwhile, a new app opened) -- in a
 /// thread. Started once by the main display's menu bar (shell/topbar.py)
 /// and kept for its life; dropping it (or `stop`) ends the timers.
-///
-/// None on trial: the Python menu bar runs the same watch on the same
-/// stylecheck.json, and each would tell every new problem a second time.
+/// (Only the menu bar runs it: two watches of one stylecheck.json would
+/// tell every new problem twice.)
 pub struct Watch {
     srcs: std::rc::Rc<std::cell::RefCell<Vec<glib::SourceId>>>,
 }

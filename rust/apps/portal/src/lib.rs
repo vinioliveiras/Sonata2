@@ -5,9 +5,8 @@
 //! location portals ask through its Access dialog.
 //!
 //! `sonata2-rs portal` owns org.freedesktop.impl.portal.desktop.sonata on
-//! the session bus and stays up for the session. Never on trial: the Python
-//! portal owns the name then (`sonata2-rs chooser open|save|folder` tries
-//! the panels instead).
+//! the session bus and stays up for the session (`sonata2-rs chooser
+//! open|save|folder` tries the panels without it).
 //!
 //! FileChooser: OpenFile, SaveFile, SaveFiles (handle, app_id,
 //! parent_window, title, options -> response, results); response 0 done,

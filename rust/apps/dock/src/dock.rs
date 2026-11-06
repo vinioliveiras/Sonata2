@@ -1167,8 +1167,7 @@ pub fn close_launchpad() {
     launchpad_action("close", None);
 }
 
-/// The Launchpad that runs (the Python one: Launchpad isn't ported yet,
-/// so it's the one the Dock opens on trial too).
+/// The Launchpad that runs.
 pub const LAUNCHPAD_APP_ID: &str = "io.github.vinioliveiras.sonata2.launchpad";
 
 /// The running Launchpad's `action` over D-Bus, without waiting;
@@ -1616,8 +1615,8 @@ impl Dock {
             DOCKS.with(|d| d.borrow_mut().push(self.weak()));
         }
         if !REOPENED.with(|r| r.replace(true)) {
-            // once a session (a rebuilt Dock doesn't again); never on trial:
-            // the Python Dock reopens them, two would open every app twice
+            // once a session (a rebuilt Dock doesn't again: every app
+            // would open twice)
             let w = self.weak();
             glib::timeout_add_local_once(Duration::from_millis(REOPEN_AFTER_MS), move || {
                 if let Some(d) = w.upgrade() {
@@ -3603,8 +3602,7 @@ impl Dock {
             groups.len() != w.len() || groups.keys().any(|k| !w.contains_key(k))
         };
         if changed_apps {
-            // for "Reopen Apps" after a crash (one session, one list: on
-            // trial the Python Dock keeps it)
+            // for "Reopen Apps" after a crash (one session, one list)
             let mut ids: Vec<String> = groups.keys().cloned().collect();
             ids.sort();
             sonata_desktop::open_apps::note(&ids);
@@ -4294,9 +4292,8 @@ impl DockWindow {
     pub fn new(app: &gtk::Application, cfg: Cfg, manager: Option<Rc<Manager>>, monitor: Option<gdk::Monitor>) -> Rc<DockWindow> {
         // resizable: lets layer-shell stretch the surface along the edge
         let win = gtk::ApplicationWindow::builder().application(app).title("Dock").css_classes(["sonata-dock"]).decorated(false).resizable(true).build();
-        // On trial the Python Dock owns the edge: this one never reserves
-        // the space again and takes a namespace of its own (Wayfire's rules
-        // and the plugin key on "sonata2-dock").
+        // the edge's space is reserved; Wayfire's rules and the plugin key
+        // on the namespace "sonata2-dock"
         let dw = Rc::new_cyclic(|me| DockWindow {
             me: me.clone(),
             win,

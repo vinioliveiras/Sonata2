@@ -4,8 +4,8 @@
 //! "Report on GitHub" opens a pre-filled issue in the browser and you
 //! attach the .zip yourself.
 //!
-//! The logs are the session's (the Python Sonata runs it: its logs and
-//! crash notes); on trial the Rust parts' own logs go in too (logs/rust/).
+//! The logs are the session's (its logs and crash notes), and this
+//! build's own folder's when that is another one (logs/rust/).
 
 use sonata_i18n::{n_, tr, trn};
 use std::io::Write;
@@ -323,7 +323,7 @@ pub fn create_in(dir: &Path, title: &str, description: &str, doctor: &str, info:
     }
 }
 
-/// The report, with the session's logs (and on trial the Rust parts' own).
+/// The report, with the session's logs (and this build's, when apart).
 pub fn create(title: &str, description: &str, info: &[(&str, String)]) -> std::io::Result<PathBuf> {
     let mut logs: Vec<(String, PathBuf)> = log_files(&log_dir()).into_iter().map(|p| (format!("logs/{}", p.file_name().unwrap_or_default().to_string_lossy()), p)).collect();
     let own = sonata_session::logs::log_dir();

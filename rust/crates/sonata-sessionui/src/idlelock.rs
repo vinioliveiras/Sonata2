@@ -190,8 +190,8 @@ pub struct IdleLock {
 }
 
 impl IdleLock {
-    /// None on trial: the Python menu bar keeps its swayidle and darkens
-    /// the displays; a second one would lock and darken twice.
+    /// The menu bar's, one per session: a second one would lock and darken
+    /// twice.
     pub fn start(hooks: Hooks) -> Option<Rc<Self>> {
         (hooks.compositor_off)(); // Sonata darkens the display itself (displaysleep)
         // input idle: only media keeps it awake (idlepolicy)

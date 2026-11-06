@@ -2,12 +2,6 @@
 //! surface along the top edge with its exclusive zone, auto-hide (Settings
 //! > Menu Bar, the Dock's way), the slide-in at login; or, with --preview,
 //! a normal window with the bar over the wallpaper (screenshots).
-//!
-//! On trial (sonata_config::side_by_side()) the Python menu bar keeps the
-//! top of the screen: the Rust bar is a surface of its own
-//! ("sonata2rs-topbar"), stacked under the Python one by the compositor
-//! (layer-shell exclusive zones add up), so the two never overlap and
-//! windows simply start lower while it runs.
 
 use crate::bar::{self, Bar};
 use crate::seams::Services;

@@ -48,17 +48,10 @@
 //! quitapps.py reads the watcher's items itself; it uses [`WATCHER`],
 //! [`WATCHER_PATH`] and [`split_service`].
 //!
-//! # Side by side (trial)
-//!
-//! While the Python menu bar runs (`sonata_config::side_by_side()`), it owns
-//! org.kde.StatusNotifierWatcher and the apps' items are registered with
-//! it. [`host()`] then never exports or queues for the watcher name -- a
-//! queued Rust watcher would take the apps' icons over the moment the
-//! Python menu bar restarts. It runs as a host only: it registers with the
-//! Python watcher (a host name of its own, by pid) and shows the same
-//! items, so a Rust menu bar on trial shows every icon the Python one does.
-//! Clicks and menus go to the apps themselves, so both bars work at once.
-//! Once final, [`host()`] exports the watcher as tray.py does.
+//! [`host()`] exports org.kde.StatusNotifierWatcher as tray.py did; a
+//! host that doesn't own the watcher (`Host::new(conn, false)`) registers
+//! with the one that does (a host name of its own, by pid) and shows the
+//! same items.
 
 mod appmatch;
 mod dbusmenu;

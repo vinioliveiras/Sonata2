@@ -6,8 +6,9 @@
 //!   <data>/textedit/session.json      {"version": 1, "windows": [window, ...]}
 //!   <data>/textedit/buffers/<id>.txt  text of a tab with unsaved changes (UTF-8)
 //!
-//! On trial the Rust TextEdit keeps its own (`sonata2-rs-data`): two
-//! TextEdits writing one session would undo each other's windows.
+//! (One TextEdit writes it: two writing one session would undo each
+//! other's windows -- the Rust trial kept its own copy for that, merged
+//! back by `sonata2 migrate`.)
 
 use serde_json::{json, Value};
 use std::path::PathBuf;

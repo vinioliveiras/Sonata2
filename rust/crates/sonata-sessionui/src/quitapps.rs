@@ -29,7 +29,7 @@ use std::rc::Rc;
 pub const TIMEOUT_MS: i64 = 12000;
 pub const POLL_MS: i64 = 250;
 /// Sonata's shell: never signalled (its own apps' windows close). Matches
-/// the trial build's ids and binary too (sonata2rs, sonata2-rs).
+/// the binary (sonata2-rs) and the Rust trial's old ids (sonata2rs) too.
 pub const OWN: &str = "sonata2";
 pub const SESSION_ENDS: [&str; 3] = ["restart", "shutdown", "logout"];
 
@@ -368,8 +368,7 @@ pub fn quit_app(windows: Rc<dyn Windows>, these: &[Toplevel], key: &str) -> Rc<Q
 /// login (None: the last choice of the confirmation's box). Kept before
 /// they quit; dropped if an app stops it (the session goes on).
 ///
-/// On trial too: it's the user asking to restart -- the same as the
-/// Python one does, with the same files.
+/// The same as the Python one did, with the same files.
 pub fn end_session(kind: &str, windows: Option<Rc<dyn Windows>>, reopen: Option<bool>) -> Rc<Quitter> {
     use sonata_desktop::open_apps;
     // none handed in: Wayfire's own list, or no window would be asked to
@@ -510,7 +509,7 @@ mod tests {
         };
         let got = app_pids_with(&views, &[12].into_iter().collect(), None, &cmd, &|v| view_app(v).to_string());
         assert_eq!(got, [12].into_iter().collect());
-        // the trial build's own windows too
+        // the Rust trial's old ids too
         let rs = vec![json!({"type": "toplevel", "pid": 13, "app-id": "io.github.vinioliveiras.sonata2rs.clock"})];
         assert!(app_pids_with(&rs, &HashSet::new(), None, &|_| String::new(), &|v| view_app(v).to_string()).is_empty());
     }

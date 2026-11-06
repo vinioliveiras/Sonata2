@@ -10,12 +10,7 @@
 //!   sonata2-rs switcher [next|prev] [--preview]
 //!   sonata2-rs mission [--preview]
 //!
-//! On trial (side by side with the Python Sonata) nothing here takes the
-//! Python shell's names, surfaces or keys: the switcher has its own app id
-//! and opens only when asked (`sonata2-rs switcher`, or a key you bind to
-//! it yourself); Mission Control's backdrop stays the Python menu bar's
-//! (two would darken the desktop twice), so `mission` runs only as a
-//! preview there: a normal window with the desktops bar over a sample of
+//! `--preview`: a normal window with the desktops bar over a sample of
 //! desktops kept in memory -- it never asks the real Wayfire nor writes its
 //! config.
 
@@ -136,7 +131,7 @@ impl switcher::Windows for SampleWindows {
 /// `sonata2-rs switcher [next|prev] [--preview]`: the app switcher, resident
 /// once started; each call moves it one app (Wayfire's Alt+Tab binding can
 /// run this, or activate the "switcher" action with "next" / "prev" over
-/// D-Bus, as it does the Python menu bar's). With Mission Control open,
+/// D-Bus). With Mission Control open,
 /// its highlight moves instead. --preview: a normal window (no layer
 /// surface, no keyboard grab), sample windows when there is no Wayfire.
 pub fn run_switcher(args: &[String]) -> glib::ExitCode {

@@ -558,8 +558,8 @@ fn test_start_publishes_what_was_kept() {
     let _ = std::fs::remove_file(history_path());
 }
 
-/// On trial (the Python menu bar serving), the Rust one never writes the
-/// list or the Dock's badges: they're the Python one's.
+/// A server that isn't the session's (not serving: --preview) never writes
+/// the list or the Dock's badges: they're the session's.
 #[test]
 fn test_trial_leaves_the_shared_files_alone() {
     let _l = one_at_a_time();

@@ -12,8 +12,7 @@
 //! trusted(|| info.launch(&[], None))
 //! ```
 //!
-//! applock.json through sonata-config (on trial: read from the Python
-//! Sonata's settings, written to the trial's own).
+//! applock.json through sonata-config (~/.config/sonata2).
 
 use gio::prelude::*;
 use serde_json::{json, Value};

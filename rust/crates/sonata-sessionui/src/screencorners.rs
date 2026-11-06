@@ -73,7 +73,7 @@ pub struct ScreenCorners {
 }
 
 impl ScreenCorners {
-    /// None on trial: the Python menu bar draws them already.
+    /// The menu bar's, one per session.
     pub fn start(app: &gtk::Application) -> Option<Rc<Self>> {
         let me = Rc::new(ScreenCorners { wins: Rc::default(), full_on: Rc::default(), on: Cell::new(enabled()), surfaces: RefCell::default(), _mon: RefCell::default() });
         let (wins, full, wins2) = (me.wins.clone(), me.full_on.clone(), me.wins.clone());

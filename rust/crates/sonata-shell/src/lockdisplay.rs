@@ -7,8 +7,8 @@
 //! and on again failed on Vini's laptop (NVIDIA refused the mode set) and
 //! the screen came back only by closing and opening the lid. So while
 //! locked Wayfire's own display timeout is off too; your setting is put
-//! back on unlock (kept in $XDG_RUNTIME_DIR; the Python menu bar also puts
-//! it back after a lock screen that crashed).
+//! back on unlock (kept in $XDG_RUNTIME_DIR; the menu bar also puts it back
+//! after a lock screen that crashed).
 //!
 //! Every file here is the Python Sonata's: one session, one lock state.
 

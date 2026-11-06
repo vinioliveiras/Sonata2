@@ -55,7 +55,7 @@ pub struct Server {
     core: RefCell<Core>,
     env: Box<dyn Env>,
     /// the session's real server: publishes the Dock's badges and keeps the
-    /// list for a restart. Off on trial (the Python menu bar's files).
+    /// list for a restart. Off in a --preview.
     serving: bool,
     conn: RefCell<Option<gio::DBusConnection>>,
     registration: RefCell<Option<gio::RegistrationId>>,
