@@ -245,9 +245,16 @@ mod tests {
     /// Wayfire reported no window focused, read as the desktop.
     #[test]
     fn test_menus_turned_into_files_on_click() {
-        assert!(crate::bar::keeps_front_app(None, 1)); // a menu of ours open: Chrome's stay
-        assert!(!crate::bar::keeps_front_app(None, 0)); // nothing focused, no menu: the desktop (Files')
-        assert!(!crate::bar::keeps_front_app(Some("google-chrome"), 1)); // another app focused: follow it
+        use crate::bar::keeps_front_app as keep;
+        use serde_json::json;
+        let bar = json!({"type": "panel", "app-id": "sonata2-topbar"});
+        let desktop = json!({"type": "background", "app-id": "sonata2-wallpaper"});
+        assert!(keep(None, 1, None, 1)); // a menu of ours open: Chrome's stay
+        assert!(keep(None, 0, Some(&bar), 1)); // the bar kept the keyboard after its menu closed
+        assert!(keep(None, 0, None, 2)); // the focus nowhere, windows still shown
+        assert!(!keep(None, 0, Some(&desktop), 2)); // the desktop clicked: Files'
+        assert!(!keep(None, 0, None, 0)); // no window left: Files'
+        assert!(!keep(Some("google-chrome"), 1, None, 1)); // a window focused: follow it
     }
 
     #[test]
