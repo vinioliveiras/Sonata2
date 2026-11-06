@@ -1,5 +1,8 @@
 # Manual test checklist
 
+> **History.** Written for the Python Sonata (gone: Sonata is Rust now).
+> The behaviours still apply; the commands are `sonata2 <component>`.
+
 Run each item on real hardware (CachyOS, Wayfire session) after the change
 that introduced it. `[ ]` = not yet verified on hardware.
 

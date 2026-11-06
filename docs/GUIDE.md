@@ -27,12 +27,19 @@ git clone https://github.com/vinioliveiras/sonata2.git && cd sonata2
 The installer:
 
 - **installs the dependencies** with your package manager
-  (pacman/apt/dnf/zypper/xbps/apk). Optional extras are installed one by
-  one, so a package your release lacks doesn't block the rest. pywayland
-  comes from PyPI if the distro has none, and pixdecor (the title bars
-  Sonata draws for other apps) is built from source against your Wayfire;
-- installs Sonata for you (`~/.local`) and adds **"Sonata" to the login
-  screen**;
+  (pacman/apt/dnf/zypper/xbps/apk): Rust (cargo) and the libraries Sonata
+  is built with, then the optional extras one by one, so a package your
+  release lacks doesn't block the rest. pixdecor (the title bars Sonata
+  draws for other apps) is built from source against your Wayfire;
+- **builds Sonata** (`cargo build --release` in `rust/`, several minutes
+  the first time) and installs it for you (`~/.local`): the `sonata2`
+  program, its data in `~/.local/share/sonata2-rs`, and **"Sonata" on the
+  login screen**. Nothing changes until the build has succeeded;
+- **upgrades an older Sonata without losing anything**: your settings
+  (`~/.config/sonata2`) and your apps' data (`~/.local/share/sonata2-data`)
+  stay as they are; what the Rust preview kept apart is merged in (the
+  newer file wins); the old Python install goes to
+  `~/.local/share/sonata2-backups/upgrade-<date>` (see below);
 - makes Sonata's Files the file manager of the session (folders, "Show in
   Folder" from browsers and editors);
 - builds the small Wayfire plugin that rounds every window's corners;
@@ -45,7 +52,7 @@ The installer:
 | Command | What it does |
 |---|---|
 | `./install.sh` | install for you (asks for sudo only where needed) |
-| `./install.sh --dev` | link to this clone instead of copying it: the session runs the code you edit |
+| `./install.sh --dev` | link to this clone instead of copying it: the session runs what `cargo build --release` makes here |
 | `./install.sh --system` | install for all users (`/usr/local`) |
 | `./install.sh --yes` | don't ask (login screen included) |
 | `./install.sh --no-deps` | don't install packages, only list what's missing |
@@ -53,9 +60,35 @@ The installer:
 | `./install.sh --gdm` | back to the previous login screen (GDM/SDDM...) |
 | `./install.sh --uninstall` | remove Sonata (your settings stay in `~/.config/sonata2`) |
 
-**Requirements:** Wayfire ≥ 0.9, GTK ≥ 4.12, libadwaita ≥ 1.4,
-gtk4-layer-shell ≥ 1.0 and Python ≥ 3.10 with PyGObject, pycairo and
-pywayland.
+**Requirements:** Wayfire ≥ 0.9, GTK ≥ 4.12, libadwaita ≥ 1.5,
+gtk4-layer-shell ≥ 1.0 (with their development files) and Rust ≥ 1.80
+with cargo. Terminal (VTE), Camera and Videos (GStreamer), the Assistant
+(libsoup, libsecret) are separate programs: without their libraries the
+rest of Sonata still builds.
+
+### Updating, and upgrading from the Python Sonata
+
+Software Update (Settings → General) downloads a release's source and
+runs its `install.sh`, which builds it with cargo -- so Rust must be
+installed (releases ship no prebuilt binaries). Without cargo, or when the
+build fails, the installer says why and changes nothing.
+
+Coming from the Python Sonata (or with the "Sonata (Rust preview)" entry
+installed), `./install.sh` is an upgrade (`sonata2 migrate`):
+
+| What | From | To |
+|---|---|---|
+| your settings, layouts, keys, wallpaper choice, web apps... | `~/.config/sonata2` | stays there, byte for byte |
+| your apps' data (notes, calendars, alarms, chats, web apps' logins) | `~/.local/share/sonata2-data` | stays there |
+| the preview's own settings | `~/.config/sonata2-rs` | merged into `~/.config/sonata2` |
+| the preview's TextEdit / Notes data | `~/.local/share/sonata2-rs-data` | merged into `~/.local/share/sonata2-data` |
+| app data an old version kept in the install folder | `~/.local/share/sonata2/<app>` | merged into `~/.local/share/sonata2-data/<app>` |
+| the Python install, its `sonata2` launcher, the preview's launcher and login entry | `~/.local/share/sonata2`, `~/.local/bin/...` | moved to `~/.local/share/sonata2-backups/upgrade-<date>` |
+
+Merging copies a file only one side has; of two different files the newer
+one is kept and the other goes to the backup. Nothing is deleted
+(Python's `__pycache__` folders excepted), and saved passwords stay in
+your keyring.
 
 ### Which distributions
 
@@ -339,26 +372,28 @@ picked in Settings → Appearance.
 
 ## Development
 
+Sonata is Rust: a cargo workspace in `rust/` (one multi-call binary,
+`sonata2-rs <component>`, plus `sonata2-rs-terminal`, `-camera`, `-videos`
+and `-assistant`). docs/RUST_PORT.md tells how it was ported.
+
 ```
-./install.sh --dev                       # the session runs this clone
-sonata2 restart [dock topbar ...]        # reload shell parts after editing
-python3 -m sonata2 dock --preview        # a component in a normal window
-tools/wl-preview.sh dock --dark          # screenshot in a headless compositor -> screenshots/
+cd rust && cargo build --release         # build
+./install.sh --dev                       # the session runs what cargo builds in this clone
+sonata2 restart [dock topbar ...]        # reload shell parts after a build
+cargo run --bin sonata2-rs -- dock --preview   # a component in a normal window (from rust/)
 tools/dev-session.sh                     # the whole shell in a Wayfire window
-xvfb-run -a -s "-screen 0 1920x1200x24" python3 tools/readme-shots.py   # README screenshots (demo data) -> docs/screenshots/
 ```
 
-- **Regressions**: every reported bug that gets fixed gets a test in
-  `tests/test_regressions.py` (named after the bug), so it can't come back:
-  `dbus-run-session -- xvfb-run -a python3 -m unittest tests.test_regressions`.
-- **Tests without a display**: `python3 -m unittest tests.test_launchpad_model
-  tests.test_autostart`.
-- **Tests that need a display**: `tests.test_dock`, `tests.test_launchpad`,
-  `tests.test_topbar`, `tests.test_settings`, `tests.test_files`. Run each
-  module on its own.
-- **Translations**: any text people see goes through `_()` and into both
-  Portuguese catalogs. `python3 tools/i18n_missing.py sonata2/<area>/` lists
-  what's missing; `tests.test_i18n` checks it all. See
+- **Tests** never run on your session: from `rust/`, with a temporary HOME
+  and XDG folders and the session's variables unset --
+  `env -u WAYFIRE_SOCKET -u DBUS_SESSION_BUS_ADDRESS -u WAYLAND_DISPLAY -u DISPLAY -u SONATA2_LAUNCHER CARGO_HOME=$HOME/.cargo HOME=$(mktemp -d) XDG_DATA_HOME=$(mktemp -d) XDG_CONFIG_HOME=$(mktemp -d) XDG_RUNTIME_DIR=$(mktemp -d) cargo test --workspace`
+  (the GTK tests skip without a display).
+- **Regressions**: every bug that gets fixed gets a test named after it
+  (`test_<what_went_wrong>`), in the crate the fix is in.
+- **Translations**: any text people see goes through `tr!()` (or `trn!`,
+  `trp!`, `n_!`) and into both Portuguese catalogs. `python3
+  tools/i18n_missing.py rust/apps/<app>/` lists what's missing;
+  `cargo test -p sonata-i18n` checks it all. See
   [docs/TRANSLATING.md](TRANSLATING.md).
 
 Each shell component is its own process (a crash doesn't take the others
@@ -369,30 +404,28 @@ with it). They talk through D-Bus and the config files.
 | Layer | Choice | Why |
 |---|---|---|
 | Compositor | Wayfire (+ pixdecor, + Sonata's corner plugin) | animations, blur, server-side decorations, IPC, layer-shell |
-| UI | Python 3, PyGObject, GTK 4, libadwaita | one toolkit for the shell and the apps |
+| UI | Rust, gtk4-rs, GTK 4, libadwaita | one toolkit for the shell and the apps |
 | Panels | gtk4-layer-shell | menu bar, Dock, overlays anchored to the screen |
-| Windows | wlr-foreign-toplevel via pywayland | works on any wlroots compositor |
+| Windows | wlr-foreign-toplevel (wayland-client) | works on any wlroots compositor |
 | Login | greetd | small, any distro, no desktop dependency |
 
 ## Project layout
 
 ```
-sonata2/            Python package (`python3 -m sonata2 <component>`)
-  ui/               design system: tokens, theme, menus, controls, windows, logo
-  shell/            menu bar, Dock, Launchpad, Search, notifications, login,
-                    lock and welcome screens, wallpaper, desktop icons
-  files/            the Files app
-  settings/         the Settings app
-  backend/          Linux services: network, audio (equalizer), power, displays, users
-  wl/               Wayland protocol clients
-  data/             icons, cursors, GTK themes, fonts, sounds, title bar artwork
-  locale/           translations: pt_BR and pt_PT catalogs (docs/TRANSLATING.md)
-  i18n.py           _(), ngettext(), the language from the session's locale
-config/             the session's Wayfire config
-wayfire-plugin/     sonata-corners (rounded corners for every window)
-tools/              session scripts, installer helpers, previews
-tests/              unit and UI tests
-docs/               design system, feature parity, translating
+rust/               Sonata: a cargo workspace
+  apps/sonata2-rs/  the multi-call binary (`sonata2 <component>`)
+  apps/<app>/       each app and shell surface (dock, topbar, launchpad, files,
+                    settings, greeter, lock, notes, terminal...)
+  crates/           shared code: sonata-ui (design system: tokens.json, css.json),
+                    sonata-config (settings, the upgrade), sonata-i18n,
+                    sonata-backend / sonata-system (Linux services), sonata-shell...
+data/               icons, cursors, GTK themes, fonts, sounds, wallpapers, title bar artwork
+locale/             translations: pt_BR and pt_PT catalogs (docs/TRANSLATING.md)
+config/             the session's Wayfire config, polkit rules
+wayfire-plugin/     sonata-corners, sonata-resize, sonata-privacy (C++)
+tools/              session scripts, installer helpers, generators
+docs/               design system, feature parity, translating, the port
+VERSION             Sonata's version
 ```
 
 Sonata succeeds [Sonata](https://github.com/vinioliveiras/sonata)

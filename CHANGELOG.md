@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Sonata is Rust only.** The Python Sonata is gone: `./install.sh` (and Software Update) builds Sonata with cargo and installs it as `sonata2`, and "Sonata" on the login screen is the Rust desktop -- the "Sonata (Rust preview)" entry goes. Updating from the Python Sonata is an upgrade: your settings (`~/.config/sonata2`), your apps' data, keys, layouts, web apps and saved passwords stay; what the preview kept apart is merged in (the newer file wins); the old install is moved to `~/.local/share/sonata2-backups`. Rust (cargo) is needed to install and update: without it, or when the build fails, nothing changes.
+- Window buttons drawn by Wayfire no longer go invisible when Sonata was built in another folder: an installed Sonata always uses its own pictures.
 - Rust preview session: the menu bar's status panels (Wi-Fi, Bluetooth, battery...) open centred under their icon again.
 - Game Bar: each widget's border around its modules is as wide as the gaps between them (8 px), as in macOS's Control Center; in the Python session it no longer sometimes opens without its glass when the menu bar is busy.
 - Notification Center: macOS-style glass -- the blurred desktop behind the whole column, fading out to the left, blurred more and more vivid -- and each app's notifications stacked into a group that opens on click (Show Less / Clear).

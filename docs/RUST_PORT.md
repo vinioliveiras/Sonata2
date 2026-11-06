@@ -1,12 +1,36 @@
 # Porting Sonata 2 to Rust
 
-Status: **step 1 done** (foundations + Calculator), **step 2 done**:
-Clock and TextEdit tried in Vini's session; Preview and Notes build and
-their tests pass, not tried in a session yet. Branch
-`claude/rust-port-fdcd02`.
-The Python code stays the working Sonata on this branch until a
-component's Rust replacement is ready; the Wayfire plugin
-(`wayfire-plugin/`, C++) stays as it is.
+Status: **done.** Every component is Rust, and the Python Sonata is gone
+(Vini's call, 2026-11): `./install.sh` builds the Rust workspace and
+installs it as Sonata (`sonata2` is the `sonata2-rs` binary), the "Sonata"
+login entry runs it, and the Python package (`sonata2/`) and its test
+suite (`tests/`) were removed. The Wayfire plugin (`wayfire-plugin/`, C++)
+stays as it is. What follows is how the port was done -- the side-by-side
+trial, its folders and switches are history now.
+
+## What changed when the Python Sonata went
+
+- **Shared files out of the package:** `sonata2/data` is `data/`,
+  `sonata2/locale` is `locale/`. Installed, they are in
+  `<prefix>/share/sonata2-rs/{data,locale}` with `config/`, the session
+  scripts (`tools/`) and `VERSION`; an installed binary never reads the
+  tree it was built from (`sonata_config::data_path`).
+- **Design system:** `rust/crates/sonata-ui/tokens.json` and `css.json`
+  are the sources (the exporter, tools/export_tokens.py, went).
+- **No trial mode:** `SONATA2_RS_SIDE_BY_SIDE`, `SONATA2_RS_SESSION`, the
+  `io.github.vinioliveiras.sonata2rs.*` ids, `~/.config/sonata2-rs`,
+  `~/.local/share/sonata2-rs-data`, the "(Rust)" names and the Python
+  launcher's `--handles` are gone from the code. tools/sonata-session only
+  passes the two variables on when an older install's "Sonata (Rust
+  preview)" entry set them.
+- **One installer** (`install.sh`; rust/install-rs.sh went), which is
+  also an upgrade: `sonata2 migrate` (sonata-config's migrate.rs) merges
+  the trial's settings and data into the real folders and moves the Python
+  install to `~/.local/share/sonata2-backups/upgrade-<date>`.
+- **Self-update** runs the release's install.sh, which builds with cargo
+  (no prebuilt binaries), keeping the build in `~/.cache/sonata2/rust-target`.
+- **Tests:** translations are checked by `cargo test -p sonata-i18n`; the
+  wayfire-config golden test compares with cases the Python steps recorded.
 
 ## Why the port goes this way
 
@@ -39,7 +63,7 @@ to the rest of the desktop. Nothing is ported half in Python, half in
 Rust inside one process (no PyO3 bridge): that would double the work and
 keep both runtimes' costs.
 
-## Side by side with the installed Sonata (Vini's request)
+## Side by side with the installed Sonata (history: how the trial ran)
 
 While the port is young, the Rust build installs **next to** the Python
 Sonata, never over it, so it can be tried with no risk to the working
@@ -247,8 +271,7 @@ cd rust
 cargo build                                   # everything
 cargo test -p sonata-calculator --no-default-features   # the engine alone, no GTK
 cargo test                                    # every crate's own tests (none opens a window)
-python3 tools/export_tokens.py                # after changing sonata2/ui/tokens.py
-rust/install-rs.sh                            # try it next to Sonata (--uninstall removes it)
+../install.sh --dev                           # install this clone as Sonata (links its build)
 sonata2-rs calculator --dark                  # a component, as `sonata2 calculator`
 ```
 
@@ -699,7 +722,7 @@ GTK's own connection (dock/src/wlr.rs), the idle watch, the virtual
 keyboard and pointer write their messages themselves. Each crate's lib.rs
 lists what it left out.
 
-### The Rust preview session
+### The Rust preview session (history)
 
 `rust/install-rs.sh --session` adds "Sonata (Rust preview)" to the login
 screen (sudo, for /usr/share/wayland-sessions). It runs this clone's
