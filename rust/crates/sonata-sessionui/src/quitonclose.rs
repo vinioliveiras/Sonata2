@@ -230,9 +230,6 @@ pub struct QuitOnClose {
 impl QuitOnClose {
     /// None on trial: the Python Dock quits closed apps already.
     pub fn start(windows: Rc<dyn Windows>) -> Option<Rc<Self>> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         Some(Self::with(windows, Effects::default()))
     }
 

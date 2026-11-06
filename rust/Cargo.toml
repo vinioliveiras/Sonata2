@@ -1,5 +1,5 @@
-# Sonata 2 in Rust (docs/RUST_PORT.md). The Python package stays the
-# working Sonata until each component here replaces its Python version.
+# Sonata 2 (docs/GUIDE.md): the whole desktop, one workspace. ../install.sh
+# builds and installs it.
 [workspace]
 resolver = "2"
 members = [

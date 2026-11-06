@@ -12,11 +12,7 @@ pub mod store;
 #[cfg(feature = "gui")]
 pub mod window;
 
-/// The app id: on trial its own (`sonata2rs`), so both Notes can be open.
+/// The app id (its D-Bus name and Wayland app id).
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.notes"
-    } else {
-        "io.github.vinioliveiras.sonata2.notes"
-    }
+    "io.github.vinioliveiras.sonata2.notes"
 }

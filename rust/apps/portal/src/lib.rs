@@ -497,10 +497,6 @@ pub fn run(args: &[String]) -> glib::ExitCode {
             return;
         }
         sonata_ui::setup();
-        if sonata_config::side_by_side() {
-            eprintln!("sonata2-rs portal: on trial the Python portal serves the panels (try `sonata2-rs chooser`)");
-            return;
-        }
         portal.replace(Portal::new(app));
     });
     let _ = args;

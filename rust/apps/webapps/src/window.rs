@@ -21,11 +21,7 @@ use std::time::Duration;
 
 /// The form's application id (the trial's own, like every trial app's).
 pub fn new_app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.webapps"
-    } else {
-        "io.github.vinioliveiras.sonata2.webapps"
-    }
+    "io.github.vinioliveiras.sonata2.webapps"
 }
 
 /// after its window closes: WebKit writes what the site saved

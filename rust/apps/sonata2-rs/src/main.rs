@@ -1,5 +1,5 @@
-//! `sonata2-rs <component> [options]`: Sonata's components ported to Rust,
-//! the counterpart of `python3 -m sonata2 <component>` (docs/RUST_PORT.md).
+//! `sonata2-rs <component> [options]`: every Sonata component, one binary
+//! (docs/RUST_PORT.md).
 //!
 //!   sonata2-rs calculator [--dark|--light]    the Calculator
 //!   sonata2-rs clock [--dark|--light]         Clock
@@ -52,10 +52,11 @@
 //!   sonata2-rs desktop-files                  write the ported apps' desktop entries
 //!   sonata2-rs keep <component> [args]        run it, start it again if it crashes
 //!   sonata2-rs keep-all <component>[,args] ...  the same, several in one process
-//!                                             (Rust components here, the rest through `sonata2`)
+//!   sonata2-rs migrate user | install --prefix P  carry settings and data over from the
+//!                                             Python Sonata and the Rust trial (install.sh)
 //!
-//! On trial (the default) everything runs next to the installed Python
-//! Sonata: its own app ids, its own settings folder for writing.
+//! Installed, `sonata2` is this binary (install.sh links it): the session,
+//! Wayfire's keys, D-Bus and desktop entries start `sonata2 <component>`.
 
 mod desktop;
 mod gamebar_host;
@@ -65,7 +66,7 @@ mod procenv;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings|wayfire-config|self-update|gallery> [--dark|--light]";
+const USAGE: &str = "usage: sonata2-rs <calculator|clock|textedit|preview|notes|welcome|lock|spotlight|polkit|terminal|camera|videos|assistant|calendar|activity|files|portal|chooser|greeter|notifications|show-desktop|settings|launchpad|keyring|prefs|topbar|dock|lock-wait|setup|session-try|capture|share-picker|webapp|switcher|mission|wallpaper|gamebar|clipboard|emoji|restart|doctor|autostart|feedback|diskutil|key|screenshot|desktop-files|keep|keep-all|xsettings|wayfire-config|self-update|migrate|gallery> [--dark|--light]";
 
 /// autostart.py's setup steps before the login items, each on its own
 /// (one failing never keeps the rest, or the apps, from starting).
@@ -82,7 +83,7 @@ fn login_steps() {
 }
 
 /// The commands that run and return, or run without GTK: no start-up trace.
-const NO_WINDOWS: &[&str] = &["key", "screenshot", "keep", "keep-all", "autostart", "xsettings", "wayfire-config", "prefs", "desktop-files", "restart", "doctor", "lock-wait", "keyring", "show-desktop", "self-update"];
+const NO_WINDOWS: &[&str] = &["key", "screenshot", "keep", "keep-all", "autostart", "xsettings", "wayfire-config", "prefs", "desktop-files", "restart", "doctor", "lock-wait", "keyring", "show-desktop", "self-update", "migrate"];
 
 /// The components USAGE lists (the ones this binary dispatches).
 fn handles(component: &str) -> bool {
@@ -176,16 +177,13 @@ fn main() -> ExitCode {
         // the Rust session): the release installed, the Rust build rebuilt
         "self-update" => ExitCode::from(sonata_system::selfupdate::main(&args[1..]).clamp(0, 255) as u8),
         "doctor" => ExitCode::from(sonata_session::doctor(&args[1..]) as u8),
-        // in the Rust session the setup steps are the Rust ones; on trial the
-        // Python session's own autostart runs and this one only tries it
         // the login items through Sonata's launch path (their GPU, Steam's
         // FPS limit, their own scopes -- sent before this short process ends)
-        "autostart" if !sonata_config::side_by_side() => {
+        "autostart" => {
             let code = sonata_session::autostart::autostart_with(&launch::login_item, &login_steps);
             sonata_desktop::appscope::flush();
             ExitCode::from(code as u8)
         }
-        "autostart" => ExitCode::from(sonata_session::autostart(&args[1..]) as u8),
         // the design system's page (ui/gallery.py)
         "gallery" => {
             let code = sonata_ui::gallery::run_gallery(&args[1..]);
@@ -268,6 +266,11 @@ fn main() -> ExitCode {
             let code = sonata_settings::run(&args[1..]);
             ExitCode::from(code.value() as u8)
         }
+        // install.sh: USBGuard set up as Settings' "Set Up…" does (the script, printed)
+        "settings-usb-setup" => {
+            println!("{}", sonata_settings::pages::system::usb_setup_script());
+            ExitCode::SUCCESS
+        }
         // Super+D: the Dock does it
         "show-desktop" => ExitCode::from(if sonata_session::keys::app_action(sonata_dock::app_id(), "show-desktop", None) { 0 } else { 1 }),
         "notifications" => {
@@ -320,12 +323,9 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
-        // `sonata2 <component>` in the "Sonata (Rust preview)" session
-        // (install.sh's launcher): 0 when the Rust build runs it, so the
-        // apps and helpers Launchpad, the Dock, D-Bus and the session start
-        // through `sonata2` are the Rust ones there, and the Python ones
-        // where nothing is ported
-        "--handles" => ExitCode::from(if args.get(1).is_some_and(|c| handles(c)) { 0 } else { 1 }),
+        // the upgrade: what the Python Sonata and the Rust trial kept, carried
+        // over (install.sh runs it once the new build is in place)
+        "migrate" => ExitCode::from(sonata_config::migrate::main(&args[1..]) as u8),
         "-h" | "--help" | "help" => {
             println!("{USAGE}");
             ExitCode::SUCCESS
@@ -375,23 +375,13 @@ fn camera(args: &[String]) -> i32 {
 /// can't depend on them all itself: some depend on it).
 fn topbar_services() -> sonata_topbar::seams::Services {
     use std::rc::Rc;
-    let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "sonata2-rs".into());
-    let spawn = move |args: Vec<String>| {
-        let me = me.clone();
-        Rc::new(move || {
-            if let Ok(c) = std::process::Command::new(&me).args(&args).spawn() {
-                sonata_backend::run::reap(c); // (a defunct sonata2-rs per click otherwise)
-            }
-        }) as Rc<dyn Fn()>
-    };
     let mut s = sonata_topbar::seams::Services { mixer: Some(sonata_topbar::seams::system_mixer()), ..Default::default() };
     s.night_shift = Some((Rc::new(sonata_sessionui::nightshift::is_on), Rc::new(sonata_sessionui::nightshift::set_manual)));
     s.end_session = Some(Rc::new(|kind: &str, reopen: bool| {
         sonata_sessionui::quitapps::end_session(kind, Some(host::quit_windows()), Some(reopen));
     }));
-    // the capture lives in the menu bar's process (host.rs); on trial the
-    // Python menu bar keeps it, and `sonata2-rs capture` is the Rust one
-    s.capture_toolbar = Some(if sonata_config::side_by_side() { spawn(vec!["capture".into(), "toolbar".into()]) } else { Rc::new(host::show_capture_toolbar) });
+    // the capture lives in the menu bar's process (host.rs)
+    s.capture_toolbar = Some(Rc::new(host::show_capture_toolbar));
     host::fill_services(&mut s);
     s
 }
@@ -432,16 +422,14 @@ mod screenshot_tests {
 
 #[cfg(test)]
 mod handles_tests {
-    /// Vini's Rust session: the portal (Open/Save panels) stayed the Python
-    /// one -- D-Bus starts it with a PATH without ~/.local/bin, and the
-    /// launcher looked for sonata2-rs on the PATH. It calls it by its path.
+    /// The Python launcher's `--handles` question is gone with it: the
+    /// installed `sonata2` is this binary, and every command runs here.
     #[test]
     fn test_portal_stayed_python_in_the_rust_session() {
         let install = include_str!("../../../../install.sh");
-        assert!(install.contains("\"$BIN/sonata2-rs\" --handles"));
-        assert!(!install.contains("command -v sonata2-rs"));
-        let rs = include_str!("../../../install-rs.sh");
-        assert!(rs.contains("/sonata2-rs\\\" --handles"), "install-rs.sh rewrites older launchers");
+        assert!(install.contains("ln -sf sonata2-rs \"$BIN/sonata2\""), "sonata2 is the Rust binary");
+        assert!(!install.contains("python3 -m sonata2"));
+        assert!(super::handles("migrate") && super::NO_WINDOWS.contains(&"migrate"));
     }
 
     /// Vini, in the Rust session: Task Manager, Terminal and the portal
@@ -453,7 +441,7 @@ mod handles_tests {
         for c in ["activity", "terminal", "files", "portal", "settings", "topbar", "screenshot"] {
             assert!(super::handles(c), "{c}");
         }
-        for c in ["", "--handles"] {
+        for c in ["", "--handles", "nothing"] {
             assert!(!super::handles(c), "{c}");
         }
     }

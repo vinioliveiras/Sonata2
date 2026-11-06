@@ -23,10 +23,9 @@ pub const MANIFEST: &str = "sonata-backup.json";
 /// backup.json: when it was last exported
 const NAME: &str = "backup";
 
-/// Sonata's version (sonata2/__init__.py, the one place it is kept).
+/// Sonata's version (the VERSION file).
 pub fn version() -> &'static str {
-    const INIT: &str = include_str!("../../../../sonata2/__init__.py");
-    INIT.lines().find_map(|l| l.strip_prefix("__version__ = \"")).and_then(|r| r.split('"').next()).unwrap_or("")
+    sonata_config::version()
 }
 
 fn now() -> i64 {

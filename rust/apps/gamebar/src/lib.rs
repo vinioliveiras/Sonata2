@@ -58,7 +58,7 @@ pub fn app_action(app_id: &str, name: &str) -> bool {
 ///   it ends when the window closes.
 pub fn run_gamebar(args: &[String]) -> glib::ExitCode {
     let preview = args.iter().any(|a| a == "--preview");
-    if !preview && !sonata_config::side_by_side() {
+    if !preview {
         return if app_action("io.github.vinioliveiras.sonata2.topbar", "gamebar") { glib::ExitCode::SUCCESS } else { glib::ExitCode::FAILURE };
     }
     if !preview {

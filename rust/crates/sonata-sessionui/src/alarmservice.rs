@@ -269,9 +269,6 @@ impl AlarmService {
     /// None on trial: the Python menu bar rings the same alarms.json (and
     /// turns one-time alarms off in it); two would ring every alarm twice.
     pub fn start(app: &gtk::Application) -> Option<Rc<Self>> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         let me = Self::with(Box::new(CardUi::new(app)), now(), true);
         let mut mons = Vec::new();
         for path in [A::path(), T::path()] {

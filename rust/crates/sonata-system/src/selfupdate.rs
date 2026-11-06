@@ -2,11 +2,17 @@
 //!
 //! latest_release() asks GitHub; newer(tag, current) says whether it is an
 //! update; `sonata2 self-update [--check] [TAG]` (main()) downloads that
-//! release, runs its install.sh, builds and installs the Rust build again
-//! when there is one (its rust/install-rs.sh, with cargo) and restarts
-//! Sonata. Settings > About >
-//! Software Update lists it with the system's updates. A clone updates with
-//! `git pull` instead (the code runs from it).
+//! release, runs its install.sh -- which builds Sonata with cargo and
+//! installs it over this one, carrying settings and data over -- and
+//! restarts Sonata. Settings > About > Software Update lists it with the
+//! system's updates. A clone updates with `git pull` instead.
+//!
+//! A release is Sonata's source (GitHub's tarball, no prebuilt binaries):
+//! cargo is needed to update. install.sh checks for it before it changes
+//! anything, and a build that fails leaves the installed Sonata as it was.
+//! The build is kept between updates ($XDG_CACHE_HOME/sonata2/rust-target):
+//! each release is a new folder, and building all of it from nothing every
+//! time takes many minutes.
 //!
 //! The download goes through curl (no HTTP stack in Sonata's Rust build);
 //! the archive is read here, keeping only plain files and folders inside
@@ -27,25 +33,10 @@ pub fn defaults() -> Value {
     json!({"notified": "", "last_check": 0})
 }
 
-/// The __init__.py this build was made from (the clone's): its version
-/// when no installed Sonata says otherwise.
-const BUILT_INIT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../sonata2/__init__.py"));
-
-/// `__version__ = "0.22.0-alpha"` of an __init__.py.
-pub fn version_in(init: &str) -> Option<String> {
-    init.lines().find_map(|l| l.strip_prefix("__version__ = ").map(|r| r.split('#').next().unwrap_or("").trim().trim_matches('"').to_string())).filter(|v| !v.is_empty())
-}
-
-/// The running Sonata's version (sonata2/__init__.py's __version__: the
-/// Python Sonata is what is installed and updated), else this build's own.
-/// It read "0.0.0" in the installed Rust build (the package wasn't where it
-/// looked), and the update notice offered every release.
+/// Sonata's version (the VERSION file this build was made from: the
+/// binary is the install, so they are the same).
 pub fn version() -> String {
-    std::fs::read_to_string(install_root().join("sonata2").join("__init__.py"))
-        .ok()
-        .and_then(|t| version_in(&t))
-        .or_else(|| version_in(BUILT_INIT))
-        .unwrap_or_else(|| "0.0.0".into())
+    sonata_config::version().to_string()
 }
 
 /// 'v0.2.0-beta.1' -> (0, 2, 0, 2, 1): numbers, then the pre-release kind
@@ -122,45 +113,29 @@ pub fn available(timeout_s: u64) -> Option<Release> {
 }
 
 // -- where Sonata runs from -------------------------------------------------------------------
-/// The folder holding the sonata2 package (a clone, or <prefix>/share/sonata2).
+/// Sonata's folder: the one install.sh puts next to this binary
+/// (`<prefix>/share/sonata2-rs`; a --dev install's is a link to the clone,
+/// followed), else the clone this build was made from.
 pub fn install_root() -> PathBuf {
-    let home = glib::home_dir();
-    let launchers: Vec<PathBuf> = std::env::var_os("SONATA2_LAUNCHER").filter(|l| !l.is_empty()).map(PathBuf::from).into_iter().chain([home.join(".local/bin/sonata2"), PathBuf::from("/usr/local/bin/sonata2")]).collect();
-    let installs = [home.join(".local/share/sonata2"), PathBuf::from("/usr/local/share/sonata2"), Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")];
-    install_root_from(&sonata_i18n::locale_dir(), &launchers, &installs)
+    let installed = std::env::current_exe().ok().and_then(|e| Some(e.parent()?.parent()?.join("share").join("sonata2-rs")));
+    install_root_from(installed.as_deref(), &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."))
 }
 
-/// install_root() from where it may be: the catalogs' folder when this
-/// build runs from a clone; a launcher's SONATA_HOME (install.sh writes
-/// it); then `installs` in order (the usual install folders, the clone this
-/// build was made from). The installed Rust build keeps its own copy of the
-/// catalogs (share/sonata2-rs/locale), whose grandparent is no Sonata.
-pub fn install_root_from(locale_dir: &Path, launchers: &[PathBuf], installs: &[PathBuf]) -> PathBuf {
+pub fn install_root_from(installed: Option<&Path>, clone: &Path) -> PathBuf {
     let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    let package = |p: &Path| p.join("sonata2").join("__init__.py").is_file();
-    let beside = real(locale_dir).parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_default();
-    let mut tried = vec![beside.clone()];
-    for l in launchers {
-        let text = std::fs::read_to_string(l).unwrap_or_default();
-        if let Some(h) = text.lines().find_map(|ln| ln.trim().strip_prefix("SONATA_HOME=")) {
-            tried.push(PathBuf::from(h.trim().trim_matches('"')));
-        }
+    match installed.filter(|p| p.join("tools").is_dir()) {
+        Some(p) => real(p),
+        None => real(clone),
     }
-    tried.extend(installs.iter().cloned());
-    // (realpath, as the Python's __file__: a --dev install is the clone)
-    tried.iter().map(|p| real(p)).find(|p| package(p)).unwrap_or(beside)
 }
 
 pub fn is_clone(root: &Path) -> bool {
-    root.join(".git").is_dir()
+    root.join(".git").exists()
 }
 
-/// How to start the Python Sonata again (__main__.self_argv).
+/// How to start Sonata again: this binary.
 pub fn self_argv() -> Vec<String> {
-    if let Some(l) = std::env::var_os("SONATA2_LAUNCHER").filter(|l| Path::new(l).exists()) {
-        return vec![l.to_string_lossy().into_owned()];
-    }
-    vec!["env".into(), format!("PYTHONPATH={}", install_root().display()), "python3".into(), "-m".into(), "sonata2".into()]
+    vec![std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "sonata2".into())]
 }
 
 /// install.sh's options for an update: the same kind of install, no
@@ -408,36 +383,16 @@ pub fn check_line(current: &str, rel: &Release) -> String {
     format!("Sonata {current} -> {}", rel.tag.trim_start_matches(['v', 'V']))
 }
 
-// -- the Rust build -----------------------------------------------------------------------------
-/// Where rust/install-rs.sh put the Rust build: it is updated with Sonata
-/// when it is there (a release is Sonata's source, rust/ included: it is
-/// built here, with cargo).
-#[derive(Clone, Debug, PartialEq)]
-pub struct RustBuild {
-    /// ~/.local/bin (sonata2-rs and its helpers)
-    pub bin: PathBuf,
-    /// $XDG_DATA_HOME/sonata2-rs (the catalogs, sounds, the icons' link)
-    pub data: PathBuf,
-    /// the build kept between updates ($XDG_CACHE_HOME/sonata2/rust-target):
-    /// each release is a new folder, and building all of it from nothing
-    /// every time takes many minutes
-    pub target: PathBuf,
-}
-
-/// The Rust build installed for this user (~/.local/bin/sonata2-rs), else None.
-pub fn rust_build() -> Option<RustBuild> {
-    let home = glib::home_dir();
-    let bin = home.join(".local/bin");
-    let data = std::env::var_os("XDG_DATA_HOME").filter(|d| !d.is_empty()).map(PathBuf::from).unwrap_or_else(|| home.join(".local/share"));
-    let target = cache().parent().map_or_else(|| cache().join("rust-target"), |c| c.join("rust-target"));
-    bin.join("sonata2-rs").is_file().then(|| RustBuild { bin, data: data.join("sonata2-rs"), target })
+/// The cargo build kept between updates ($XDG_CACHE_HOME/sonata2/rust-target).
+pub fn build_cache() -> PathBuf {
+    cache().parent().map_or_else(|| cache().join("rust-target"), |c| c.join("rust-target"))
 }
 
 /// What an update does, each step a seam (the tests run it all against a
 /// local server and record the commands).
 pub struct Steps<'a> {
     pub current: String,
-    /// where the Python Sonata is installed (install_root)
+    /// Sonata's folder (install_root)
     pub root: PathBuf,
     pub greeter: bool,
     pub latest: &'a dyn Fn() -> Option<Release>,
@@ -446,49 +401,9 @@ pub struct Steps<'a> {
     pub run: &'a dyn Fn(&[String], &Path) -> i32,
     /// how to restart Sonata (self_argv + "restart")
     pub restart: Vec<String>,
-    pub rust: Option<RustBuild>,
-    pub cargo: bool,
+    /// the cargo build kept between updates
+    pub target: PathBuf,
     pub say: &'a dyn Fn(&str),
-}
-
-/// The Rust build again, from the release just installed: its
-/// rust/install-rs.sh (cargo builds it, then it is installed over the old
-/// one). False when it stayed as it was (said why).
-fn update_rust(folder: &Path, tag: &str, s: &Steps) -> bool {
-    let Some(rb) = &s.rust else { return true };
-    let rust = folder.join("rust");
-    if !rust.join("install-rs.sh").is_file() {
-        (s.say)("This release has no Rust build (rust/install-rs.sh): the Rust one stays as it was.");
-        return false;
-    }
-    if !s.cargo {
-        (s.say)("cargo is missing: the Rust build stays as it was (install Rust, then run rust/install-rs.sh).");
-        return false;
-    }
-    (s.say)(&format!("Building Sonata {tag} in Rust…"));
-    // the build of the last update, in place: only what changed is compiled
-    let _ = std::fs::create_dir_all(&rb.target);
-    let link = rust.join("target");
-    let _ = std::fs::remove_dir_all(&link).or_else(|_| std::fs::remove_file(&link));
-    if let Err(e) = std::os::unix::fs::symlink(&rb.target, &link) {
-        (s.say)(&format!("Sonata: {e}"));
-    }
-    let argv = ["sh".to_string(), rust.join("install-rs.sh").to_string_lossy().into_owned()];
-    let code = (s.run)(&argv, &rust);
-    if code != 0 {
-        (s.say)(&format!("The Rust build stopped (exit {code}): the Rust session keeps the one it had."));
-        return false;
-    }
-    // install-rs.sh links the icon themes to the folder it ran from, here a
-    // download in the cache (cleaning the cache would take every icon away):
-    // the installed Sonata's own are the same ones, and stay
-    let icons = s.root.join("sonata2").join("data").join("icons");
-    if icons.is_dir() {
-        let l = rb.data.join("icons");
-        let _ = std::fs::remove_file(&l);
-        let _ = std::os::unix::fs::symlink(&icons, &l);
-    }
-    true
 }
 
 /// `sonata2 self-update [TAG]` (all but --check): download the release,
@@ -518,15 +433,17 @@ pub fn update(args: &[String], s: &Steps) -> i32 {
             return 1;
         }
     };
-    (s.say)(&format!("Installing Sonata {tag}…"));
-    let mut argv = vec!["bash".to_string(), folder.join("install.sh").to_string_lossy().into_owned()];
+    (s.say)(&format!("Building and installing Sonata {tag}…"));
+    // (install.sh builds with cargo: into the build kept from the last
+    //  update, so only what changed is compiled)
+    let _ = std::fs::create_dir_all(&s.target);
+    let mut argv = vec!["env".to_string(), format!("CARGO_TARGET_DIR={}", s.target.display()), "bash".into(), folder.join("install.sh").to_string_lossy().into_owned()];
     argv.extend(install_args(&s.root.to_string_lossy(), s.greeter).into_iter().map(String::from));
     let code = (s.run)(&argv, &folder);
     if code != 0 {
         (s.say)(&format!("The installer stopped (exit {code}). Sonata wasn't changed."));
         return code;
     }
-    update_rust(&folder, &tag, s);
     let _ = sonata_config::update(NAME, &json!({"notified": tag}));
     (s.run)(&s.restart, &s.root);
     (s.say)(&format!("Sonata {tag} is installed."));
@@ -537,8 +454,7 @@ fn run_status(argv: &[String], cwd: &Path) -> i32 {
     std::process::Command::new(&argv[0]).args(&argv[1..]).current_dir(cwd).status().map(|s| s.code().unwrap_or(1)).unwrap_or(1)
 }
 
-/// `sonata2 self-update [--check] [TAG]` (`sonata2-rs self-update`; in the
-/// Rust session the `sonata2` launcher hands it here).
+/// `sonata2 self-update [--check] [TAG]`.
 pub fn main(args: &[String]) -> i32 {
     let current = version();
     if args.first().map(String::as_str) == Some("--check") {
@@ -557,8 +473,7 @@ pub fn main(args: &[String]) -> i32 {
         download: &|rel| download(rel, &|t| println!("{t}")),
         run: &run_status,
         restart,
-        rust: rust_build(),
-        cargo: sonata_backend::run::which("cargo").is_some(),
+        target: build_cache(),
         say: &|t| println!("{t}"),
     };
     update(args, &steps)
@@ -610,35 +525,32 @@ mod tests {
         assert!(!newer(&version(), &version()));
     }
 
-    /// The installed Rust build looked for Sonata's package next to its own
-    /// copy of the catalogs (share/sonata2-rs/locale -> share/): its version
-    /// read "0.0.0" and every release was offered as an update.
+    /// The installed build's version read "0.0.0" once (it looked for the
+    /// Python package's __init__.py) and every release was offered as an
+    /// update: the version is the VERSION file this build was made from.
     #[test]
     fn test_installed_build_offered_every_release() {
-        let d = tempfile::tempdir().unwrap();
-        let share = d.path().join("home/.local/share");
-        let loc = share.join("sonata2-rs/locale");
-        std::fs::create_dir_all(&loc).unwrap();
-        let installed = share.join("sonata2");
-        let clone = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        // nothing installed: the clone this build was made from
-        assert_eq!(install_root_from(&loc, &[], &[installed.clone(), clone.clone()]), clone.canonicalize().unwrap());
-        // ~/.local/share/sonata2
-        std::fs::create_dir_all(installed.join("sonata2")).unwrap();
-        std::fs::write(installed.join("sonata2/__init__.py"), "").unwrap();
-        assert_eq!(install_root_from(&loc, &[], &[installed.clone(), clone.clone()]), installed.canonicalize().unwrap());
-        // the Python install its launcher names (SONATA_HOME), first
-        let pkg = d.path().join("opt/sonata2");
-        std::fs::create_dir_all(pkg.join("sonata2")).unwrap();
-        std::fs::write(pkg.join("sonata2/__init__.py"), "__version__ = \"9.1.0-beta\"   # CHANGELOG.md\n").unwrap();
-        let launcher = d.path().join("sonata2");
-        std::fs::write(&launcher, format!("#!/bin/sh\nSONATA_HOME=\"{}\"\nexec python3 -m sonata2 \"$@\"\n", pkg.display())).unwrap();
-        let root = install_root_from(&loc, &[launcher], &[installed, clone]);
-        assert_eq!(root, pkg.canonicalize().unwrap());
-        assert_eq!(version_in(&std::fs::read_to_string(root.join("sonata2/__init__.py")).unwrap()).as_deref(), Some("9.1.0-beta"));
-        // never "0.0.0"
+        assert_eq!(version(), std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../VERSION")).unwrap().trim());
         assert!(parse_version(&version()) > (0, 0, 0, 0, 0));
-        assert!(version_in(BUILT_INIT).is_some());
+    }
+
+    /// Sonata's folder: the installed one (a --dev install's link followed
+    /// to the clone, which then updates with git), else the clone.
+    #[test]
+    fn install_root_is_the_installed_folder_else_the_clone() {
+        let d = tempfile::tempdir().unwrap();
+        let clone = d.path().join("clone");
+        std::fs::create_dir_all(clone.join("tools")).unwrap();
+        std::fs::create_dir_all(clone.join(".git")).unwrap();
+        let share = d.path().join("share/sonata2-rs");
+        assert_eq!(install_root_from(Some(&share), &clone), clone.canonicalize().unwrap());
+        std::fs::create_dir_all(share.join("tools")).unwrap();
+        assert_eq!(install_root_from(Some(&share), &clone), share.canonicalize().unwrap());
+        assert!(!is_clone(&install_root_from(Some(&share), &clone)));
+        let dev = d.path().join("dev/sonata2-rs");
+        std::fs::create_dir_all(dev.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&clone, &dev).unwrap();
+        assert!(is_clone(&install_root_from(Some(&dev), &clone)));
     }
 
     #[test]
@@ -654,8 +566,8 @@ mod tests {
 
     #[test]
     fn install_args_and_terminal_commands() {
-        assert_eq!(install_args("/home/v/.local/share/sonata2", false), ["--yes", "--no-greeter"]);
-        assert_eq!(install_args("/usr/local/share/sonata2", true), ["--yes", "--system"]);
+        assert_eq!(install_args("/home/v/.local/share/sonata2-rs", false), ["--yes", "--no-greeter"]);
+        assert_eq!(install_args("/usr/local/share/sonata2-rs", true), ["--yes", "--system"]);
         let argv = vec!["sonata2".to_string()];
         let cmd = terminal_command_for("v0.2.0", "/home/v/GitHub/sonata2", true, &argv);
         assert!(cmd.contains("git -C /home/v/GitHub/sonata2 pull --ff-only") && cmd.contains("restart"));
@@ -768,20 +680,17 @@ mod tests {
             Fake { dir: tempfile::tempdir().unwrap(), ran: Default::default(), said: Default::default() }
         }
 
-        fn release(&self, rust: bool) -> Release {
+        fn release(&self) -> Release {
             let src = tempfile::tempdir().unwrap();
-            let mut members: Vec<(&str, u8, &str, &[u8])> = vec![("sonata2-v9/install.sh", b'0', "", b"#!/bin/sh\n"), ("sonata2-v9/sonata2/data/icons/a.svg", b'0', "", b"<svg/>")];
-            if rust {
-                members.push(("sonata2-v9/rust/install-rs.sh", b'0', "", b"#!/bin/sh\n"));
-            }
+            let members: Vec<(&str, u8, &str, &[u8])> = vec![("sonata2-v9/install.sh", b'0', "", b"#!/bin/sh\n"), ("sonata2-v9/data/icons/a.svg", b'0', "", b"<svg/>")];
             let tb = tarball_of(src.path(), &members);
             let url = serve_once(std::fs::read(tb).unwrap());
             Release { tag: "v9.0.0".into(), name: String::new(), body: String::new(), url: String::new(), tarball: url }
         }
 
-        fn update(&self, rel: Release, rust: Option<RustBuild>, cargo: bool, code_of: &dyn Fn(&str) -> i32) -> i32 {
-            let root = self.dir.path().join("share/sonata2");
-            std::fs::create_dir_all(root.join("sonata2/data/icons")).unwrap();
+        fn update(&self, rel: Release, code_of: &dyn Fn(&str) -> i32) -> i32 {
+            let root = self.dir.path().join("share/sonata2-rs");
+            std::fs::create_dir_all(root.join("tools")).unwrap();
             let cache = self.dir.path().join("cache");
             let steps = Steps {
                 current: "0.1.0-alpha".into(),
@@ -794,90 +703,59 @@ mod tests {
                     code_of(argv.last().unwrap())
                 },
                 restart: vec!["sonata2".into(), "restart".into()],
-                rust,
-                cargo,
+                target: self.dir.path().join("rust-target"),
                 say: &|t| self.said.borrow_mut().push(t.into()),
             };
             update(&[], &steps)
         }
-
-        fn rust_build(&self) -> RustBuild {
-            let data = self.dir.path().join("data/sonata2-rs");
-            std::fs::create_dir_all(&data).unwrap();
-            RustBuild { bin: self.dir.path().join("bin"), data, target: self.dir.path().join("rust-target") }
-        }
     }
 
-    /// `sonata2 self-update` was the one command the Rust build lacked:
-    /// in the Rust session Software Update's Update button ran the Python
-    /// one, which never rebuilt the Rust build -- the session went on
-    /// running the old Sonata. It downloads the release (here from a local
-    /// server), runs its install.sh, builds the Rust one again with the
-    /// release's rust/install-rs.sh, then restarts.
+    /// An update runs the release's install.sh -- which builds Sonata with
+    /// cargo and installs it -- into the build kept between updates (each
+    /// release is a new folder: building it all from nothing took many
+    /// minutes), then restarts Sonata.
     #[test]
-    fn test_self_update_missing_from_the_rust_build() {
+    fn test_self_update_builds_and_installs_the_release() {
         let f = Fake::new();
-        let rb = f.rust_build();
-        assert_eq!(f.update(f.release(true), Some(rb.clone()), true, &|_| 0), 0);
+        assert_eq!(f.update(f.release(), &|_| 0), 0);
         let ran = f.ran.borrow();
-        let names: Vec<String> = ran.iter().map(|(a, _)| Path::new(&a[1]).file_name().unwrap().to_string_lossy().into_owned()).collect();
-        assert_eq!(names, ["install.sh", "install-rs.sh", "restart"]);
-        assert_eq!(ran[0].0[0], "bash");
-        assert_eq!(&ran[0].0[2..], ["--yes", "--no-greeter"]);
-        assert!(ran[1].1.ends_with("sonata2-v9/rust"));
-        assert!(ran[1].1.starts_with(f.dir.path().join("cache/v9.0.0")));
-        // the build kept between updates; the icons are the installed Sonata's
-        assert_eq!(std::fs::read_link(ran[1].1.join("target")).unwrap(), rb.target);
-        assert_eq!(std::fs::read_link(rb.data.join("icons")).unwrap(), f.dir.path().join("share/sonata2/sonata2/data/icons"));
+        assert_eq!(ran.len(), 2);
+        assert_eq!(&ran[0].0[..2], ["env".to_string(), format!("CARGO_TARGET_DIR={}", f.dir.path().join("rust-target").display())]);
+        assert_eq!(ran[0].0[2], "bash");
+        assert!(ran[0].0[3].ends_with("sonata2-v9/install.sh"));
+        assert_eq!(&ran[0].0[4..], ["--yes", "--no-greeter"]);
+        assert!(ran[0].1.starts_with(f.dir.path().join("cache/v9.0.0")));
+        assert!(f.dir.path().join("rust-target").is_dir());
+        assert_eq!(ran[1].0, ["sonata2", "restart"]);
         assert_eq!(f.said.borrow().last().unwrap(), "Sonata v9.0.0 is installed.");
         assert_eq!(sonata_config::load(NAME, &defaults())["notified"], "v9.0.0");
     }
 
-    #[test]
-    fn rust_build_kept_when_it_cannot_be_built() {
-        // no cargo: Sonata updated, the Rust build said to stay
-        let f = Fake::new();
-        assert_eq!(f.update(f.release(true), Some(f.rust_build()), false, &|_| 0), 0);
-        assert_eq!(f.ran.borrow().len(), 2); // install.sh, restart
-        assert!(f.said.borrow().iter().any(|t| t.starts_with("cargo is missing")));
-        // a release without rust/
-        let f = Fake::new();
-        assert_eq!(f.update(f.release(false), Some(f.rust_build()), true, &|_| 0), 0);
-        assert!(f.said.borrow().iter().any(|t| t.starts_with("This release has no Rust build")));
-        // the build failing: Sonata itself is still updated and restarted
-        let f = Fake::new();
-        assert_eq!(f.update(f.release(true), Some(f.rust_build()), true, &|a| if a.ends_with("install-rs.sh") { 101 } else { 0 }), 0);
-        assert!(f.said.borrow().iter().any(|t| t.contains("exit 101")));
-        assert_eq!(f.ran.borrow().last().unwrap().0, ["sonata2", "restart"]);
-        // no Rust build installed: only the Python Sonata
-        let f = Fake::new();
-        assert_eq!(f.update(f.release(true), None, true, &|_| 0), 0);
-        assert_eq!(f.ran.borrow().len(), 2);
-    }
-
+    /// No cargo, or a build that fails: install.sh stops before it changes
+    /// anything, and Sonata isn't restarted.
     #[test]
     fn installer_failing_changes_nothing() {
         let f = Fake::new();
-        assert_eq!(f.update(f.release(true), Some(f.rust_build()), true, &|a| if a == "--no-greeter" { 3 } else { 0 }), 3);
-        assert_eq!(f.ran.borrow().len(), 1); // no Rust build, no restart
+        assert_eq!(f.update(f.release(), &|a| if a == "--no-greeter" { 3 } else { 0 }), 3);
+        assert_eq!(f.ran.borrow().len(), 1); // no restart
         assert!(f.said.borrow().last().unwrap().contains("Sonata wasn't changed"));
-        // up to date / a clone: nothing run
+        // up to date: nothing run
         let f = Fake::new();
-        let mut rel = f.release(false);
+        let mut rel = f.release();
         rel.tag = "0.1.0-alpha".into();
-        assert_eq!(f.update(rel, None, true, &|_| 0), 0);
+        assert_eq!(f.update(rel, &|_| 0), 0);
         assert!(f.ran.borrow().is_empty());
     }
 
     #[test]
     fn extracts_the_release_and_never_writes_outside() {
         let dir = tempfile::tempdir().unwrap();
-        let tb = tarball(dir.path(), &[("sonata2-abc/install.sh", b"#!/bin/sh\n"), ("sonata2-abc/sonata2/__init__.py", b""), ("../../evil.sh", b"x"), ("/abs.sh", b"x")]);
+        let tb = tarball(dir.path(), &[("sonata2-abc/install.sh", b"#!/bin/sh\n"), ("sonata2-abc/VERSION", b""), ("../../evil.sh", b"x"), ("/abs.sh", b"x")]);
         let dest = dir.path().join("a").join("b");
         std::fs::create_dir_all(&dest).unwrap();
         extract(&tb, &dest).unwrap();
         assert!(dest.join("sonata2-abc/install.sh").exists());
-        assert!(dest.join("sonata2-abc/sonata2/__init__.py").exists());
+        assert!(dest.join("sonata2-abc/VERSION").exists());
         assert!(!dir.path().join("evil.sh").exists() && !dir.path().join("a/evil.sh").exists());
     }
 

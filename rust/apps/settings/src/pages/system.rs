@@ -29,6 +29,13 @@ mod privacy;
 #[path = "system_about.rs"]
 mod about;
 
+/// What Settings' USB protection "Set Up…" runs as root (USBGuard allowing
+/// every device while unlocked): install.sh runs the same.
+#[cfg(feature = "system")]
+pub fn usb_setup_script() -> String {
+    privacy::usb_setup()
+}
+
 /// Read a row back later from its own on_change (it is made after the
 /// closure): a weak slot, so the row doesn't keep itself alive.
 type Slot<T> = Rc<RefCell<glib::WeakRef<T>>>;

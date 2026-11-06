@@ -6,12 +6,10 @@
 //! file that is missing, unreadable or not a JSON object reads as "nothing
 //! stored": a file an older (or the Python) Sonata wrote keeps working.
 //!
-//! **Side by side** (docs/RUST_PORT.md): while the Rust build is on trial
-//! next to the installed Python Sonata, it reads `~/.config/sonata2-rs/`
-//! first and then `~/.config/sonata2/` (your real look and settings), and
-//! writes only to `~/.config/sonata2-rs/`. The Python Sonata's files are
-//! never written. `SONATA2_RS_SIDE_BY_SIDE=0` is the final mode: read and
-//! write `~/.config/sonata2/`, as the component that replaced Python's.
+//! The Rust build is the only Sonata: it reads and writes
+//! `~/.config/sonata2/`, the folder the Python Sonata used (its files keep
+//! working as they are). What the Rust build kept apart while it was on
+//! trial (`~/.config/sonata2-rs/`) is carried over once by [`migrate`].
 //!
 //! ```no_run
 //! use serde_json::json;
@@ -25,10 +23,19 @@ use std::io::{self, Write};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
-/// The folder the Python Sonata uses (and the Rust build, once final).
+pub mod migrate;
+
+/// Sonata's settings folder in $XDG_CONFIG_HOME.
 pub const NAME: &str = "sonata2";
-/// The trial build's own folder, next to it.
-pub const TRIAL_NAME: &str = "sonata2-rs";
+
+/// The VERSION file at the top of the clone, built in: "0.22.0-alpha".
+const VERSION_FILE: &str = include_str!("../../../../VERSION");
+
+/// Sonata's version (the one place it is kept: VERSION; CHANGELOG.md says
+/// what changed in it).
+pub fn version() -> &'static str {
+    VERSION_FILE.trim()
+}
 
 /// `$XDG_CONFIG_HOME`, or `~/.config`.
 pub fn config_home() -> PathBuf {
@@ -42,25 +49,15 @@ fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
 }
 
-/// True while the Rust build runs next to the Python Sonata (the default
-/// until a component replaces its Python version).
-pub fn side_by_side() -> bool {
-    !matches!(std::env::var("SONATA2_RS_SIDE_BY_SIDE").as_deref(), Ok("0") | Ok("false") | Ok("no"))
-}
-
-/// Where settings are written: `sonata2-rs/` on trial, `sonata2/` once final.
+/// Where settings are written: `$XDG_CONFIG_HOME/sonata2`.
 pub fn write_dir() -> PathBuf {
-    config_home().join(if side_by_side() { TRIAL_NAME } else { NAME })
+    config_home().join(NAME)
 }
 
-/// Where settings are read from, first match wins.
+/// Where settings are read from, first match wins (one folder; a list
+/// since the trial build read two).
 pub fn read_dirs() -> Vec<PathBuf> {
-    let home = config_home();
-    if side_by_side() {
-        vec![home.join(TRIAL_NAME), home.join(NAME)]
-    } else {
-        vec![home.join(NAME)]
-    }
+    vec![write_dir()]
 }
 
 /// The file `<name>.json` is read from now: the first of [`read_dirs`] that has it.
@@ -332,34 +329,30 @@ fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// An app's own data, never shared with the Python app on trial:
-/// `$XDG_DATA_HOME/sonata2-rs-data/<app>` then (TextEdit's session: two
-/// TextEdits writing one would undo each other's windows), `sonata2-data`
-/// once final. Created.
-pub fn own_data_dir(app: &str) -> PathBuf {
-    if !side_by_side() {
-        return data_dir(app);
-    }
-    let base = match std::env::var_os("XDG_DATA_HOME") {
-        Some(v) if !v.is_empty() => PathBuf::from(v),
-        _ => home().join(".local").join("share"),
-    };
-    let dir = base.join("sonata2-rs-data").join(app);
-    let _ = fs::create_dir_all(&dir);
-    dir
+/// One of Sonata's own files (data/<name> in the clone: wallpapers, sounds,
+/// decor...): in the install next to this binary
+/// (`<prefix>/share/sonata2-rs/data/<name>`) whenever there is one -- even
+/// for a name it lacks: an installed binary never reaches into the tree it
+/// was built from (the menu bar wrote the build tree's title-bar pictures
+/// into wayfire-overrides.ini, and a binary built elsewhere left Vini's
+/// window buttons invisible) -- else this clone's (development, tests).
+pub fn data_path(name: &str) -> PathBuf {
+    data_path_in(installed_data().as_deref(), name)
 }
 
-/// One of Sonata's own files (data/<name> in the clone: wallpapers, sounds...):
-/// next to the installed binary (`<prefix>/share/sonata2-rs/data/<name>`),
-/// else this clone's.
-pub fn data_path(name: &str) -> PathBuf {
-    if let Some(prefix) = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(PathBuf::from)) {
-        let p = prefix.join("share").join("sonata2-rs").join("data").join(name);
-        if p.exists() {
-            return p;
-        }
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../data").join(name)
+/// `<prefix>/share/sonata2-rs/data` next to this binary, when it is there.
+pub fn installed_data() -> Option<PathBuf> {
+    let prefix = std::env::current_exe().ok()?.parent()?.parent()?.to_path_buf();
+    Some(prefix.join("share").join("sonata2-rs").join("data")).filter(|d| d.is_dir())
+}
+
+/// The clone's data/ (development).
+pub fn clone_data() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../data")
+}
+
+fn data_path_in(installed: Option<&Path>, name: &str) -> PathBuf {
+    installed.map(Path::to_path_buf).unwrap_or_else(clone_data).join(name)
 }
 
 /// Finder's "Set Desktop Picture" (prefs.set_wallpaper): the picture for

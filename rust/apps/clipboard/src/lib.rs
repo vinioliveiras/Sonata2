@@ -36,19 +36,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub fn clipboard_app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.clipboard"
-    } else {
-        "io.github.vinioliveiras.sonata2.clipboard"
-    }
+    "io.github.vinioliveiras.sonata2.clipboard"
 }
 
 pub fn emoji_app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.emoji"
-    } else {
-        "io.github.vinioliveiras.sonata2.emoji"
-    }
+    "io.github.vinioliveiras.sonata2.emoji"
 }
 
 /// One resident picker per process: built on the first activation, opened
@@ -86,15 +78,12 @@ pub fn run_clipboard(args: &[String]) -> glib::ExitCode {
         |app| {
             sonata_ui::css::register_module("shell/clip_picker.py");
             // on trial the Python menu bar watches the clipboard (see above)
-            let history = clipboard::History::new(!sonata_config::side_by_side());
+            let history = clipboard::History::new(true);
             let history_c = history.clone();
             app.connect_shutdown(move |_| history_c.stop());
             clip_picker::ClipboardPicker::new(app, history)
         },
         |p| {
-            if sonata_config::side_by_side() {
-                p.history().snapshot();
-            }
             p.open();
         },
     )

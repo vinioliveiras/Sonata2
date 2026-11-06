@@ -55,7 +55,26 @@ pub fn wallpaper_uri(dark: bool) -> String {
     let data = sonata_config::stored("system");
     let get = |k: &str| data.get(&format!("{BG}/{k}")).and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from);
     let uri = (if dark { get("picture-uri-dark") } else { None }).or_else(|| get("picture-uri")).unwrap_or_default();
-    if usable_picture(&uri) { uri } else { default_uri(dark) }
+    if usable_picture(&uri) {
+        return uri;
+    }
+    stock_moved(&uri, &sonata_config::data_path("wallpapers")).filter(|u| usable_picture(u)).unwrap_or_else(|| default_uri(dark))
+}
+
+/// One of Sonata's own wallpapers named by where an older install kept it
+/// (the Python Sonata's ~/.local/share/sonata2/sonata2/data/wallpapers, the
+/// Rust trial's ~/.local/share/sonata2-rs/wallpapers, a clone's
+/// sonata2/data/wallpapers): the same picture in this install's folder.
+/// The user's choice in system.json stays as it is.
+pub fn stock_moved(uri: &str, folder: &Path) -> Option<String> {
+    let path = path_of(uri)?;
+    let name = path.file_name()?;
+    let parent = path.parent()?;
+    if parent.file_name()? != "wallpapers" || parent == folder {
+        return None;
+    }
+    let here = folder.join(name);
+    here.is_file().then(|| uri_of(&here))
 }
 
 /// The wallpaper as a picture: a video's poster (made the first time: call
@@ -209,5 +228,23 @@ mod tests {
         image::RgbImage::from_pixel(8, 8, image::Rgb([255, 255, 255])).save(&w).unwrap();
         assert!(brightness(&b) < 1.0 && brightness(&w) > 254.0);
         assert_eq!(brightness(&d.path().join("none.jpg")), 255.0);
+    }
+
+    /// Upgrading from the Python Sonata: the desktop picture chosen from
+    /// Sonata's own wallpapers was a path inside the old install folder,
+    /// which the installer moves to the backup -- the desktop fell back to
+    /// Mountains. The same picture is found in this install's folder.
+    #[test]
+    fn test_stock_wallpaper_lost_after_the_upgrade() {
+        let d = tempfile::tempdir().unwrap();
+        let folder = d.path().join("share/sonata2-rs/data/wallpapers");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("pier.jpg"), b"jpg").unwrap();
+        let old = "file:///home/v/.local/share/sonata2/sonata2/data/wallpapers/pier.jpg";
+        assert_eq!(stock_moved(old, &folder), Some(uri_of(&folder.join("pier.jpg"))));
+        assert_eq!(stock_moved("file:///home/v/.local/share/sonata2-rs/wallpapers/pier.jpg", &folder), Some(uri_of(&folder.join("pier.jpg"))));
+        // the user's own pictures, and names Sonata has no picture for: no
+        assert_eq!(stock_moved("file:///home/v/Pictures/pier.jpg", &folder), None);
+        assert_eq!(stock_moved("file:///old/wallpapers/mine.jpg", &folder), None);
     }
 }

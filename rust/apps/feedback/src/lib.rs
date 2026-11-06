@@ -24,11 +24,7 @@ const WIDTH: i32 = 560;
 const HEIGHT: i32 = 650;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.feedback"
-    } else {
-        "io.github.vinioliveiras.sonata2.feedback"
-    }
+    "io.github.vinioliveiras.sonata2.feedback"
 }
 
 /// Files shows the item selected in its folder (FileManager1), else the folder opens.

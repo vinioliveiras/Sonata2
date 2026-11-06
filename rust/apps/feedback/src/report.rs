@@ -24,11 +24,9 @@ const CRASH: &str = "last-crash";
 /// one line per crash: "<epoch> <kind> <exit code>"
 const HISTORY: &str = "crashes.log";
 
-/// The Python Sonata's version (sonata2/__init__.py: the one being reported on).
+/// Sonata's version (the VERSION file).
 pub fn version() -> String {
-    let src = include_str!("../../../../sonata2/__init__.py");
-    let v = src.lines().find_map(|l| l.strip_prefix("__version__ = \"").and_then(|r| r.split('"').next())).unwrap_or("?");
-    format!("{v} (Rust {})", env!("CARGO_PKG_VERSION"))
+    sonata_config::version().to_string()
 }
 
 /// ~/Sonata Reports (created).
@@ -243,37 +241,9 @@ pub fn system_info() -> Vec<(&'static str, String)> {
 }
 
 /// doctor.txt: the checks and the last session's errors (report_text, as
-/// report.py puts in). The session being reported on is checked: in the
-/// Rust session this build's own doctor, in-process (the Python one may not
-/// even be installed); on trial the Python Sonata's, whose `doctor` writes
-/// the same report_text to its logs' folder -- read back from there, since
-/// what it prints has no "Last session" part.
+/// report.py puts in), from this build's own doctor, in-process.
 fn doctor_text() -> String {
-    if !sonata_config::side_by_side() {
-        return sonata_session::doctor::report_text(&sonata_session::doctor::build());
-    }
-    let launcher = std::env::var("SONATA2_LAUNCHER").ok().filter(|l| Path::new(l).exists()).unwrap_or_else(|| "sonata2".into());
-    if sonata_backend::run::which(&launcher).is_none() {
-        return "doctor: the Python Sonata isn't installed\n".into();
-    }
-    let saved = log_dir().join("doctor.txt");
-    let started = std::time::SystemTime::now();
-    let out = std::process::Command::new(&launcher).arg("doctor").stdin(std::process::Stdio::null()).output();
-    match out {
-        Ok(o) => python_doctor_text(&String::from_utf8_lossy(&o.stdout), &saved, started),
-        Err(e) => format!("doctor failed: {e}\n"),
-    }
-}
-
-/// The Python doctor's report: its doctor.txt when this run wrote it,
-/// else what it printed (colours taken out).
-pub fn python_doctor_text(printed: &str, saved: &Path, started: std::time::SystemTime) -> String {
-    let fresh = std::fs::metadata(saved).and_then(|m| m.modified()).is_ok_and(|t| t + std::time::Duration::from_secs(1) >= started);
-    if let Some(text) = fresh.then(|| std::fs::read_to_string(saved).ok()).flatten().filter(|t| !t.trim().is_empty()) {
-        return text;
-    }
-    let plain = regex_lite_strip(printed);
-    if plain.trim().is_empty() { "doctor: no output\n".into() } else { plain }
+    sonata_session::doctor::report_text(&sonata_session::doctor::build())
 }
 
 /// The text without terminal colour codes (ESC [ ... m).
@@ -514,23 +484,6 @@ mod tests {
         assert_eq!(history_text(), "2 crashes in the last 7 days: 1 AMD reset, 1 NVIDIA memory");
     }
 
-    /// The Python Feedbacker's doctor.txt has the checks and the last
-    /// session's error lines (doctor.report_text); the Rust one put in what
-    /// `sonata2 doctor` printed -- no "Last session" part, plus "Saved to".
-    #[test]
-    fn test_report_doctor_missed_the_last_session() {
-        let d = tempfile::tempdir().unwrap();
-        let saved = d.path().join("doctor.txt");
-        let before = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
-        std::fs::write(&saved, "[  ok] Wayfire\n\nLast session:\n--- session.log ---\nEE boom\n").unwrap();
-        let text = python_doctor_text("\x1b[32m[  ok]\x1b[0m Wayfire\n\nSaved to /x/doctor.txt\n", &saved, before);
-        assert!(text.contains("Last session:") && !text.contains("Saved to"));
-        // an old doctor.txt (that run didn't write one): what it printed
-        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
-        assert_eq!(python_doctor_text("\x1b[32mok\x1b[0m\n", &saved, later), "ok\n");
-        assert_eq!(python_doctor_text("", &d.path().join("none"), before), "doctor: no output\n");
-    }
-
     /// A report that couldn't be saved said "Permission denied (os error
     /// 13)"; the Python Feedbacker says "Permission denied".
     #[test]
@@ -546,8 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn the_python_version() {
-        assert!(version().contains("(Rust "));
-        assert!(!version().starts_with('?'));
+    fn the_version_is_sonatas() {
+        assert_eq!(version(), std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../VERSION")).unwrap().trim());
     }
 }

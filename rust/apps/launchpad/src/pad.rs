@@ -272,7 +272,7 @@ impl Pad {
         self.win.add_controller(keys);
 
         if !self.preview {
-            let ns = if sonata_config::side_by_side() { "sonata2rs-launchpad" } else { "sonata2-launchpad" };
+            let ns = "sonata2-launchpad";
             self.layer.set(sonata_shell::layer::overlay_fullscreen(self.win.upcast_ref(), ns));
         }
         let w = Rc::downgrade(self);

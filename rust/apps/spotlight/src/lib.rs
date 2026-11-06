@@ -94,11 +94,7 @@ pub fn end_warm_up(win: &gtk::Window, warming: &Cell<bool>) {
 const FILES_ID: &str = "io.github.vinioliveiras.sonata2.files.desktop";
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.spotlight"
-    } else {
-        "io.github.vinioliveiras.sonata2.spotlight"
-    }
+    "io.github.vinioliveiras.sonata2.spotlight"
 }
 
 /// (margin above the panel, results height) on a display this tall: 22 %

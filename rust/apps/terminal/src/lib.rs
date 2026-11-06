@@ -33,11 +33,7 @@ const PALETTE_DARK: [&str; 16] = ["#4d4d4d", "#ff6b6b", "#5fd068", "#e5c07b", "#
 const PALETTE: [&str; 16] = ["#000000", "#990000", "#00a600", "#999900", "#0000b2", "#b200b2", "#00a6b2", "#bfbfbf", "#666666", "#e50000", "#00d900", "#e5e500", "#0000ff", "#e500e5", "#00e5e5", "#e5e5e5"];
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.terminal"
-    } else {
-        "io.github.vinioliveiras.sonata2.terminal"
-    }
+    "io.github.vinioliveiras.sonata2.terminal"
 }
 
 fn cfg() -> serde_json::Map<String, serde_json::Value> {

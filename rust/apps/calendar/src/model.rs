@@ -426,27 +426,10 @@ pub fn migrate_old_folder(base: &Path) -> bool {
     std::fs::create_dir_all(base.join("sonata2-data")).is_ok() && std::fs::rename(from, &new).is_ok()
 }
 
-/// The folder: on trial its own copy of the Python Calendar's files, made once.
+/// The folder: ~/.local/share/sonata2-data/calendar.
 pub fn data_dir() -> PathBuf {
-    if !sonata_config::side_by_side() {
-        // (on trial the Python Calendar's own folders are never written)
-        migrate_old_folder(&glib::user_data_dir());
-    }
-    let own = sonata_config::own_data_dir("calendar");
-    let shared = sonata_config::data_dir("calendar");
-    if own != shared && is_empty_dir(&own) {
-        for e in std::fs::read_dir(&shared).into_iter().flatten().flatten() {
-            let n = e.file_name();
-            if n.to_string_lossy().ends_with(".ics") {
-                let _ = std::fs::copy(e.path(), own.join(n));
-            }
-        }
-    }
-    own
-}
-
-fn is_empty_dir(p: &Path) -> bool {
-    std::fs::read_dir(p).map(|mut r| r.next().is_none()).unwrap_or(true)
+    migrate_old_folder(&glib::user_data_dir());
+    sonata_config::data_dir("calendar")
 }
 
 #[cfg(test)]

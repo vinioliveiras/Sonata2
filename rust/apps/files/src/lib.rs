@@ -47,13 +47,9 @@ pub(crate) fn gtk_here() -> bool {
     gtk::init().is_ok()
 }
 
-/// The app id: on trial its own (`sonata2rs`), so both Files can be open.
+/// The app id (its D-Bus name and Wayland app id).
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.files"
-    } else {
-        "io.github.vinioliveiras.sonata2.files"
-    }
+    "io.github.vinioliveiras.sonata2.files"
 }
 
 /// A new Files window per launch (like Finder's File > New Window); a file
@@ -153,9 +149,7 @@ pub fn run(args: &[String]) -> glib::ExitCode {
                 sonata_ui::force_appearance(f);
             }
             sonata_ui::css::register_module("files/window.py");
-            if !sonata_config::side_by_side() {
-                serve_file_manager(app);
-            }
+            serve_file_manager(app);
         }
     };
     let s = start.clone();

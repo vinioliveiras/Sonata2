@@ -14,7 +14,6 @@ thread_local! {
 fn lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
     for dir in sonata_config::read_dirs() {
         let _ = std::fs::remove_file(dir.join("webapps.json"));
         let _ = std::fs::remove_file(dir.join("icons.json"));
@@ -74,11 +73,9 @@ fn test_urlsplit() {
 fn test_create_writes_its_own_app() {
     let _l = lock();
     installed(&[]);
-    std::env::set_var("SONATA2_RS_SIDE_BY_SIDE", "0");
     let wid = create("WhatsApp", "web.whatsapp.com", Some("sonata2"), false, false, None, None).unwrap();
     let path = applications_dir().join(format!("{}.desktop", desktop_id(&wid)));
     let t = std::fs::read_to_string(&path).unwrap_or_default();
-    std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
     let _ = std::fs::remove_file(&path);
     assert!(wid.len() == 11 && is_own_id(&wid), "{wid}");
     assert!(t.contains(&format!("Exec=sonata2 webapp {wid}\n")));
@@ -90,18 +87,6 @@ fn test_create_writes_its_own_app() {
     assert!(desktop_id(&wid).starts_with("sonata2-")); // Sonata's own: no "Move to Trash"
 }
 
-/// On trial the sonata2-webapp-* entries stay the Python Dock's: none written.
-#[test]
-fn trial_writes_no_desktop_entry() {
-    let _l = lock();
-    installed(&[]);
-    let wid = create("Site", "example.org", Some("sonata2"), false, false, None, None).unwrap();
-    assert_eq!(write_desktop(&wid, None), None);
-    assert!(!applications_dir().join(format!("{}.desktop", desktop_id(&wid))).exists());
-    assert!(sonata_config::config_home().join(sonata_config::TRIAL_NAME).join("webapps.json").exists());
-    assert!(!sonata_config::config_home().join(sonata_config::NAME).join("webapps.json").exists());
-}
-
 #[test]
 fn test_remove_takes_its_data() {
     let _l = lock();
@@ -111,25 +96,6 @@ fn test_remove_takes_its_data() {
     remove(&wid);
     assert!(get(&wid).is_none());
     assert!(!data_dir(&wid).exists());
-}
-
-/// Removed on trial while the Python Sonata still lists it: its login stays.
-#[test]
-fn trial_remove_keeps_pythons_login() {
-    let _l = lock();
-    let wid = "w0000000abc";
-    let py = sonata_config::config_home().join(sonata_config::NAME);
-    std::fs::create_dir_all(&py).unwrap();
-    std::fs::write(py.join("webapps.json"), format!("{{\"apps\": {{\"{wid}\": {{\"name\": \"Zap\", \"url\": \"https://web.whatsapp.com/\"}}}}}}")).unwrap();
-    std::fs::create_dir_all(data_dir(wid)).unwrap();
-    std::fs::write(data_dir(wid).join("cookies.sqlite"), b"").unwrap();
-    assert!(get(wid).is_some()); // the Python Sonata's, read on trial
-    remove(wid);
-    let gone_here = get(wid).is_none();
-    let kept = data_dir(wid).join("cookies.sqlite").exists();
-    let _ = std::fs::remove_file(py.join("webapps.json"));
-    let _ = std::fs::remove_dir_all(data_dir(wid));
-    assert!(gone_here && kept);
 }
 
 #[test]

@@ -37,11 +37,7 @@ const SIDEBAR_W: i32 = 280;
 const BAR_HEIGHT: i32 = 22;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.diskutil"
-    } else {
-        "io.github.vinioliveiras.sonata2.diskutil"
-    }
+    "io.github.vinioliveiras.sonata2.diskutil"
 }
 
 /// diskutil's CSS, its swatch colours from the segment tokens.

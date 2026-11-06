@@ -192,9 +192,6 @@ impl Rules {
     /// already answers Ctrl+Super+F and puts games in full screen -- a
     /// second copy would toggle every window twice.
     pub fn start() -> Option<Rc<Self>> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         Some(Self::with(Rc::new(wfevents::WayfireIpc::default()), wfevents::main_loop_later()))
     }
 
@@ -465,12 +462,5 @@ mod tests {
         ipc.send(json!({"event": "view-mapped", "view": v2}));
         run(&timers);
         assert!(ipc.sent.borrow().is_empty()); // no automatic full screen any more
-    }
-
-    #[test]
-    fn rules_not_started_on_trial() {
-        let _e = crate::testenv::env();
-        std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
-        assert!(Rules::start().is_none());
     }
 }

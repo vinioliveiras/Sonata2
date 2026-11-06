@@ -111,7 +111,7 @@ impl Notifications {
     /// The session's notification server -- or, on trial, the same without
     /// the bus name (see the crate's doc).
     pub fn new(app: &gtk::Application) -> Rc<Self> {
-        Self::with_mode(app, !sonata_config::side_by_side())
+        Self::with_mode(app, true)
     }
 
     /// `serving`: take org.freedesktop.Notifications, publish the Dock's
@@ -219,7 +219,7 @@ fn samples(server: &Server) {
 pub fn run(args: &[String]) -> glib::ExitCode {
     let preview = args.iter().any(|a| a == "--preview");
     let open_center = args.iter().any(|a| a == "--center");
-    let id = if sonata_config::side_by_side() { "io.github.vinioliveiras.sonata2rs.notifications" } else { "io.github.vinioliveiras.sonata2.notifications" };
+    let id = "io.github.vinioliveiras.sonata2.notifications";
     let app = adw::Application::builder().application_id(id).build();
     let keep: Rc<RefCell<Option<Rc<Notifications>>>> = Rc::default();
     app.connect_activate(move |app| {
@@ -228,7 +228,7 @@ pub fn run(args: &[String]) -> glib::ExitCode {
         }
         sonata_ui::setup();
         sonata_ui::icons::setup();
-        let nc = Notifications::with_mode(app.upcast_ref(), !preview && !sonata_config::side_by_side());
+        let nc = Notifications::with_mode(app.upcast_ref(), !preview);
         if preview {
             samples(nc.server());
         }

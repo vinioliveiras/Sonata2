@@ -349,9 +349,6 @@ pub fn refreshed_blur_rule(cur: &str, light: bool, parts: &[(&str, sonata_ui::gl
 /// writes Wayfire's config). Never on trial: the trial build writes no
 /// Wayfire settings of the Python Sonata, which refreshes the rule itself.
 pub fn refresh_blur_rule() -> bool {
-    if sonata_config::side_by_side() {
-        return false;
-    }
     let cur = sonata_backend::wfconfig::get("blur", "blur_by_default", "");
     match refreshed_blur_rule(&cur, crate::gamemode::light_path().exists(), &sonata_ui::glass::settings()) {
         Some(want) => sonata_backend::wfconfig::set("blur", "blur_by_default", &want),

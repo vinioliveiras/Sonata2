@@ -21,7 +21,7 @@ fn env_dir(var: &str, fallback: &str) -> PathBuf {
 }
 
 fn name() -> &'static str {
-    if sonata_config::side_by_side() { "sonata2-rs" } else { "sonata2" }
+    "sonata2"
 }
 
 /// The flag file Settings > About > Logs writes (the Python Sonata's).

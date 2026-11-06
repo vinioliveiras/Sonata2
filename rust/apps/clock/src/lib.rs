@@ -12,11 +12,7 @@ pub mod window;
 #[cfg(test)]
 mod testenv;
 
-/// The app id: on trial its own (`sonata2rs`), so both Clocks can be open.
+/// The app id (its D-Bus name and Wayland app id).
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.clock"
-    } else {
-        "io.github.vinioliveiras.sonata2.clock"
-    }
+    "io.github.vinioliveiras.sonata2.clock"
 }

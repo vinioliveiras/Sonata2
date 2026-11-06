@@ -15,11 +15,7 @@ pub mod window;
 #[cfg(test)]
 pub(crate) static TEST_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The app id: on trial its own (`sonata2rs`), so both TextEdits can be open.
+/// The app id (its D-Bus name and Wayland app id).
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.textedit"
-    } else {
-        "io.github.vinioliveiras.sonata2.textedit"
-    }
+    "io.github.vinioliveiras.sonata2.textedit"
 }

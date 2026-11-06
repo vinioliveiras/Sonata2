@@ -174,9 +174,6 @@ pub struct Housekeeping {
 
 impl Housekeeping {
     pub fn start() -> Option<Self> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         let srcs: Rc<RefCell<Vec<glib::SourceId>>> = Rc::default();
         let first = glib::timeout_add_seconds_local(FIRST_S, {
             let srcs = Rc::downgrade(&srcs);

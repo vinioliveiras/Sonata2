@@ -5,13 +5,8 @@ pub mod engine;
 #[cfg(feature = "gui")]
 pub mod window;
 
-/// The app id: on trial next to the Python Sonata, its own
-/// (`sonata2rs`), so both Calculators can be open at once.
+/// The app id (its D-Bus name and Wayland app id).
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.calculator"
-    } else {
-        "io.github.vinioliveiras.sonata2.calculator"
-    }
+    "io.github.vinioliveiras.sonata2.calculator"
 }
 

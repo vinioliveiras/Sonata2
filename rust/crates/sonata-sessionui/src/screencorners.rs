@@ -75,9 +75,6 @@ pub struct ScreenCorners {
 impl ScreenCorners {
     /// None on trial: the Python menu bar draws them already.
     pub fn start(app: &gtk::Application) -> Option<Rc<Self>> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         let me = Rc::new(ScreenCorners { wins: Rc::default(), full_on: Rc::default(), on: Cell::new(enabled()), surfaces: RefCell::default(), _mon: RefCell::default() });
         let (wins, full, wins2) = (me.wins.clone(), me.full_on.clone(), me.wins.clone());
         let app = app.clone();

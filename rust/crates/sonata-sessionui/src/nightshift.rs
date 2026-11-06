@@ -237,9 +237,6 @@ impl NightShift {
     /// None on trial: the Python menu bar's wlsunset holds the gamma; a
     /// second gamma client would fight it.
     pub fn start() -> Option<Rc<Self>> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         let me = Rc::new_cyclic(|w| NightShift { st: RefCell::default(), me: w.clone(), _mons: RefCell::default() });
         let w = me.me.clone();
         *me._mons.borrow_mut() = sonata_config::watch(NAME, move || {

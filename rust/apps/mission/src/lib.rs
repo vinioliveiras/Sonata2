@@ -111,7 +111,7 @@ pub fn watch_events(events: &[&str], callback: impl Fn(&Value) + 'static) -> Opt
 }
 
 fn app_id(component: &str) -> String {
-    let base = if sonata_config::side_by_side() { "io.github.vinioliveiras.sonata2rs" } else { "io.github.vinioliveiras.sonata2" };
+    let base = "io.github.vinioliveiras.sonata2";
     format!("{base}.{component}")
 }
 
@@ -184,14 +184,9 @@ pub fn run_switcher(args: &[String]) -> glib::ExitCode {
 }
 
 /// `sonata2-rs mission [--preview]`: Mission Control's dark backdrop, the
-/// desktops bar and the windows' close button, following Wayfire. On trial
-/// only --preview: the Python menu bar draws Mission Control.
+/// desktops bar and the windows' close button, following Wayfire.
 pub fn run_mission(args: &[String]) -> glib::ExitCode {
     let preview = args.iter().any(|a| a == "--preview");
-    if sonata_config::side_by_side() && !preview {
-        eprintln!("sonata2-rs mission: the Python menu bar draws Mission Control (two would darken the desktop twice); try `sonata2-rs mission --preview`");
-        return glib::ExitCode::FAILURE;
-    }
     if !preview {
         sonata_shell::layer::ensure_preload();
     }
@@ -271,12 +266,6 @@ pub(crate) mod tests {
         assert!(shell_surface("io.github.vinioliveiras.sonata2rs.topbar"));
         assert!(!shell_surface("io.github.vinioliveiras.sonata2.files"));
         assert!(!shell_surface("firefox"));
-    }
-
-    #[test]
-    fn trial_names_are_the_rust_builds() {
-        std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
-        assert_eq!(app_id("switcher"), "io.github.vinioliveiras.sonata2rs.switcher");
     }
 
     #[test]

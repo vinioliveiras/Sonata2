@@ -16,7 +16,7 @@ pub type Chat = Map<String, Value>;
 /// The app's data (shared with the Python Assistant only once final:
 /// on trial its own folder, so two Assistants never write the same files).
 pub fn data_dir() -> PathBuf {
-    sonata_config::own_data_dir("assistant")
+    sonata_config::data_dir("assistant")
 }
 
 fn write(path: &Path, data: &Value) {

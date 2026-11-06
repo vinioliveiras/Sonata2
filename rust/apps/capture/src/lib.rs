@@ -30,11 +30,7 @@ use std::rc::Rc;
 pub use sharepicker::run_share_picker;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.capture"
-    } else {
-        "io.github.vinioliveiras.sonata2.capture"
-    }
+    "io.github.vinioliveiras.sonata2.capture"
 }
 
 /// What `sonata2-rs capture <what>` asks the running host.

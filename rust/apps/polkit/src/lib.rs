@@ -30,11 +30,7 @@ const AGENT_XML: &str = r#"<node><interface name="org.freedesktop.PolicyKit1.Aut
 </interface></node>"#;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.polkit"
-    } else {
-        "io.github.vinioliveiras.sonata2.polkit"
-    }
+    "io.github.vinioliveiras.sonata2.polkit"
 }
 
 /// A user's login name and real name (the gecos' first field), from the

@@ -18,11 +18,7 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.wallpaper"
-    } else {
-        "io.github.vinioliveiras.sonata2.wallpaper"
-    }
+    "io.github.vinioliveiras.sonata2.wallpaper"
 }
 
 /// The picture's size scaled to just cover w x h (never enlarged).
@@ -475,7 +471,7 @@ pub fn app_flags() -> gio::ApplicationFlags {
 /// icons on every display (layer-shell background surfaces). --preview, and
 /// always on trial: one plain window, next to the Python desktop.
 pub fn run_wallpaper(args: &[String]) -> glib::ExitCode {
-    let preview = args.iter().any(|a| a == "--preview") || sonata_config::side_by_side();
+    let preview = args.iter().any(|a| a == "--preview");
     if !preview {
         sonata_shell::layer::ensure_preload();
     }

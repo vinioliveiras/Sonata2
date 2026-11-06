@@ -1,5 +1,5 @@
 //! config.py's behaviour, in a temporary config folder (never the real
-//! ~/.config: see tests/__init__.py for why).
+//! ~/.config: the tests once rewrote Vini's Dock, Launchpad and web apps).
 
 use super::*;
 use serde_json::json;
@@ -14,11 +14,10 @@ struct Env {
     _guard: MutexGuard<'static, ()>,
 }
 
-fn env(side_by_side: bool) -> Env {
+fn env() -> Env {
     let guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("XDG_CONFIG_HOME", dir.path());
-    std::env::set_var("SONATA2_RS_SIDE_BY_SIDE", if side_by_side { "1" } else { "0" });
     Env { dir, _guard: guard }
 }
 
@@ -35,14 +34,14 @@ impl Env {
 
 #[test]
 fn missing_file_gives_the_defaults() {
-    let _e = env(false);
+    let _e = env();
     let got = load("dock", &json!({"size": 48, "autohide": false}));
     assert_eq!(Value::Object(got), json!({"size": 48, "autohide": false}));
 }
 
 #[test]
 fn stored_values_win_and_unknown_keys_are_left_out() {
-    let e = env(false);
+    let e = env();
     e.write("sonata2", "dock", r#"{"size": 60, "old_key": 1}"#);
     let got = load("dock", &json!({"size": 48, "autohide": false}));
     assert_eq!(Value::Object(got), json!({"size": 60, "autohide": false}));
@@ -50,7 +49,7 @@ fn stored_values_win_and_unknown_keys_are_left_out() {
 
 #[test]
 fn broken_or_non_object_files_read_as_nothing_stored() {
-    let e = env(false);
+    let e = env();
     for text in ["{not json", "[1, 2]", "\"text\"", ""] {
         e.write("sonata2", "dock", text);
         assert_eq!(Value::Object(load("dock", &json!({"size": 48}))), json!({"size": 48}), "{text:?}");
@@ -59,7 +58,7 @@ fn broken_or_non_object_files_read_as_nothing_stored() {
 
 #[test]
 fn update_keeps_every_other_key() {
-    let e = env(false);
+    let e = env();
     e.write("sonata2", "dock", r#"{"size": 60, "pinned": ["a", "b"]}"#);
     update("dock", &json!({"size": 40})).unwrap();
     let back: Value = serde_json::from_str(&e.read("sonata2", "dock").unwrap()).unwrap();
@@ -79,25 +78,8 @@ fn written_text_matches_python_json_dumps_indent_2() {
 }
 
 #[test]
-fn trial_build_reads_python_settings_but_never_writes_them() {
-    let e = env(true);
-    e.write("sonata2", "appearance", r#"{"accent": "red", "theme": "mac"}"#);
-    // reads the Python Sonata's file...
-    assert_eq!(load("appearance", &json!({"accent": "blue"}))["accent"], json!("red"));
-    // ...writes its own, starting from what was stored
-    update("appearance", &json!({"accent": "green"})).unwrap();
-    assert_eq!(e.read("sonata2", "appearance").unwrap(), r#"{"accent": "red", "theme": "mac"}"#);
-    let mine: Value = serde_json::from_str(&e.read("sonata2-rs", "appearance").unwrap()).unwrap();
-    assert_eq!(mine, json!({"accent": "green", "theme": "mac"}));
-    // and from then on its own file is the one read
-    assert_eq!(load("appearance", &json!({"accent": "blue"}))["accent"], json!("green"));
-    // no lock file left in the Python Sonata's folder either
-    assert!(!e.dir.path().join("sonata2").join(".appearance.lock").exists());
-}
-
-#[test]
-fn final_mode_reads_and_writes_the_shared_folder() {
-    let e = env(false);
+fn reads_and_writes_the_one_folder() {
+    let e = env();
     update("dock", &json!({"size": 50})).unwrap();
     assert!(e.read("sonata2", "dock").is_some());
     assert!(e.read("sonata2-rs", "dock").is_none());
@@ -105,7 +87,7 @@ fn final_mode_reads_and_writes_the_shared_folder() {
 
 #[test]
 fn atomic_write_leaves_no_temp_files() {
-    let e = env(false);
+    let e = env();
     let p = e.dir.path().join("x").join("f.json");
     atomic_write(&p, b"one", true).unwrap();
     atomic_write(&p, b"two", false).unwrap();
@@ -169,7 +151,7 @@ fn test_old_data_folder_was_not_moved_over() {
 /// data_dir does the move itself, the first time.
 #[test]
 fn test_data_dir_left_the_old_folder_behind() {
-    let _e = env(false);
+    let _e = env();
     let d = tempfile::tempdir().unwrap();
     let prev = std::env::var_os("XDG_DATA_HOME");
     std::env::set_var("XDG_DATA_HOME", d.path());
@@ -182,4 +164,57 @@ fn test_data_dir_left_the_old_folder_behind() {
     }
     assert_eq!(got, d.path().join("sonata2-data").join("calendar"));
     assert_eq!(fs::read_to_string(got.join("c.ics")).unwrap(), "z");
+}
+
+/// Vini's window buttons went invisible: install-rs.sh never copied
+/// data/decor, so data_path("decor") fell back to the tree the binary was
+/// built from, and that path went into wayfire-overrides.ini. An installed
+/// binary uses its install's data, even for a name missing there.
+#[test]
+fn test_installed_binary_used_the_build_tree() {
+    let d = tempfile::tempdir().unwrap();
+    let installed = d.path().join("share/sonata2-rs/data");
+    fs::create_dir_all(installed.join("sounds")).unwrap();
+    assert_eq!(data_path_in(Some(&installed), "decor"), installed.join("decor"));
+    assert_eq!(data_path_in(Some(&installed), "sounds"), installed.join("sounds"));
+    assert_eq!(data_path_in(None, "decor"), clone_data().join("decor"));
+}
+
+/// Every name the code asks data_path for is in data/, and install.sh
+/// installs all of data/ (not a list of folders that can miss one).
+#[test]
+fn test_every_data_path_name_is_shipped() {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if p.file_name().is_some_and(|n| n != "target") {
+                    walk(&p, out);
+                }
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut files = Vec::new();
+    walk(&root.join("apps"), &mut files);
+    walk(&root.join("crates"), &mut files);
+    let mut names = Vec::new();
+    for f in files {
+        let src = fs::read_to_string(&f).unwrap_or_default();
+        for part in src.split("data_path(\"").skip(1) {
+            names.push(part.split('"').next().unwrap().to_string());
+        }
+        // data_path(&format!("wallpapers/{name}.jpg")): its folder
+        for part in src.split("data_path(&format!(\"").skip(1) {
+            names.push(part.split('/').next().unwrap().to_string());
+        }
+    }
+    assert!(names.len() >= 5, "{names:?}");
+    for n in &names {
+        assert!(clone_data().join(n).exists(), "data_path({n:?}): not in data/");
+    }
+    let install = include_str!("../../../../install.sh");
+    assert!(install.contains("for d in data locale config; do") && install.contains("rsync -a --delete \"$SRC/$d/\" \"$SHARE/$d/\""), "install.sh copies data/ whole");
 }

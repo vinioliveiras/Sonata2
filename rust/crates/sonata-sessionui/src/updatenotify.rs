@@ -58,9 +58,6 @@ impl UpdateNotifier {
     /// None on trial: the Python menu bar checks and notifies; the trial's
     /// own selfupdate.json would tell every release a second time.
     pub fn start(check: Check) -> Option<Rc<Self>> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         let me = Rc::new_cyclic(|w| UpdateNotifier { check, id: Rc::default(), sub: RefCell::default(), timer: RefCell::default(), me: w.clone() });
         me.later(FIRST_S);
         Some(me)

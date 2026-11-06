@@ -1615,7 +1615,7 @@ impl Dock {
             self.schedule_sync();
             DOCKS.with(|d| d.borrow_mut().push(self.weak()));
         }
-        if !REOPENED.with(|r| r.replace(true)) && !sonata_config::side_by_side() {
+        if !REOPENED.with(|r| r.replace(true)) {
             // once a session (a rebuilt Dock doesn't again); never on trial:
             // the Python Dock reopens them, two would open every app twice
             let w = self.weak();
@@ -3602,7 +3602,7 @@ impl Dock {
             let w = self.windows.borrow();
             groups.len() != w.len() || groups.keys().any(|k| !w.contains_key(k))
         };
-        if changed_apps && !sonata_config::side_by_side() {
+        if changed_apps {
             // for "Reopen Apps" after a crash (one session, one list: on
             // trial the Python Dock keeps it)
             let mut ids: Vec<String> = groups.keys().cloned().collect();
@@ -4297,7 +4297,6 @@ impl DockWindow {
         // On trial the Python Dock owns the edge: this one never reserves
         // the space again and takes a namespace of its own (Wayfire's rules
         // and the plugin key on "sonata2-dock").
-        let trial = sonata_config::side_by_side();
         let dw = Rc::new_cyclic(|me| DockWindow {
             me: me.clone(),
             win,
@@ -4315,8 +4314,8 @@ impl DockWindow {
             last_wh: Cell::new((0, 0)),
             input_src: RefCell::default(),
             monitors: RefCell::default(),
-            namespace: if trial { "sonata2rs-dock".into() } else { "sonata2-dock".into() },
-            exclusive_ok: !trial,
+            namespace: "sonata2-dock".into(),
+            exclusive_ok: true,
         });
         let motion = gtk::EventControllerMotion::new();
         let w = dw.me.clone();
@@ -4365,7 +4364,7 @@ impl DockWindow {
             }
         });
         dw.rebuild();
-        if sonata_shell::intro::entering() && !trial && !getb(&dw.cfg.borrow(), "autohide") {
+        if sonata_shell::intro::entering() && !getb(&dw.cfg.borrow(), "autohide") {
             // login: out of sight until the welcome screen fades, then it
             // slides in from its edge like a hidden Dock showing
             if let Some(d) = dw.dock() {

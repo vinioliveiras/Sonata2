@@ -193,9 +193,6 @@ impl IdleLock {
     /// None on trial: the Python menu bar keeps its swayidle and darkens
     /// the displays; a second one would lock and darken twice.
     pub fn start(hooks: Hooks) -> Option<Rc<Self>> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         (hooks.compositor_off)(); // Sonata darkens the display itself (displaysleep)
         // input idle: only media keeps it awake (idlepolicy)
         let policy = hooks.watch.map(|w| {
@@ -517,17 +514,5 @@ mod tests {
         displays_dark_with(&w, false, false, &dim);
         assert!(dims.borrow().is_empty());
         assert_eq!(w.0.borrow().iter().map(|c| (c.0, c.1.is_empty())).collect::<Vec<_>>(), [(false, true), (true, true)]);
-    }
-
-    #[test]
-    fn nothing_started_on_trial() {
-        let _e = testenv::env();
-        std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
-        if sonata_config::side_by_side() {
-            let called = Rc::new(std::cell::Cell::new(false));
-            let c = called.clone();
-            assert!(IdleLock::start(Hooks { compositor_off: Box::new(move || c.set(true)), watch: None }).is_none());
-            assert!(!called.get());
-        }
     }
 }

@@ -435,9 +435,6 @@ impl Watch {
     pub const INTERVAL_S: u32 = 3600;
 
     pub fn start(notify: fn(&str, &str, &str) -> bool) -> Option<Self> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         let srcs: std::rc::Rc<std::cell::RefCell<Vec<glib::SourceId>>> = Default::default();
         let first = glib::timeout_add_seconds_local(Self::FIRST_S, {
             let srcs = std::rc::Rc::downgrade(&srcs);

@@ -110,9 +110,6 @@ pub struct StaleCheck {
 
 impl StaleCheck {
     pub fn start(paused: impl Fn() -> bool + 'static, is_locked: impl Fn() -> bool + Send + Sync + Clone + 'static) -> Option<Self> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         let busy = std::rc::Rc::new(std::cell::Cell::new(false));
         let src = glib::timeout_add_seconds_local(STALE_CHECK_S, move || {
             // (marker() first, on the main loop: a plain stat, and most

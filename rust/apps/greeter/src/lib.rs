@@ -46,11 +46,7 @@ use std::time::Duration;
 const WALLPAPER_PX: i32 = 1280;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.greeter"
-    } else {
-        "io.github.vinioliveiras.sonata2.greeter"
-    }
+    "io.github.vinioliveiras.sonata2.greeter"
 }
 
 /// A previewing login screen: no greetd, no power buttons, password "sonata".

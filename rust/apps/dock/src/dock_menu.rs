@@ -774,24 +774,9 @@ pub fn spawn_own(args: &[&str]) {
     }
 }
 
-/// Settings and the web app form: the Rust ones once this build is the
-/// desktop (the Rust session); on trial the Python Sonata's, whose
-/// settings are the ones in use.
+/// Settings and the web app form: this build's.
 pub fn spawn_sonata(args: &[&str]) {
-    if sonata_config::side_by_side() {
-        spawn_python(args);
-    } else {
-        spawn_own(args);
-    }
-}
-
-/// The Python Sonata's launcher ($SONATA2_LAUNCHER, else `sonata2`).
-pub fn spawn_python(args: &[&str]) {
-    let py = std::env::var("SONATA2_LAUNCHER").ok().filter(|l| Path::new(l).exists()).unwrap_or_else(|| "sonata2".into());
-    match std::process::Command::new(py).args(args).spawn() {
-        Ok(c) => sonata_backend::run::reap(c),
-        Err(e) => println!("sonata2-dock: {args:?}: {e}"),
-    }
+    spawn_own(args);
 }
 
 #[cfg(test)]

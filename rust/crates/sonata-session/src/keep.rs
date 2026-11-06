@@ -5,9 +5,8 @@
 //! that grows past its memory limit (a leak over a long day) is started
 //! again; when the compositor it belongs to is gone, it stops.
 //!
-//! A component the Rust build has (`PORTED`) runs as `sonata2-rs <name>`;
-//! any other as the Python Sonata's `sonata2 <name>` -- so a session can
-//! mix the two while the port goes on (docs/RUST_PORT.md).
+//! Every component runs as this binary (`sonata2-rs <name>`): the Rust
+//! build is the whole Sonata.
 //!
 //! No signals and no polling: each child's pidfd wakes the supervisor when
 //! it ends; otherwise it wakes once a minute.
@@ -19,38 +18,6 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
-
-/// The components the Rust build runs itself.
-pub const PORTED: [&str; 9] = ["calculator", "clock", "textedit", "preview", "notes", "welcome", "lock", "spotlight", "polkit"];
-
-/// The shell and apps ported since: Rust only in the Rust session
-/// ("Sonata (Rust preview)", SONATA2_RS_SIDE_BY_SIDE=0). The Python session
-/// keeps its own Dock, menu bar... until each is switched over.
-pub const PORTED_SHELL: [&str; 18] = [
-    "wallpaper", "dock", "topbar", "launchpad", "files", "settings", "portal", "activity", "calendar", "assistant",
-    "terminal", "camera", "videos", "diskutil", "feedback", "setup", "greeter", "webapp",
-];
-
-/// Does `sonata2-rs` run this component here.
-pub fn ported(name: &str) -> bool {
-    ported_in(name, sonata_config::side_by_side())
-}
-
-fn ported_in(name: &str, side_by_side: bool) -> bool {
-    PORTED.contains(&name) || (!side_by_side && PORTED_SHELL.contains(&name))
-}
-
-#[cfg(test)]
-mod ported_tests {
-    #[test]
-    fn rust_shell_only_in_the_rust_session() {
-        // the Python session's Dock stays Python; the Rust session's is Rust
-        assert!(!super::ported_in("dock", true));
-        assert!(super::ported_in("dock", false));
-        assert!(super::ported_in("lock", true));
-        assert!(!super::ported_in("music", false));
-    }
-}
 
 /// Hand this session's display to D-Bus/systemd-started services (the
 /// portals) before any surface asks for them -- once per display.
@@ -150,15 +117,11 @@ fn mem_total_mb() -> u64 {
     if page > 0 && pages > 0 { (page as u64 * pages as u64) >> 20 } else { 0 }
 }
 
-/// How a component is started: this binary for a ported one, the Python
-/// Sonata's launcher for the rest.
+/// How a component is started: this binary, by its path (D-Bus and the
+/// session start things with a PATH that may lack ~/.local/bin).
 pub fn command_for(argv: &[String]) -> Vec<String> {
-    if ported(&argv[0]) {
-        let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "sonata2-rs".into());
-        return std::iter::once(me).chain(argv.iter().cloned()).collect();
-    }
-    let py = std::env::var("SONATA2_LAUNCHER").ok().filter(|l| Path::new(l).exists()).unwrap_or_else(|| "sonata2".into());
-    std::iter::once(py).chain(argv.iter().cloned()).collect()
+    let me = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "sonata2-rs".into());
+    std::iter::once(me).chain(argv.iter().cloned()).collect()
 }
 
 #[derive(Debug, PartialEq)]
@@ -465,14 +428,15 @@ mod tests {
         assert_eq!(rss_mb(999_999_999), 0);
     }
 
+    /// Every component is this binary's: nothing goes through a `sonata2`
+    /// launcher found on the PATH (it was the Python Sonata's).
     #[test]
-    fn ported_components_run_here_the_rest_in_python() {
-        let _env = crate::tests::ENV.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::remove_var("SONATA2_LAUNCHER");
-        let c = command_for(&["clock".into()]);
-        assert!(!c[0].is_empty());
-        assert_eq!(c[1], "clock");
-        assert_eq!(command_for(&["music".into()])[..2], ["sonata2", "music"]);
+    fn every_component_runs_this_binary() {
+        for name in ["clock", "dock", "topbar", "music"] {
+            let c = command_for(&[name.into()]);
+            assert_eq!(c[0], std::env::current_exe().unwrap().display().to_string());
+            assert_eq!(c[1], name);
+        }
     }
 
     // -- the supervisor itself, with fake components (tests/test_keep_all.py) ---------------------

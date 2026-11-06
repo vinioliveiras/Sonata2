@@ -64,7 +64,7 @@ use window::TopBarWindow;
 pub const CC_PREWARM_S: u64 = 4;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() { "io.github.vinioliveiras.sonata2rs.topbar" } else { "io.github.vinioliveiras.sonata2.topbar" }
+    "io.github.vinioliveiras.sonata2.topbar"
 }
 
 /// The dev options: --preview (a normal window over the wallpaper),
@@ -150,9 +150,7 @@ pub fn run_with(args: &[String], services: Services, started: impl Fn(&gtk::Appl
             }));
             win.bar.notifications.replace(Some(nc));
             glib::timeout_add_seconds_local_once(4, prefetch); // menus open already filled
-            if !sonata_config::side_by_side() {
-                listen_for_lock();
-            }
+            listen_for_lock();
             let b = Rc::downgrade(&win.bar);
             glib::timeout_add_seconds_local_once(CC_PREWARM_S as u32, move || b.upgrade().iter().for_each(|b| b.prewarm_control_center()));
         }
@@ -250,16 +248,5 @@ mod tests {
         assert_eq!(parse_args(&[]), Options::default());
         assert_eq!(parse_args(&a(&["--preview", "--menu", "3", "--dark"])), Options { preview: true, menu: Some(3), appearance: Some("dark") });
         assert_eq!(parse_args(&a(&["--light", "--menu", "x"])), Options { preview: false, menu: None, appearance: Some("light") });
-    }
-
-    /// Never the Python menu bar's bus name on trial.
-    #[test]
-    fn trial_app_id() {
-        let _e = testenv::env();
-        std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
-        assert_eq!(app_id(), if sonata_config::side_by_side() { "io.github.vinioliveiras.sonata2rs.topbar" } else { "io.github.vinioliveiras.sonata2.topbar" });
-        if sonata_config::side_by_side() {
-            assert_eq!(window::namespace(), "sonata2rs-topbar");
-        }
     }
 }

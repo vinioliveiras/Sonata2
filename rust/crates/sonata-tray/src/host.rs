@@ -36,7 +36,7 @@ pub fn host() -> Rc<Host> {
     HOST.with(|h| {
         h.get_or_init(|| {
             let conn = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>).ok();
-            Host::new(conn, !sonata_config::side_by_side())
+            Host::new(conn, true)
         })
         .clone()
     })

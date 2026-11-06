@@ -5,7 +5,7 @@
 #   - bundled icon, cursor and GTK themes found without installing anything
 #   - GTK3/GTK4/libadwaita apps use the Big Sur window theme (Sonata-Light/Dark)
 #     with macOS button layout (close, minimize, zoom on the left)
-#   - Sonata's own desktop settings (prefs.py), served to apps by its portal
+#   - Sonata's own desktop settings (`sonata2 prefs`), served to apps by its portal
 # Not inherited from a shell process of another session (e.g. a terminal
 # opened from the Dock): the flag would disable layer-shell here.
 unset SONATA2_PRELOADED SONATA2_ORIG_LD_PRELOAD
@@ -28,14 +28,14 @@ cat > "$HOME/.config/sonata2/fonts.conf" 2>/dev/null <<FC || true
 <fontconfig><include ignore_missing="yes">/etc/fonts/fonts.conf</include><dir>$SONATA_REPO/data/fonts</dir></fontconfig>
 FC
 export FONTCONFIG_FILE="$HOME/.config/sonata2/fonts.conf"
-# Sonata's own desktop settings (sonata2/prefs.py: ~/.config/sonata2/system.json;
-# apps read them through Sonata's settings portal -- no GNOME/dconf needed).
+# Sonata's own desktop settings (~/.config/sonata2/system.json; apps read
+# them through Sonata's settings portal -- no GNOME/dconf needed).
 # Every login: Sonata's defaults on the first run, the UI font.
 # (copies kept for apps that read GSettings directly go to a Sonata-only
 # dconf layer, so they never leak into another desktop's settings)
 printf 'user-db:sonata\nuser-db:user\n' > "$HOME/.config/sonata2/dconf-profile"
 export DCONF_PROFILE="$HOME/.config/sonata2/dconf-profile"
-eval "$(PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}" python3 -m sonata2.prefs session-env 2>/dev/null)"
+eval "$(sonata2-rs prefs session-env 2>/dev/null)"
 unset GTK_THEME     # (apps read the theme from Sonata's settings; the variable broke libadwaita apps)
 # Qt apps: always the GTK look here, never a KDE/qt5ct theme set elsewhere.
 export QT_QPA_PLATFORMTHEME=gtk3
@@ -50,14 +50,14 @@ if [ -d /sys/module/nvidia_drm ]; then
     export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
 fi
 # Open/Save dialogs through the file chooser portal -> Sonata's panels
-# (sonata2/portal.py): GTK 3 apps (GTK_USE_PORTAL), GTK 4 apps (GDK_DEBUG
+# (`sonata2 portal`): GTK 3 apps (GTK_USE_PORTAL), GTK 4 apps (GDK_DEBUG
 # portals); Chromium/Electron use the portal on their own, Firefox through
-# its pref (sonata2/titlebars.py)
+# its pref (Sonata's title bars)
 export GTK_USE_PORTAL=1
 case ",${GDK_DEBUG:-}," in *,portals,*) ;; *) export GDK_DEBUG="${GDK_DEBUG:+$GDK_DEBUG,}portals" ;; esac
 # Sonata title bars for all apps (Settings > Appearance, on unless turned
 # off): Claude Desktop's Linux build (claude-desktop-bin) draws its own
-# frame unless told to use the system's (sonata2/titlebars.py does the rest)
+# frame unless told to use the system's (Sonata's title bars do the rest)
 if ! grep -qs '"system_titlebars": *false' "$HOME/.config/sonata2/appearance.json"; then
     export CLAUDE_NATIVE_TITLEBAR="${CLAUDE_NATIVE_TITLEBAR:-1}"
 fi
@@ -99,6 +99,5 @@ for t in video/mp4 video/x-matroska video/webm video/x-msvideo video/avi video/q
 done
 # Wayfire blurs Sonata windows here: sidebars use the glass material.
 export SONATA_GLASS=1
-export PYTHONPATH="$SONATA_REPO${PYTHONPATH:+:$PYTHONPATH}"
 # Terminal apps (Vim, Micro... Terminal=true) open in Sonata's Terminal (tools/bin/xdg-terminal-exec)
 export PATH="$SONATA_REPO/tools/bin:$PATH"

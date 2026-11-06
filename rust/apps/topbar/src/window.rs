@@ -32,7 +32,7 @@ pub fn first_bar() -> Option<Rc<Bar>> {
 }
 
 pub fn namespace() -> &'static str {
-    if sonata_config::side_by_side() { "sonata2rs-topbar" } else { "sonata2-topbar" }
+    "sonata2-topbar"
 }
 
 pub struct TopBarWindow {
@@ -111,7 +111,7 @@ impl TopBarWindow {
                 // restart before the new Dock was ready to come with it
                 me.bar.root.set_offset(h as f64);
                 let w = Rc::downgrade(&me);
-                intro_wait(sonata_config::side_by_side(), move || {
+                intro_wait(move || {
                     if let Some(me) = w.upgrade() {
                         me.slide_to(0.0, 420);
                     }
@@ -302,18 +302,15 @@ pub const RESTART_TIMEOUT_S: u32 = 6;
 /// callback() once the intro is over (right away without one). After a
 /// restart: once every restarted component is ready -- the Dock and the
 /// menu bar slide in together (Vini); this bar says it is ready
-/// (intro.ready_file), which `restart` waits for (5 s without it). On
-/// trial (`trial`) it never says so: the ready file is the Python bar's.
-pub fn intro_wait(trial: bool, callback: impl FnOnce() + 'static) {
+/// (intro.ready_file), which `restart` waits for (5 s without it).
+pub fn intro_wait(callback: impl FnOnce() + 'static) {
     use sonata_shell::intro;
     if !intro::pending() {
         if !intro::restarting() {
             glib::idle_add_local_once(callback);
             return;
         }
-        if !trial {
-            let _ = std::fs::write(intro::ready_file("topbar"), "");
-        }
+        let _ = std::fs::write(intro::ready_file("topbar"), "");
         when_gone(intro::restart_mark(), RESTART_TIMEOUT_S, move || {
             glib::timeout_add_local_once(Duration::from_millis(ARRIVE_MS), callback);
         });
@@ -424,14 +421,14 @@ mod tests {
         // no intro: at once
         let done = Rc::new(Cell::new(false));
         let d = done.clone();
-        intro_wait(false, move || d.set(true));
+        intro_wait(move || d.set(true));
         spin_until(|| done.get(), 2);
         assert!(done.get());
         // login: only once the welcome screen has gone (its marker deleted)
         std::fs::write(intro::mark(), "").unwrap();
         let done = Rc::new(Cell::new(false));
         let d = done.clone();
-        intro_wait(false, move || d.set(true));
+        intro_wait(move || d.set(true));
         spin_until(|| done.get(), 1);
         assert!(!done.get(), "slid in while the welcome screen was up");
         std::fs::remove_file(intro::mark()).unwrap();
@@ -441,18 +438,12 @@ mod tests {
         std::fs::write(intro::restart_mark(), "restarting\n").unwrap();
         let done = Rc::new(Cell::new(false));
         let d = done.clone();
-        intro_wait(false, move || d.set(true));
+        intro_wait(move || d.set(true));
         assert!(intro::ready_file("topbar").exists());
         spin_until(|| done.get(), 1);
         assert!(!done.get());
         std::fs::remove_file(intro::restart_mark()).unwrap();
         spin_until(|| done.get(), 3);
         assert!(done.get());
-        // on trial the ready file is the Python bar's: never written
-        std::fs::remove_file(intro::ready_file("topbar")).unwrap();
-        std::fs::write(intro::restart_mark(), "restarting\n").unwrap();
-        intro_wait(true, || {});
-        assert!(!intro::ready_file("topbar").exists());
-        std::fs::remove_file(intro::restart_mark()).unwrap();
     }
 }

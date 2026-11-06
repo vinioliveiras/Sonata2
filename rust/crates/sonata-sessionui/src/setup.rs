@@ -498,11 +498,7 @@ impl SetupAssistant {
 }
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.setup"
-    } else {
-        "io.github.vinioliveiras.sonata2.setup"
-    }
+    "io.github.vinioliveiras.sonata2.setup"
 }
 
 /// after a restart: never wait longer than this for it (intro.py's RESTART_TIMEOUT_S)

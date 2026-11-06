@@ -16,20 +16,6 @@
 //! apps() -> {id: {...}}             normalize_url("web.whatsapp.com") -> "https://web.whatsapp.com/"
 //! open_new()                        // the "New Web App" form (its own process)
 //! ```
-//!
-//! **On trial** (sonata_config::side_by_side()): webapps.json is read as
-//! every setting is (sonata2-rs/ first, then the Python Sonata's) and
-//! written to sonata2-rs/ only. The data folders -- the logins and the
-//! browser profiles -- are the shared `sonata2-data/webapps/<id>`, and a
-//! web app's process keeps its real application id
-//! (`io.github.vinioliveiras.sonata2.webapp.<id>`): whichever build opens
-//! it first owns it, the other one only brings its window forward, so the
-//! two never run one profile at once. No desktop entry is written on
-//! trial: the `sonata2-webapp-*` entries are the Python Dock's (it rewrites
-//! them at login, Exec=sonata2), and a second "(Rust)" copy of each would
-//! double every web app in Launchpad. A web app made in the Rust form on
-//! trial opens with `sonata2-rs webapp <id>`. Removing one on trial keeps
-//! its data while the Python Sonata still lists it.
 
 pub mod browsergpu;
 pub mod chromeguard;
@@ -635,12 +621,9 @@ pub fn desktop_text(app: &str, entry: &Map<String, Value>, command: Option<&str>
 
 /// Its desktop entry (apps.write_desktop_file: only when it changed,
 /// written beside it then moved in, so the folder changes and Launchpad
-/// reads it again). Never on trial (the module's note): None then. The
+/// reads it again). The
 /// name is the user's own: no translations to add.
 pub fn write_desktop(app: &str, command: Option<&str>) -> Option<PathBuf> {
-    if sonata_config::side_by_side() {
-        return None;
-    }
     let entry = get(app)?;
     let t = desktop_text(app, &entry, command);
     let path = applications_dir().join(format!("{}.desktop", desktop_id(app)));
@@ -785,26 +768,15 @@ fn is_own_id(app: &str) -> bool {
     app.len() == 11 && app.starts_with('w') && app[1..].chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
 }
 
-/// The Python Sonata's own webapps.json lists it (trial: its data is still theirs).
-fn python_lists(app: &str) -> bool {
-    let path = sonata_config::config_home().join(sonata_config::NAME).join("webapps.json");
-    std::fs::read(path).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).is_some_and(|v| v.get("apps").and_then(|a| a.get(app)).is_some())
-}
-
-/// The web app, its desktop entry and its data (login, storage). On trial
-/// only the trial's own list forgets it, and its data goes only when the
-/// Python Sonata doesn't have it.
+/// The web app, its desktop entry and its data (login, storage).
 pub fn remove(app: &str) {
     let mut data = load();
     if let Some(a) = data.get_mut("apps").and_then(Value::as_object_mut) {
         a.remove(app);
     }
     save(&data);
-    let trial = sonata_config::side_by_side();
-    if !trial {
-        let _ = std::fs::remove_file(applications_dir().join(format!("{}.desktop", desktop_id(app))));
-    }
-    if is_own_id(app) && !(trial && python_lists(app)) {
+    let _ = std::fs::remove_file(applications_dir().join(format!("{}.desktop", desktop_id(app))));
+    if is_own_id(app) {
         let _ = std::fs::remove_dir_all(data_dir(app));
         set_app_pref(&desktop_id(app), &[("source", None), ("path", None), ("name", None), ("shape", None), ("scale", None)]);
     }

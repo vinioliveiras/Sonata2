@@ -52,11 +52,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.dock"
-    } else {
-        "io.github.vinioliveiras.sonata2.dock"
-    }
+    "io.github.vinioliveiras.sonata2.dock"
 }
 
 /// The command line (the Dock's part of __main__'s argparse).
@@ -193,7 +189,7 @@ impl Displays {
             self.cfg_main.move_to(m);
         }
         let monitors = sonata_shell::layer::monitors();
-        let on = dock::load_config().get("all_displays").is_some_and(dock::truthy) && !sonata_config::side_by_side();
+        let on = dock::load_config().get("all_displays").is_some_and(dock::truthy);
         let want = |m: &gdk::Monitor| on && main.as_ref() != Some(m) && monitors.contains(m);
         let gone: Vec<Rc<DockWindow>> = {
             let mut extra = self.extra.borrow_mut();
@@ -241,7 +237,7 @@ fn activate(app: &adw::Application, a: &Args, keep: &RefCell<Vec<Box<dyn std::an
         sonata_ui::force_appearance(f);
     }
     sonata_ui::setup();
-    if !a.preview && !sonata_config::side_by_side() {
+    if !a.preview {
         // apps opened from Sonata: watched by systemd-oomd
         sonata_desktop::appscope::ensure_slice();
         // where windows minimize to (wlr.rs)
@@ -490,10 +486,6 @@ mod tests {
     #[test]
     fn its_own_name_on_trial() {
         let id = app_id();
-        if sonata_config::side_by_side() {
-            assert_eq!(id, "io.github.vinioliveiras.sonata2rs.dock");
-        } else {
-            assert_eq!(id, "io.github.vinioliveiras.sonata2.dock");
-        }
+        assert_eq!(id, "io.github.vinioliveiras.sonata2.dock");
     }
 }

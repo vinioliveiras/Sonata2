@@ -169,9 +169,6 @@ impl VramWatch {
     /// without an NVIDIA card (or nvidia-smi), and on trial: the Python
     /// menu bar already watches the card -- the user would be warned twice.
     pub fn start(notify: Notify) -> Option<Rc<Self>> {
-        if sonata_config::side_by_side() {
-            return None;
-        }
         let usage = sonata_backend::procfs::NvidiaUsage::new(std::path::Path::new("/sys"));
         let tool = usage.tool.clone()?;
         if usage.devices.is_empty() {
@@ -263,9 +260,6 @@ impl Drop for VramWatch {
 /// server answers. Nothing on trial: the markers are the Python session's,
 /// and its menu bar tells them.
 pub fn start_gpu_notices() {
-    if sonata_config::side_by_side() {
-        return;
-    }
     let tries = Cell::new(0);
     glib::timeout_add_seconds_local(4, move || {
         use sonata_tweaks::gpu;
@@ -368,12 +362,5 @@ mod tests {
         let _e = crate::testenv::env();
         let (w, _) = watch(Arc::new(Mutex::new(7600)), false);
         assert!(!Rc::new(w).tick());
-    }
-
-    #[test]
-    fn not_started_on_trial() {
-        let _e = crate::testenv::env();
-        std::env::remove_var("SONATA2_RS_SIDE_BY_SIDE");
-        assert!(VramWatch::start(Rc::new(|_: &str, _: &str| true)).is_none());
     }
 }

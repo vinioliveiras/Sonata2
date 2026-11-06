@@ -24,11 +24,7 @@ pub const MAX_S: f64 = 9.0;
 const FADE_MS: f64 = 520.0;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.welcome"
-    } else {
-        "io.github.vinioliveiras.sonata2.welcome"
-    }
+    "io.github.vinioliveiras.sonata2.welcome"
 }
 
 /// Leave now: everything is up (and it showed long enough), or it waited too long.

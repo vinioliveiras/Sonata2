@@ -47,9 +47,6 @@ pub fn main_for(want: &str) -> Option<gdk::Monitor> {
 /// to do without the login screen's folder. Not on trial: the Python
 /// session shares the same values already.
 pub fn share_with_login_screen() {
-    if sonata_config::side_by_side() {
-        return;
-    }
     share_in(std::path::Path::new(GREETER));
 }
 
@@ -334,9 +331,6 @@ pub fn refresh_plan(displays: &[Display], get: &dyn Fn(&str, &str) -> String, au
 ///
 /// Not on trial: it writes Wayfire's config, which the Python menu bar keeps.
 pub fn ensure_refresh() {
-    if sonata_config::side_by_side() {
-        return;
-    }
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::default();
     let soon = {
         let pending = pending.clone();

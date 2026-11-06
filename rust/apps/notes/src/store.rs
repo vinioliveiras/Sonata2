@@ -40,19 +40,9 @@ pub fn now() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
 }
 
-/// The folder: on trial its own copy, filled from the Python Notes' once.
+/// The folder: ~/.local/share/sonata2-data/notes.
 pub fn data_dir() -> PathBuf {
-    let own = sonata_config::own_data_dir("notes");
-    let shared = sonata_config::data_dir("notes");
-    if own != shared {
-        for f in ["notes.json", "reminders.json"] {
-            let (src, dst) = (shared.join(f), own.join(f));
-            if !dst.exists() && src.exists() {
-                let _ = std::fs::copy(&src, &dst);
-            }
-        }
-    }
-    own
+    sonata_config::data_dir("notes")
 }
 
 pub fn write_json(path: &Path, data: &Value) -> std::io::Result<()> {

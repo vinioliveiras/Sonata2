@@ -34,11 +34,7 @@ const THUMB: i32 = 44;
 const MEDIA: [&str; 5] = [".jpg", ".jpeg", ".png", ".mp4", ".webm"];
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.camera"
-    } else {
-        "io.github.vinioliveiras.sonata2.camera"
-    }
+    "io.github.vinioliveiras.sonata2.camera"
 }
 
 fn defaults() -> Value {

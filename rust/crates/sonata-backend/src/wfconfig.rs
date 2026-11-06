@@ -515,9 +515,9 @@ fn line_values<'a>(text: &'a str, key: &'a str) -> impl Iterator<Item = &'a str>
 /// tools/wayfire-config.sh's first Python step on the session's copy's
 /// text: the window frame, grid's crossfade off with sonata-resize, the
 /// Mission Control migration, and the XSETTINGS manager for XWayland
-/// (`here`: Sonata's folder, for the same line the Python session writes --
-/// tools/sonata-session turns it into `sonata2-rs xsettings`).
-pub fn login_frame_step(text: &str, frame: &LoginFrame, here: &str) -> String {
+/// (`_here`: Sonata's folder; nothing needs it since the manager is this
+/// binary's).
+pub fn login_frame_step(text: &str, frame: &LoginFrame, _here: &str) -> String {
     let mut t = text.to_string();
     for (sec, key, val) in frame_options(frame) {
         t = set_in(&t, sec, &key, Some(&val));
@@ -532,11 +532,20 @@ pub fn login_frame_step(text: &str, frame: &LoginFrame, here: &str) -> String {
     // the screenshot shortcuts work in Mission Control too: always_binding_ keys
     t = migrate_always_bindings(&t);
     // X11 apps get Sonata's look from its XSETTINGS manager; a script of the user's stays
-    let own = line_values(&t, "xwayland_startup_script").any(|v| v.trim_start_matches(' ').chars().next().is_some_and(|c| !py_space(c)));
+    // (the Python Sonata's own line -- `env PYTHONPATH=... python3 -m
+    // sonata2.xsettings`, kept in an edited wayfire.ini -- is Sonata's, not
+    // the user's: it is replaced, there is no Python Sonata to run it)
+    let own = line_values(&t, "xwayland_startup_script").any(|v| v.trim_start_matches(' ').chars().next().is_some_and(|c| !py_space(c)) && !is_sonatas_xsettings(v));
     if !own {
-        t = set_in(&t, "core", "xwayland_startup_script", Some(&format!("env PYTHONPATH={here} python3 -m sonata2.xsettings")));
+        t = set_in(&t, "core", "xwayland_startup_script", Some("sonata2-rs xsettings"));
     }
     t
+}
+
+/// The XSETTINGS line Sonata writes, the Python Sonata's included.
+fn is_sonatas_xsettings(value: &str) -> bool {
+    let v = value.trim();
+    v.ends_with("python3 -m sonata2.xsettings") || v == "sonata2-rs xsettings" || v == "sonata2 xsettings"
 }
 
 /// tools/wayfire-config.sh's second Python step: the options changed in
@@ -836,12 +845,23 @@ binding_screenshot = KEY_LEFT
     #[test]
     fn test_x11_menu_bars_light_in_dark_mode() {
         let out = login_frame_step("[core]\nplugins = a\n", &left(), "/opt/sonata");
-        assert!(out.contains("xwayland_startup_script = env PYTHONPATH=/opt/sonata python3 -m sonata2.xsettings\n"));
+        assert!(out.contains("xwayland_startup_script = sonata2-rs xsettings\n"));
         let own = "[core]\nxwayland_startup_script = my-script\n";
         assert!(login_frame_step(own, &left(), "/s").contains("xwayland_startup_script = my-script\n"));
         // an empty one is no script of the user's
         let empty = login_frame_step("[core]\nxwayland_startup_script =\n", &left(), "/s");
-        assert!(empty.contains("xwayland_startup_script = env PYTHONPATH=/s python3 -m sonata2.xsettings\n"));
+        assert!(empty.contains("xwayland_startup_script = sonata2-rs xsettings\n"));
+    }
+
+    /// A wayfire.ini kept from the Python Sonata starts XWayland's XSETTINGS
+    /// manager with `python3 -m sonata2.xsettings`: with no Python Sonata
+    /// left, X11 apps would lose Sonata's look. That line is Sonata's, not
+    /// the user's own script: it becomes the Rust one.
+    #[test]
+    fn test_python_xsettings_line_kept_after_the_upgrade() {
+        let old = "[core]\nxwayland_startup_script = env PYTHONPATH=/home/v/.local/share/sonata2 python3 -m sonata2.xsettings\n";
+        let out = login_frame_step(old, &left(), "/s");
+        assert!(out.contains("xwayland_startup_script = sonata2-rs xsettings\n") && !out.contains("python3"), "{out}");
     }
 
     #[test]

@@ -8,13 +8,9 @@ pub mod window;
 
 use gtk::prelude::*;
 
-/// The app id: on trial its own (`sonata2rs`), so both Calendars can be open.
+/// The app id (its D-Bus name and Wayland app id).
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.calendar"
-    } else {
-        "io.github.vinioliveiras.sonata2.calendar"
-    }
+    "io.github.vinioliveiras.sonata2.calendar"
 }
 
 /// Checkbox and dot colours of the palette (tokens where they exist): the

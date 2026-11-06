@@ -23,11 +23,7 @@ const S_XL: i32 = 16;
 const S_XXL: i32 = 20;
 
 fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.gallery"
-    } else {
-        "io.github.vinioliveiras.sonata2.gallery"
-    }
+    "io.github.vinioliveiras.sonata2.gallery"
 }
 
 fn caption(text: &str) -> gtk::Label {

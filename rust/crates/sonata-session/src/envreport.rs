@@ -96,9 +96,6 @@ pub fn write(ui_lines: &[String]) {
 /// the Python menu bar writes the same file, and the Rust build's versions
 /// would replace the session's real ones.
 pub fn start(ui_lines: Vec<String>) -> bool {
-    if sonata_config::side_by_side() {
-        return false;
-    }
     std::thread::Builder::new().name("env-report".into()).spawn(move || write(&ui_lines)).is_ok()
 }
 

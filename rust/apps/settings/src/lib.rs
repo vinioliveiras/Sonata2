@@ -32,13 +32,9 @@ pub const DEFAULT_PAGE: &str = "appearance";
 /// A closed Settings stays (hidden) this long: opening it again is instant.
 pub const LINGER_S: u32 = 600;
 
-/// The app id: on trial its own (`sonata2rs`), so both can be open.
+/// The app id (its D-Bus name and Wayland app id).
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.settings"
-    } else {
-        "io.github.vinioliveiras.sonata2.settings"
-    }
+    "io.github.vinioliveiras.sonata2.settings"
 }
 
 /// sonata2-settings.desktop's text (shown in Apps as "Settings": Vini).

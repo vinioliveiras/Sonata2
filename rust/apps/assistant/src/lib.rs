@@ -11,13 +11,9 @@ pub mod window;
 
 use gtk::prelude::*;
 
-/// The app id: on trial its own (`sonata2rs`), so both Assistants can be open.
+/// The app id (its D-Bus name and Wayland app id).
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.assistant"
-    } else {
-        "io.github.vinioliveiras.sonata2.assistant"
-    }
+    "io.github.vinioliveiras.sonata2.assistant"
 }
 
 /// `sonata2-rs assistant`: one window (opening it again brings it forward).

@@ -391,11 +391,7 @@ fn share_items(lines: &[String]) -> Vec<PickItem> {
 }
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.share"
-    } else {
-        "io.github.vinioliveiras.sonata2.share"
-    }
+    "io.github.vinioliveiras.sonata2.share"
 }
 
 /// `sonata2-rs share-picker`: the portal's choices on stdin, the chosen

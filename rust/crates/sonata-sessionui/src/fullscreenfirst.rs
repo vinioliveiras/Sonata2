@@ -64,7 +64,7 @@ impl FullscreenFirst {
             PowerBoost::new(),
             LightEffects::new(),
             Box::new(gamemode::register_game),
-            !sonata_config::side_by_side(),
+            true,
         )
     }
 

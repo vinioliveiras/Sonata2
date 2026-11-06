@@ -51,11 +51,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.launchpad"
-    } else {
-        "io.github.vinioliveiras.sonata2.launchpad"
-    }
+    "io.github.vinioliveiras.sonata2.launchpad"
 }
 
 fn register_css() {

@@ -32,11 +32,7 @@ use std::time::Duration;
 const LOCK_WALLPAPER_PX: i32 = 1280;
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.lock"
-    } else {
-        "io.github.vinioliveiras.sonata2.lock"
-    }
+    "io.github.vinioliveiras.sonata2.lock"
 }
 
 fn user() -> String {

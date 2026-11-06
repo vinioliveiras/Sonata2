@@ -1,52 +1,50 @@
 #!/usr/bin/env bash
 # Try Sonata 2 without logging out: runs Wayfire as a window inside your
 # current desktop (GNOME/KDE on Wayland or X11) with config/wayfire.ini,
-# a wallpaper, the Dock from this repo and a terminal.
-#   tools/dev-session.sh                 # default wallpaper
-#   SONATA2_WALLPAPER=~/Pictures/x.jpg tools/dev-session.sh
-# Close the Wayfire window (or Ctrl+C here) to stop. Needs: wayfire;
-# optional: python-pillow (generated sample wallpaper; or pick one in
-# System Settings > Wallpaper).
+# the Dock, menu bar and Launchpad built from this clone, and a terminal.
+#   tools/dev-session.sh                 # builds rust/ (debug) first
+#   SONATA2_BIN=/path/to/sonata2-rs tools/dev-session.sh
+# Close the Wayfire window (or Ctrl+C here) to stop. Needs: wayfire, cargo.
+# The wallpaper is the one set in Sonata's Settings, else Sonata's Mountains.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-source "$REPO/tools/session-env.sh"     # themes, cursors, GTK_THEME for apps started inside
 command -v wayfire >/dev/null || { echo "wayfire is not installed (sudo pacman -S wayfire)"; exit 1; }
+bin="${SONATA2_BIN:-}"
+if [ -z "$bin" ]; then
+    (cd "$REPO/rust" && cargo build --bin sonata2-rs)
+    bin="$REPO/rust/target/debug/sonata2-rs"
+fi
+bindir="$(mktemp -d)"
+# `sonata2-rs` / `sonata2` on the PATH are this build (the config and the
+# session's scripts call them by name)
+ln -s "$bin" "$bindir/sonata2-rs" && ln -s "$bin" "$bindir/sonata2"
+export PATH="$bindir:$PATH" SONATA2_LAUNCHER="$bindir/sonata2"
+source "$REPO/tools/session-env.sh"     # themes, cursors, fonts for apps started inside
 
 # Unset what a Sonata/GTK host session may leak into this terminal.
 unset GDK_BACKEND
 run="$(mktemp -d)"
 logs="$REPO/.dev-logs"; mkdir -p "$logs"; rm -f "$logs"/*.log
-trap 'rm -rf "$run"' EXIT
-wall="${SONATA2_WALLPAPER:-}"
-if [ -z "$wall" ] && python3 -c "import PIL" 2>/dev/null; then
-    wall="$run/wall.png"
-    PYTHONPATH="$REPO" python3 - "$wall" <<'PY'
-import shutil, sys
-from sonata2.shell.preview import _wallpaper
-shutil.copy(_wallpaper(1600, 1000, False)[0], sys.argv[1])
-PY
-fi
+trap 'rm -rf "${run:?}" "${bindir:?}"' EXIT
 
 term=""
 for t in kgx gnome-terminal konsole kitty alacritty foot ghostty xfce4-terminal; do
     command -v "$t" >/dev/null && { term="$t"; break; }
 done
 
-# The repo's config, with autostart pointed at this clone.
-# (the session's `sonata2 ...` commands become this clone's python -m sonata2;
-# no dbus-update-activation-environment here: it would leak into GNOME)
+# The repo's config, with autostart pointed at this clone's build.
+# (no dbus-update-activation-environment here: it would leak into GNOME)
 "$REPO/tools/wayfire-config.sh" "$REPO/config/wayfire.ini" "$run/resolved.ini"
-# (at the path Settings edits live: sonata2/wfconfig.py)
+# (at the path Settings edits live)
 cfg="${XDG_RUNTIME_DIR:-$run}/sonata2-wayfire.ini"
-sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m sonata2 |" \
-    "$run/resolved.ini" > "$cfg"
+sed -e '/^\[autostart\]/,$d' "$run/resolved.ini" > "$cfg"
 {
     echo "[autostart]"
     echo "autostart_wf_shell = false"
     # each component logs to .dev-logs/<name>.log (read them if something is missing)
     for c in wallpaper dock "launchpad --background" "spotlight --background" topbar; do
         n="${c%% *}"
-        echo "$n = sh -c 'env PYTHONPATH=$REPO python3 -m sonata2 $c > $logs/$n.log 2>&1'"
+        echo "$n = sh -c '$bin $c > $logs/$n.log 2>&1'"
     done
     [ -n "$term" ] && echo "terminal = $term"
     echo
@@ -55,15 +53,6 @@ sed -e '/^\[autostart\]/,$d' -e "s|= sonata2 |= env PYTHONPATH=$REPO python3 -m 
     echo "[output:X11-1]"
     echo "mode = 1600x1000"
 } >> "$cfg"
-
-# Sample wallpaper only if none is set (Sonata's settings, sonata2/prefs.py).
-_prefs() { PYTHONPATH="$REPO" python3 -c "import sys; from sonata2 import prefs; $1" "${@:2}"; }
-cur="$(_prefs 'print(prefs.get(prefs.BG, "picture-uri") or "")' 2>/dev/null)"
-if [ -n "$wall" ] && [ -z "$cur" ]; then
-    keep="$HOME/.config/sonata2/sample-wallpaper.png"; cp "$wall" "$keep"
-    _prefs 'prefs.set(prefs.BG, "picture-uri", sys.argv[1])' "file://$keep" 2>/dev/null || true
-fi
 echo "Wayfire config: $cfg"
-[ -z "$wall" ] && echo "(no wallpaper: install python-pillow or set SONATA2_WALLPAPER to see the glass)"
 wayfire -c "$cfg" > "$logs/wayfire.log" 2>&1 || true
 echo "Logs: $logs"

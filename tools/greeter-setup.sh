@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sonata's login screen (sonata2/shell/greeter.py) under greetd, in place of
+# Sonata's login screen (`sonata2 greeter`) under greetd, in place of
 # GDM/SDDM/LightDM. Run by `install.sh --greeter`; `install.sh --gdm` (this
 # script with "revert") puts the previous login manager back.
 #
@@ -8,14 +8,15 @@
 #
 # What it sets up:
 #   /usr/local/share/sonata2-greeter/   a copy of Sonata the greeter user can
-#                                       read (your home folder is private)
+#                                       read (your home folder is private):
+#                                       bin/sonata2-rs, share/sonata2-rs/{data,locale}
 #   /usr/local/bin/sonata-greeter       starts a small Wayfire running it
 #   /etc/greetd/config.toml             greetd runs that as user "greeter"
 #                                       (the old file is kept as .sonata-backup)
 #   /var/lib/sonata-greeter/<you>/      your wallpaper, copied there by your
 #                                       session so the login screen shows it
 #   /var/cache/sonata-greeter/          last user and session (greeter's)
-#   Switch User (lock screen; sonata2/userswitch.py): a second greetd on
+#   Switch User (lock screen): a second greetd on
 #   the next free VT, started on demand --
 #     /etc/greetd/sonata-switch.toml
 #     /etc/systemd/system/sonata-greeter-switch.service
@@ -24,6 +25,13 @@
 set -euo pipefail
 trap 's=$?; echo "greeter-setup.sh stopped at line $LINENO (exit $s): $BASH_COMMAND" >&2' ERR
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
+# The Sonata binary to copy: install.sh names the one it installed; else
+# the installed one, else this clone's build.
+RS="${SONATA2_BIN:-}"
+for c in "$(command -v sonata2-rs 2>/dev/null || true)" "$HOME/.local/bin/sonata2-rs" "$SRC/rust/target/release/sonata2-rs"; do
+    [ -n "$RS" ] && break
+    [ -n "$c" ] && [ -x "$c" ] && RS="$c"
+done
 ACTION="${1:-install}"
 SHARE=/usr/local/share/sonata2-greeter
 LAUNCHER=/usr/local/bin/sonata-greeter
@@ -66,7 +74,8 @@ if [ "$ACTION" = revert ]; then
     $SUDO systemctl daemon-reload || true
     # undo the rest of "install": the keyring lines added to greetd's PAM file, the quiet console
     if [ -f /etc/pam.d/greetd.sonata-bak ]; then
-        $SUDO env PYTHONPATH="$SRC" python3 -m sonata2 keyring unpam /etc/pam.d/greetd || true
+        rs="$RS"; [ -x "$SHARE/bin/sonata2-rs" ] && rs="$SHARE/bin/sonata2-rs"
+        if [ -n "$rs" ]; then $SUDO "$rs" keyring unpam /etc/pam.d/greetd || true; fi
     fi
     "$SRC/tools/quiet-console.sh" revert || true
     say "Done. Restart the computer to see it."
@@ -89,11 +98,18 @@ fi
 getent passwd greeter >/dev/null || $SUDO useradd -r -M -G video -s /usr/bin/nologin greeter
 
 # -- a copy of Sonata the greeter can read ---------------------------------------------------------
+if [ -z "$RS" ]; then
+    echo "Sonata isn't built yet (sonata2-rs): run ./install.sh first." >&2
+    exit 1
+fi
 say "Copying Sonata for the login screen -> $SHARE"
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/share"
-tar -C "$SRC" --exclude='__pycache__' --exclude='*.pyc' -cf - sonata2 | tar -C "$tmp/share" -xf -
+trap 'rm -rf "${tmp:?}"' EXIT
+# laid out as an install: the binary finds its data and translations at
+# ../share/sonata2-rs next to itself
+mkdir -p "$tmp/share/bin" "$tmp/share/share/sonata2-rs"
+cp "$RS" "$tmp/share/bin/sonata2-rs"
+cp -a "$SRC/data" "$SRC/locale" "$tmp/share/share/sonata2-rs/"
 # (no systemd-localed to ask: "us" -- under pipefail a failing localectl
 #  stopped the whole install without a word)
 loc="$(localectl status 2>/dev/null || true)"
@@ -113,35 +129,36 @@ cursor_size = 24
 
 [autostart]
 autostart_wf_shell = false
-greeter = env PYTHONPATH=$SHARE python3 -m sonata2 greeter
+greeter = $SHARE/bin/sonata2-rs greeter
 EOF
 # Displays: the same mode/scale/position as your Sonata session (Settings >
 # Displays writes them to wayfire-overrides.ini), else the highest refresh
 # rate. The login screen's own resolution menu can still change them.
 USER_HOME="$(getent passwd "$ME" | cut -d: -f6)"
-python3 - "$USER_HOME/.config/sonata2/wayfire-overrides.ini" >> "$tmp/share/wayfire.ini" <<'PY'
-import configparser, glob, os, sys
-cp = configparser.ConfigParser(interpolation=None, strict=False)
-try:
-    cp.read(sys.argv[1])
-except configparser.Error:
-    pass
-names = sorted({os.path.basename(p).split("-", 1)[1] for p in glob.glob("/sys/class/drm/card*-*")
-                if "-" in os.path.basename(p)})
-for name in names:
-    sec = f"output:{name}"
-    keys = {k: cp.get(sec, k) for k in ("mode", "scale", "position", "transform") if cp.has_option(sec, k)}
-    keys.setdefault("mode", "highrr")
-    print(f"\n[{sec}]")
-    for k, v in keys.items():
-        print(f"{k} = {v}")
-PY
+over="$USER_HOME/.config/sonata2/wayfire-overrides.ini"
+for card in /sys/class/drm/card*-*; do
+    [ -e "$card" ] || continue
+    n="${card##*/}"; n="${n#*-}"
+    printf '%s\n' "$n"
+done | sort -u | while read -r name; do
+    # that output's keys in the overrides ([output:<name>]: mode, scale, position, transform)
+    keys="$(awk -v sec="[output:$name]" '
+        /^[[:space:]]*\[/ { on = ($0 == sec) ; next }
+        on && /^[[:space:]]*(mode|scale|position|transform)[[:space:]]*=/ {
+            k = $0; sub(/[[:space:]]*=.*/, "", k); gsub(/^[[:space:]]+/, "", k)
+            v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); sub(/[[:space:]]+$/, "", v)
+            print k " = " v
+        }' "$over" 2>/dev/null || true)"
+    printf '\n[output:%s]\n' "$name"
+    printf '%s\n' "$keys" | grep -q '^mode = ' || printf 'mode = highrr\n'
+    if [ -n "$keys" ]; then printf '%s\n' "$keys"; fi
+done >> "$tmp/share/wayfire.ini"
 cat > "$tmp/sonata-greeter" <<EOF
 #!/bin/sh
 # greetd runs this (as user "greeter"): Sonata's login screen in a small
-# Wayfire; the screen ends that Wayfire once you log in (greeter.py).
+# Wayfire; the screen ends that Wayfire once you log in.
 export SONATA_GREETER_WAYFIRE=1 XDG_CURRENT_DESKTOP=Sonata
-export XCURSOR_PATH=$SHARE/sonata2/data/icons XCURSOR_THEME=Sonata-Cursors XCURSOR_SIZE=24
+export XCURSOR_PATH=$SHARE/share/sonata2-rs/data/icons XCURSOR_THEME=Sonata-Cursors XCURSOR_SIZE=24
 export XDG_CONFIG_HOME=/var/cache/sonata-greeter/config XDG_CACHE_HOME=/var/cache/sonata-greeter/cache
 # a clean screen: no text on this console around the login (the VT shows
 # whatever was printed on it when no compositor holds the display)
@@ -177,7 +194,7 @@ printf '# Sonata login screen (tools/greeter-setup.sh; "install.sh --gdm" undoes
 
 # -- Switch User: a second greetd on the next free VT, started from the lock screen ----------
 # (greetd's own session stays on VT 1; this one's greeter goes away again
-#  once you go back to a session that's already running -- userswitch.py)
+#  once you go back to a session that's already running)
 printf '# Sonata: Switch User (tools/greeter-setup.sh)\n[terminal]\nvt = "next"\nswitch = true\n\n[default_session]\ncommand = "env SONATA_GREETER_SWITCH=1 %s"\nuser = "greeter"\n' \
     "$LAUNCHER" | $SUDO tee "$SWITCH_TOML" >/dev/null
 GREETD_BIN="$(command -v greetd || echo /usr/bin/greetd)"
@@ -189,9 +206,9 @@ if [ -d /etc/polkit-1/rules.d ] || $SUDO mkdir -p /etc/polkit-1/rules.d 2>/dev/n
 fi
 
 # -- the login unlocks GNOME's keyring (saved passwords: no prompt after logging in) ----------
-# pam_gnome_keyring in /etc/pam.d/greetd (a copy kept as .sonata-bak); sonata2/keyring.py
+# pam_gnome_keyring in /etc/pam.d/greetd (a copy kept as .sonata-bak; `sonata2 keyring pam`)
 if command -v gnome-keyring-daemon >/dev/null && [ -f /etc/pam.d/greetd ]; then
-    $SUDO env PYTHONPATH="$SRC" python3 -m sonata2 keyring pam /etc/pam.d/greetd || true
+    $SUDO "$SHARE/bin/sonata2-rs" keyring pam /etc/pam.d/greetd || true
 fi
 
 # -- switch the login manager (next boot: switching now would end this session) ---------------

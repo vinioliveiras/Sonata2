@@ -24,7 +24,7 @@ pub const ACTIONS: &[&str] = &["switcher", "fullscreen", "capture", "draw", "rep
 /// Everything above, once, on the main display's menu bar (never in a
 /// preview: a second backdrop or clipboard watcher would double up).
 pub fn topbar_started(app: &gtk::Application, win: &Rc<sonata_topbar::window::TopBarWindow>) {
-    if !win.layered() || sonata_config::side_by_side() {
+    if !win.layered() {
         return;
     }
     // full screen remembered per app (Ctrl+Super+F), the game in front

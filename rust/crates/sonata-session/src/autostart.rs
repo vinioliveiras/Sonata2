@@ -14,7 +14,7 @@
 //! the Flatpak theme, KeePassXC -- run through the Python Sonata while it
 //! is installed, in one short process, before any app starts (as before).
 
-use crate::{home, keep, procs};
+use crate::{keep, procs};
 use gio::prelude::*;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -83,43 +83,6 @@ pub fn crashed(note: &str) -> bool {
     matches!((p.next().map(str::parse::<i64>), p.next().map(str::parse::<i64>)), (Some(Ok(_)), Some(Ok(_))))
 }
 
-/// The Python-only login steps, each on its own (one failing never keeps
-/// the rest, or the login's apps, from starting).
-const PYTHON_STEPS: &str = r#"
-try:                                   # Sonata title bars for Chrome, VS Code... (before they start)
-    from sonata2 import titlebars
-    titlebars.apply()
-except Exception as e:
-    print(f"sonata2-autostart: title bars: {e}", flush=True)
-try:                                   # ç on U.S. International, before the apps start (Vini)
-    from sonata2 import compose
-    compose.ensure()
-except Exception as e:
-    print(f"sonata2-autostart: compose: {e}", flush=True)
-try:
-    from sonata2 import gtkstyle, flatpak_theme
-    gtkstyle.reset_env()               # (and forced GTK_THEME on D-Bus activated apps)
-    flatpak_theme.apply()              # Flatpak apps in Sonata's look (Settings > Appearance)
-except Exception as e:
-    print(f"sonata2-autostart: gtk style: {e}", flush=True)
-try:
-    from sonata2 import keyring
-    keyring.start()                    # KeePassXC: saved passwords for every app
-except Exception as e:
-    print(f"sonata2-autostart: keyring: {e}", flush=True)
-"#;
-
-fn python_steps() {
-    let Some(home) = home::sonata_home() else { return }; // no Python Sonata: nothing of it to set up
-    let path = match std::env::var("PYTHONPATH") {
-        Ok(p) if !p.is_empty() => format!("{}:{p}", home.display()),
-        _ => home.display().to_string(),
-    };
-    if let Err(e) = Command::new("python3").arg("-c").arg(PYTHON_STEPS).env("PYTHONPATH", path).stdin(Stdio::null()).status() {
-        println!("sonata2-autostart: python: {e}");
-    }
-}
-
 /// Started and left to run on its own (GLib.spawn_async).
 fn spawn(argv: &[String], what: &str) {
     // reaped when it ends (GLib.spawn_async did): a zombie otherwise
@@ -149,13 +112,12 @@ pub fn autostart(_args: &[String]) -> i32 {
 /// since you just logged in: applock.py, appscope.py, gpu.py), which lives
 /// in a crate above this one. Returns how many started.
 pub fn run(launch: &dyn Fn(&str, &gio::DesktopAppInfo) -> Result<(), glib::Error>) -> usize {
-    run_with(launch, &python_steps)
+    run_with(launch, &|| {})
 }
 
 /// `autostart` with the setup steps (title bars, compose, GTK style,
-/// keyring) given by `steps` and the login items opened by `launch`: their
-/// Rust versions live in crates above this one, so `sonata2-rs` passes them
-/// in the Rust session instead of asking the Python install. `launch` is
+/// keyring) given by `steps` and the login items opened by `launch`: they
+/// live in crates above this one, so `sonata2-rs` passes them in. `launch` is
 /// Sonata's own launch path: gio's alone gave a login item no GPU, no FPS
 /// limit (Steam at login) and no scope of its own.
 pub fn autostart_with(launch: &dyn Fn(&str, &gio::DesktopAppInfo) -> Result<(), glib::Error>, steps: &dyn Fn()) -> i32 {

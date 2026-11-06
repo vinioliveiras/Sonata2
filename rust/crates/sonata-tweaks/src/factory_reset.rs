@@ -10,9 +10,8 @@
 //! dotfile markers) are never touched: the next login needs them. Both
 //! return what they removed (paths), for the log.
 //!
-//! Which folders: the ones this build writes -- on trial `~/.config/sonata2-rs`,
-//! `~/.cache/sonata2-rs` and `~/.local/share/sonata2-rs-data`, so a reset in
-//! the trial build never takes the Python Sonata's settings or data with it.
+//! Which folders: `~/.config/sonata2`, `~/.cache/sonata2` and
+//! `~/.local/share/sonata2-data`.
 
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -24,21 +23,17 @@ pub const CONTENT: [&str; 5] = ["launchpad.json", "activity-history.json", "file
 /// dock.json: kept by settings_only()
 pub const DOCK_CONTENT: [&str; 4] = ["pinned", "folders", "stacks", "recent"];
 
-fn trial() -> bool {
-    sonata_config::side_by_side()
-}
-
 pub fn config_dir() -> PathBuf {
     sonata_config::write_dir()
 }
 
 pub fn cache_dir() -> PathBuf {
-    crate::util::cache_home().join(if trial() { sonata_config::TRIAL_NAME } else { sonata_config::NAME })
+    crate::util::cache_home().join(sonata_config::NAME)
 }
 
 /// Where your apps' data is (userdata.root()).
 pub fn data_root() -> PathBuf {
-    crate::util::data_home().join(if trial() { "sonata2-rs-data" } else { "sonata2-data" })
+    crate::util::data_home().join("sonata2-data")
 }
 
 fn config_files(dir: &Path) -> Vec<String> {

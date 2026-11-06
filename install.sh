@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # Sonata 2 installer -- works on any distro (no distro-specific paths).
+# Sonata is one Rust program (rust/: `sonata2-rs`, called `sonata2`); this
+# builds it with cargo and installs it, with its data, the session and the
+# login screen entry. Run over an older Sonata -- the Python one, or the
+# Rust preview next to it -- it is an upgrade: nothing of yours is lost
+# (`sonata2 migrate`, below).
 #
 #   ./install.sh              install for this user (~/.local), ask for sudo
 #                             only to add "Sonata" to the login screen
 #   ./install.sh --system     install for all users (/usr/local, needs sudo)
 #   (dependencies)            always checked and installed with the distro's
 #                             package manager (pacman/apt/dnf/zypper/xbps/apk):
-#                             required ones, then every optional one (Wi-Fi,
-#                             screenshots, Night Shift...), pywayland from PyPI
-#                             if needed; pixdecor built from source
+#                             Rust (cargo) and the libraries to build with,
+#                             then every optional one (Wi-Fi, screenshots,
+#                             Night Shift...); pixdecor built from source
 #   ./install.sh --no-deps    only check them (print what's missing)
 #   ./install.sh --yes        don't ask (login-screen entry included)
-#   ./install.sh --uninstall  remove it again (your settings stay)
+#   ./install.sh --uninstall  remove it again (your settings and data stay)
 #   ./install.sh --dev        link to this clone instead of copying it: the
-#                             session runs the code you are editing
-#                             (`sonata2 restart` reloads the shell)
+#                             session runs this clone's data and scripts and
+#                             the binaries cargo builds here (`cargo build
+#                             --release` in rust/, then `sonata2 restart`)
 #   (login screen)            Sonata's own login screen (greetd in place of
 #                             GDM/SDDM, from the next boot) is set up too:
 #                             asked once, then kept up to date
@@ -34,11 +40,23 @@
 #                             device allowed while unlocked, new ones blocked
 #                             while locked)
 #
-# Installs: the sonata2 package + themes/icons -> <prefix>/share/sonata2,
-# launchers `sonata2` and `sonata-session` -> <prefix>/bin, the session
-# entry -> /usr/share/wayland-sessions/sonata.desktop, the session's Wayfire
-# config -> ~/.config/sonata2/wayfire.ini (an edited copy is kept), portal
+# Installs: the binaries sonata2-rs (+ -terminal, -camera, -videos,
+# -assistant: the apps that need libraries the rest doesn't) and the
+# `sonata2` link to it -> <prefix>/bin; Sonata's data, translations,
+# default config and session scripts -> <prefix>/share/sonata2-rs; the
+# `sonata-session` launcher -> <prefix>/bin; the session entry ->
+# /usr/share/wayland-sessions/sonata.desktop; the session's Wayfire config
+# -> ~/.config/sonata2/wayfire.ini (an edited copy is kept); portal
 # preferences for the "Sonata" desktop.
+#
+# Upgrading (Software Update runs this too, from the release it downloaded):
+# nothing is removed until the new build is installed. Then `sonata2 migrate`
+# carries the Rust preview's settings (~/.config/sonata2-rs) and app data
+# (~/.local/share/sonata2-rs-data) into the real ones (the newer file wins,
+# the other one is kept in the backup) and moves the old Python install
+# (<prefix>/share/sonata2, its `sonata2` launcher), the preview's launcher and
+# its loose copies to ~/.local/share/sonata2-backups/upgrade-<date>.
+# ~/.config/sonata2 and ~/.local/share/sonata2-data are never replaced.
 set -euo pipefail
 # a step that fails stops the install: say which (a friend's install ended without a word)
 trap 's=$?; echo "install.sh stopped at line $LINENO (exit $s): $BASH_COMMAND" >&2; echo "Please send this line to the Sonata developers." >&2' ERR
@@ -64,29 +82,19 @@ if [ "$(id -u)" = 0 ] && [ "$MODE" != system ] && [ "$UNINSTALL" != 1 ]; then
 fi
 if [ "$MODE" = system ]; then PREFIX=/usr/local; SUDO=sudo; else PREFIX="$HOME/.local"; SUDO=""; fi
 [ "$(id -u)" = 0 ] && SUDO=""
-SHARE="$PREFIX/share/sonata2"
+SHARE="$PREFIX/share/sonata2-rs"
 BIN="$PREFIX/bin"
 SESSION_FILE=/usr/share/wayland-sessions/sonata.desktop
+# the "Sonata (Rust preview)" entry the Rust build added while it was on trial
+PREVIEW_SESSION_FILE=/usr/share/wayland-sessions/sonata-rs.desktop
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+APPS="$DATA/applications"
 if [ "$MODE" = system ]; then PORTAL_DIR=/usr/share/xdg-desktop-portal; else PORTAL_DIR="$CFG/xdg-desktop-portal"; fi
+# the binaries: Sonata itself, and the apps whose libraries the rest doesn't need
+BINS="sonata2-rs sonata2-rs-terminal sonata2-rs-camera sonata2-rs-videos sonata2-rs-assistant"
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
-# Your data (notes, calendars, TextEdit's open tabs) used to
-# live inside the install folder ($SHARE), which an update replaces (and a dev
-# install links to the git clone): carry it to ~/.local/share/sonata2-data
-# (sonata2/userdata.py) before $SHARE goes.
-carry_data() {
-    local data="${XDG_DATA_HOME:-$HOME/.local/share}" src app
-    [ "$SHARE" = "$HOME/.local/share/sonata2" ] || [ "$SHARE" = "$data/sonata2" ] || return 0
-    src="$(readlink -f "$SHARE" 2>/dev/null || true)"
-    [ -n "$src" ] && [ -d "$src" ] || return 0
-    for app in notes calendar textedit; do
-        if [ -d "$src/$app" ] && [ ! -e "$data/sonata2-data/$app" ]; then
-            mkdir -p "$data/sonata2-data" && mv "$src/$app" "$data/sonata2-data/$app" &&
-                echo "  your $app data is in $data/sonata2-data/$app"
-        fi
-    done
-}
 ask() { [ "$YES" = 1 ] && return 0; read -r -p "$1 [Y/n] " r; [ -z "$r" ] || [[ "$r" =~ ^[YySs] ]]; }
 # default No (security-relevant choices): --yes answers No, only an explicit flag says yes
 ask_no() { [ "$YES" = 1 ] && return 1; read -r -p "$1 [y/N] " r; [[ "$r" =~ ^[YySs] ]]; }
@@ -94,88 +102,78 @@ ask_no() { [ "$YES" = 1 ] && return 1; read -r -p "$1 [y/N] " r; [[ "$r" =~ ^[Yy
 # -- uninstall ---------------------------------------------------------------------------
 if [ "$UNINSTALL" = 1 ]; then
     say "Removing Sonata 2 from $PREFIX"
-    carry_data                           # (your notes and calendars stay)
-    $SUDO rm -rf "$SHARE"
-    $SUDO rm -f "$BIN/sonata2" "$BIN/sonata-session" "$PORTAL_DIR/sonata-portals.conf"
+    $SUDO rm -rf "${SHARE:?}"
+    for b in $BINS sonata2 sonata-session sonata-filemanager1; do $SUDO rm -f "${BIN:?}/${b:?}"; done
+    $SUDO rm -f "$PORTAL_DIR/sonata-portals.conf"
     if [ -f "$SESSION_FILE" ] && ask "Remove \"Sonata\" from the login screen (sudo)?"; then
         sudo rm -f "$SESSION_FILE" /usr/local/bin/sonata-login
     fi
-    rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.impl.portal.desktop.sonata.service"
+    rm -f "$DATA/dbus-1/services/org.freedesktop.impl.portal.desktop.sonata.service" \
+          "$DATA/dbus-1/services/org.freedesktop.FileManager1.service"
     sudo rm -f /usr/share/xdg-desktop-portal/portals/sonata.portal 2>/dev/null || true
-    rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/dbus-1/services/org.freedesktop.FileManager1.service" \
-          "$BIN/sonata-filemanager1"
     grep -qs "Sonata's Terminal" "$BIN/xdg-terminal-exec" && $SUDO rm -f "$BIN/xdg-terminal-exec"
-    rm -f "$HOME/.local/share/applications/sonata2-launchpad.desktop" \
-          "$HOME/.local/share/applications/sonata2-settings.desktop" \
-          "$HOME/.local/share/applications/sonata2-screenshot.desktop"
+    # Sonata's own launchers (written again by its next install)
+    rm -f "$APPS"/io.github.vinioliveiras.sonata2.*.desktop "$APPS/sonata2-launchpad.desktop" \
+          "$APPS/sonata2-settings.desktop" "$APPS/sonata2-screenshot.desktop"
     "$(dirname "$0")/tools/quiet-console.sh" revert || true
     sudo rm -f /etc/polkit-1/rules.d/50-sonata2-mount.rules /etc/polkit-1/rules.d/60-sonata2-updates.rules \
         2>/dev/null || true
     rm -rf "$HOME/.local/opt/sonata-wayfire"
-    say "Done. Your settings are still in $CFG/sonata2 (delete that folder to reset them)."
+    say "Done. Your settings are still in $CFG/sonata2 and your apps' data in $DATA/sonata2-data."
     exit 0
 fi
 
 # -- dependencies ------------------------------------------------------------------------------
-# what Sonata needs from Python (also asked again once the packages are in)
-missing_python() {
-    python3 - <<'PY' 2>/dev/null || echo "python3"
-import gi, sys
-missing = []
-for ns, v in (("Gtk", "4.0"), ("Adw", "1"), ("Gtk4LayerShell", "1.0")):
-    try:
-        gi.require_version(ns, v)
-        mod = __import__("gi.repository." + ns, fromlist=[ns])
-        if ns == "Gtk4LayerShell":
-            mod.get_major_version()   # the library itself (Ubuntu: its gir package came without it)
-    except Exception as e:
-        missing.append(f"{ns}-{v}")
-        print(f"  {ns} {v}: {e}", file=sys.stderr)
-for mod in ("pywayland", "cairo"):
-    try:
-        __import__(mod)
-    except ImportError:
-        missing.append(mod)
-try:
-    gi.require_foreign("cairo")
-except ImportError:
-    missing.append("gi-cairo")
-print(" ".join(missing))
-PY
+# What building Sonata needs: Rust, and the libraries it links with their
+# headers (pkg-config names; Terminal, Camera, Videos and the Assistant
+# need theirs only for their own binaries).
+REQUIRED_PC="gtk4 libadwaita-1 gtk4-layer-shell-0"
+missing_build() {
+    local m=""
+    command -v cargo >/dev/null || m="$m cargo"
+    command -v pkg-config >/dev/null || m="$m pkg-config"
+    if command -v pkg-config >/dev/null; then
+        for p in $REQUIRED_PC; do pkg-config --exists "$p" 2>/dev/null || m="$m $p"; done
+    fi
+    command -v wayfire >/dev/null || m="$m wayfire"
+    echo "$m" | xargs
 }
-missing_py="$(missing_python)"
-missing="$missing_py"
-command -v wayfire >/dev/null || missing="$missing wayfire"
-missing="$(echo "$missing" | xargs)"
+missing="$(missing_build)"
 
 . /etc/os-release 2>/dev/null || true
 family="${ID:-} ${ID_LIKE:-}"
-# Package names per family (checked against the distros' archives, 2026-09).
-# Needs: Wayfire >= 0.9, GTK >= 4.12, libadwaita >= 1.4, gtk4-layer-shell >= 1.0,
-# Python >= 3.10 with PyGObject, pycairo and pywayland. Known good: Arch and its
-# derivatives (CachyOS, EndeavourOS, Manjaro), Fedora 41+, Debian 13+,
-# Ubuntu 25.04+ / derivatives, openSUSE Tumbleweed.
+# Package names per family. Needs: Wayfire >= 0.9, GTK >= 4.12,
+# libadwaita >= 1.5, gtk4-layer-shell >= 1.0, Rust >= 1.80 (cargo). Known
+# good: Arch and its derivatives (CachyOS, EndeavourOS, Manjaro). The other
+# families' development packages follow each distro's naming; check them in
+# a container with tools/test-install.sh before a release.
 NI=""      # the package manager's "don't ask" flag, for optional packages one by one
 case "$family" in
     *arch*)   PM="sudo pacman -S --needed"; NI="--noconfirm"
-              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python-gobject python-cairo python-pywayland"
-              OPT="vte4 networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring libsecret keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap webp-pixbuf-loader gamemode gtksourceview5 gst-plugins-good gst-plugins-bad gst-libav python-mutagen udisks2 wf-recorder gpu-screen-recorder wlsunset wtype swayidle openssl meson ninja ddcutil openrgb webkitgtk-6.0 wayvnc ufw cups usbguard flatpak gocryptfs" ;;
+              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell rust pkgconf gcc rsync"
+              BUILD_OPT="vte4 gstreamer gst-plugins-base-libs libsoup3 libsecret gtksourceview5"
+              OPT="networkmanager wireplumber brightnessctl bluez-utils wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring keepassxc libpulse xorg-xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap webp-pixbuf-loader gamemode gst-plugins-good gst-plugins-bad gst-libav udisks2 wf-recorder gpu-screen-recorder wlsunset wtype swayidle openssl meson ninja ddcutil openrgb webkitgtk-6.0 wayvnc ufw cups usbguard flatpak gocryptfs" ;;
     *debian*|*ubuntu*) PM="sudo apt install"; NI="-y"
-              PKGS="wayfire gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtk4layershell-1.0 libgtk4-layer-shell0 python3-gi python3-gi-cairo python3-pywayland python3-cffi-backend"
-              OPT="gir1.2-vte-3.91 network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gir1.2-polkit-1.0 gnome-keyring keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap webp-pixbuf-loader gamemode gir1.2-gtksource-5 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb gir1.2-webkit-6.0 wayvnc ufw cups usbguard flatpak gocryptfs" ;;
+              PKGS="wayfire cargo rustc pkg-config build-essential rsync libgtk-4-dev libadwaita-1-dev libgtk4-layer-shell-dev"
+              BUILD_OPT="libvte-2.91-gtk4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libsoup-3.0-dev libsecret-1-dev libgtksourceview-5-dev"
+              OPT="network-manager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk libpolkit-agent-1-0 gnome-keyring keepassxc pulseaudio-utils xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap webp-pixbuf-loader gamemode gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb libwebkitgtk-6.0-4 wayvnc ufw cups usbguard flatpak gocryptfs" ;;
     *fedora*|*rhel*) PM="sudo dnf install"; NI="-y"
-              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell gobject-introspection python3-gobject python3-cairo python3-pywayland"
-              OPT="vte291-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring keepassxc pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg-free bubblewrap webp-pixbuf-loader gamemode gtksourceview5 gstreamer1-plugins-good gstreamer1-plugins-bad-free python3-mutagen udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb webkitgtk6.0 wayvnc ufw cups usbguard flatpak gocryptfs" ;;
+              PKGS="wayfire cargo rust pkgconf-pkg-config gcc rsync gtk4-devel libadwaita-devel gtk4-layer-shell-devel"
+              BUILD_OPT="vte291-gtk4-devel gstreamer1-devel gstreamer1-plugins-base-devel libsoup3-devel libsecret-devel gtksourceview5-devel"
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk gnome-keyring keepassxc pulseaudio-utils xorg-x11-server-Xwayland grim slurp wl-clipboard ffmpegthumbnailer ffmpeg-free bubblewrap webp-pixbuf-loader gamemode gstreamer1-plugins-good gstreamer1-plugins-bad-free udisks2 wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb webkitgtk6.0 wayvnc ufw cups usbguard flatpak gocryptfs" ;;
     *suse*)   PM="sudo zypper install"; NI="-y"
-              PKGS="wayfire gtk4 libadwaita-1-0 typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 gtk4-layer-shell python3-gobject python3-gobject-cairo python3-pywayland"
-              OPT="typelib-1_0-Vte-3_91 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb typelib-1_0-WebKit-6_0 cups usbguard flatpak gocryptfs" ;;
+              PKGS="wayfire cargo rust pkgconf gcc rsync gtk4-devel libadwaita-devel gtk4-layer-shell-devel"
+              BUILD_OPT="vte-devel gstreamer-devel gstreamer-plugins-base-devel libsoup-devel libsecret-devel gtksourceview5-devel"
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb cups usbguard flatpak gocryptfs" ;;
     *void*)   PM="sudo xbps-install"; NI="-y"
-              PKGS="wayfire gtk4 libadwaita gtk4-layer-shell python3-gobject python3-cairo python3-pywayland"
-              OPT="vte3-gtk4 NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb ufw cups usbguard flatpak gocryptfs" ;;
+              PKGS="wayfire cargo rust pkg-config gcc rsync gtk4-devel libadwaita-devel gtk4-layer-shell-devel"
+              BUILD_OPT="vte3-gtk4-devel gstreamer1-devel gst-plugins-base1-devel libsoup3-devel libsecret-devel gtksourceview5-devel"
+              OPT="NetworkManager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb ufw cups usbguard flatpak gocryptfs" ;;
     *alpine*) PM="sudo apk add"; NI=""
-              PKGS="wayfire gtk4.0 libadwaita gtk4-layer-shell py3-gobject3 py3-cairo py3-pywayland"
-              OPT="vte3-gtk4 networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb ufw cups usbguard flatpak" ;;
-    *)        PM=""; PKGS=""; OPT="" ;;
+              PKGS="wayfire cargo rust pkgconf build-base rsync gtk4.0-dev libadwaita-dev gtk4-layer-shell-dev"
+              BUILD_OPT="vte3-gtk4-dev gstreamer-dev gst-plugins-base-dev libsoup3-dev libsecret-dev gtksourceview5-dev"
+              OPT="networkmanager wireplumber brightnessctl bluez wlr-randr power-profiles-daemon xdg-desktop-portal-wlr xdg-desktop-portal-gtk grim slurp wl-clipboard ffmpegthumbnailer ffmpeg bubblewrap wf-recorder wlsunset wtype swayidle openssl ddcutil openrgb ufw cups usbguard flatpak" ;;
+    *)        PM=""; PKGS=""; BUILD_OPT=""; OPT="" ;;
 esac
 # What building Wayfire 0.12 with its wlroots (tools/build-wayfire-stack.sh),
 # Sonata's plugins and pixdecor needs, where the distro's Wayfire is older
@@ -206,58 +204,45 @@ if [ -n "$missing" ]; then
         echo "Install with:  $PM $PKGS"
         if [ "$DEPS" = 1 ]; then $PM $NI $PKGS || true; fi
     else
-        echo "Install Wayfire, GTK 4, libadwaita, gtk4-layer-shell (+ GObject introspection),"
-        echo "PyGObject with cairo support and pywayland with your package manager."
-    fi
-    # pywayland isn't packaged everywhere: pip, for this user -- it builds a
-    # part of it, so pip and the build tools first. (Ubuntu 25.04's package
-    # lacks its python3-cffi-backend dependency: "No module named
-    # pywayland._ffi" -- it's in PKGS above.)
-    if ! python3 -c "import pywayland" 2>/dev/null; then
-        say "pywayland from PyPI (this user only)"
-        if [ "$DEPS" = 1 ]; then
-            case "$family" in
-                *debian*|*ubuntu*) $PM $NI python3-pip python3-dev python3-cffi libwayland-dev gcc pkg-config || true ;;
-                *fedora*|*rhel*) $PM $NI python3-pip python3-devel python3-cffi wayland-devel gcc pkgconf || true ;;
-                *arch*) $PM $NI python-pip python-cffi wayland gcc pkgconf || true ;;
-            esac
-        fi
-        python3 -m pip install --user pywayland 2>/dev/null || \
-            python3 -m pip install --user --break-system-packages pywayland || true
+        echo "Install Wayfire, Rust (cargo), pkg-config, and GTK 4, libadwaita and"
+        echo "gtk4-layer-shell with their development files, with your package manager."
     fi
 fi
-# still missing once the packages are in: Sonata can't start -- say so and stop
-# (Fedora: GTK needs the cairo typelib from gobject-introspection; the install
-#  said it was done and Sonata wouldn't open)
-if [ -n "$missing" ] && [ "$DEPS" = 1 ]; then
-    still="$(missing_python 2>/tmp/sonata-missing.$$ | xargs)"
-    if [ -n "$still" ]; then
-        say "Sonata can't start without: $still"
-        cat /tmp/sonata-missing.$$ >&2 2>/dev/null; rm -f /tmp/sonata-missing.$$
-        echo "Install them with your package manager and run ./install.sh again."
-        exit 1
-    fi
-    rm -f /tmp/sonata-missing.$$
+# The apps with libraries of their own (Terminal: VTE; Camera, Videos:
+# GStreamer; Assistant: libsoup, libsecret; TextEdit: GtkSourceView): one
+# by one when they don't all go in at once -- a release without one still
+# gets the rest.
+if [ "$DEPS" = 1 ] && [ -n "$BUILD_OPT" ]; then
+    $PM $NI $BUILD_OPT >/dev/null 2>&1 || for p in $BUILD_OPT; do $PM $NI "$p" >/dev/null 2>&1 || echo "  (not available here: $p)"; done
+fi
+# Still missing once the packages are in: Sonata can't be built -- say so
+# and stop before anything is changed (the Sonata already installed, if
+# any, stays as it is and keeps working)
+still="$(missing_build)"
+if [ -n "$still" ]; then
+    say "Sonata can't be built without: $still"
+    case " $still " in *" cargo "*)
+        echo "Sonata is built from its source with Rust: install it with your package manager"
+        echo "(Arch: sudo pacman -S rust; Debian/Ubuntu: sudo apt install cargo; Fedora: sudo dnf install cargo),"
+        echo "or from https://rustup.rs, then run ./install.sh again." ;;
+    esac
+    echo "Nothing was changed: the Sonata you have (if any) stays as it is."
+    exit 1
+fi
+# Rust older than Sonata's code needs (a distro's can lag): rustup has newer
+rust_ver="$(rustc --version 2>/dev/null | sed -n 's/^rustc \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')"
+if [ -n "$rust_ver" ] && [ "$(echo "$rust_ver" | awk '{print ($1 * 1000 + $2 < 1080) ? 1 : 0}')" = 1 ]; then
+    say "Rust $(echo "$rust_ver" | tr ' ' .) is too old for Sonata (it needs 1.80 or newer): https://rustup.rs has one."
+    echo "Nothing was changed: the Sonata you have (if any) stays as it is."
+    exit 1
 fi
 # Versions (older ones are the usual reason something doesn't show up)
-python3 - <<'PY' || true
-import sys
-bad = []
-if sys.version_info < (3, 10):
-    bad.append(f"Python {sys.version.split()[0]} (needs 3.10+)")
-try:
-    import gi
-    gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")
-    from gi.repository import Adw, Gtk
-    if (Gtk.get_major_version(), Gtk.get_minor_version()) < (4, 12):
-        bad.append(f"GTK {Gtk.get_major_version()}.{Gtk.get_minor_version()} (needs 4.12+)")
-    if (Adw.get_major_version(), Adw.get_minor_version()) < (1, 4):
-        bad.append(f"libadwaita {Adw.get_major_version()}.{Adw.get_minor_version()} (needs 1.4+)")
-except Exception:
-    pass
-if bad:
-    print("\033[1mToo old for Sonata:\033[0m " + ", ".join(bad) + " -- a newer distro release is needed.")
-PY
+bad=""
+pkg-config --atleast-version=4.12 gtk4 2>/dev/null || bad="$bad, GTK $(pkg-config --modversion gtk4 2>/dev/null) (needs 4.12+)"
+pkg-config --atleast-version=1.5 libadwaita-1 2>/dev/null || bad="$bad, libadwaita $(pkg-config --modversion libadwaita-1 2>/dev/null) (needs 1.5+)"
+if [ -n "$bad" ]; then
+    printf '\033[1mToo old for Sonata:\033[0m%s -- a newer distro release is needed.\n' "${bad#,}"
+fi
 if [ -n "$OPT" ]; then
     say "Features (Wi-Fi, sound, brightness, Bluetooth, displays, energy, portals, password prompts,"
     say "saved passwords, screenshots, recording, Night Shift, emoji typing, auto-lock)"
@@ -295,53 +280,102 @@ fi
 # from the AUR: its package needs wayfire-git, which conflicts with the stable
 # wayfire and stopped the install under --noconfirm (issue #1).
 
+# -- the build -----------------------------------------------------------------------------------
+# Built before anything is installed or moved: a build that fails leaves
+# the Sonata already installed (the Python one, an older Rust one) as it was.
+# CARGO_TARGET_DIR: Software Update keeps one between updates (much faster).
+TARGET="${CARGO_TARGET_DIR:-$SRC/rust/target}"
+say "Building Sonata (cargo build --release; the first build takes several minutes)"
+if ! (cd "$SRC/rust" && CARGO_TARGET_DIR="$TARGET" cargo build --release --locked --bin sonata2-rs); then
+    say "Sonata couldn't be built (the output above says why)."
+    echo "Nothing was changed: the Sonata you have (if any) stays as it is."
+    exit 1
+fi
+built="sonata2-rs"
+for b in sonata2-rs-terminal sonata2-rs-camera sonata2-rs-videos sonata2-rs-assistant; do
+    if (cd "$SRC/rust" && CARGO_TARGET_DIR="$TARGET" cargo build --release --locked --bin "$b" >"$TARGET/$b.build.log" 2>&1); then
+        built="$built $b"
+    else
+        echo "  $b couldn't be built (a library it needs is missing: $TARGET/$b.build.log); the rest of Sonata works without it"
+    fi
+done
+
 # -- files ----------------------------------------------------------------------------------------
 say "Installing Sonata 2 to $PREFIX"
-$SUDO mkdir -p "$SHARE" "$BIN"
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/sonata2/tools"
-# Package (no caches), session tools, default config, licences.
-items=(sonata2 config)
-for f in "$SRC"/LICENSE* "$SRC/README.md"; do [ -e "$f" ] && items+=("$(basename "$f")"); done
-( cd "$SRC" && tar --exclude=__pycache__ -cf - "${items[@]}" ) | tar -xf - -C "$tmp/sonata2"
-cp "$SRC/tools/session-env.sh" "$SRC/tools/sonata-session" "$SRC/tools/wayfire-config.sh" "$tmp/sonata2/tools/"
-carry_data
-$SUDO mkdir -p "$(dirname "$SHARE")"
+$SUDO mkdir -p "$BIN" "$(dirname "$SHARE")"
+tmp="$(mktemp -d)"; trap 'rm -rf "${tmp:?}"' EXIT
+for b in $built; do
+    if [ "$DEV" = 1 ]; then
+        $SUDO ln -sfn "$TARGET/release/$b" "$BIN/$b"      # what cargo builds here runs at once
+    else
+        # beside it, then renamed: a running Sonata keeps the binary it has
+        $SUDO install -m 755 "$TARGET/release/$b" "$BIN/.$b.new" && $SUDO mv -f "$BIN/.$b.new" "$BIN/$b"
+    fi
+done
+# Sonata's folder: data (icons, wallpapers, sounds, fonts, themes...), the
+# translations, the default Wayfire config and the session's scripts
 if [ "$DEV" = 1 ]; then
-    $SUDO rm -rf "$SHARE"
-    $SUDO ln -s "$SRC" "$SHARE"          # the session runs this clone's code
+    [ -L "$SHARE" ] || [ ! -e "$SHARE" ] || $SUDO mv "$SHARE" "$SHARE.before-dev.$$"
+    $SUDO ln -sfn "$SRC" "$SHARE"          # the session runs this clone's data and scripts
     echo "Dev install: $SHARE -> $SRC"
-elif [ -d "$SHARE" ] && [ ! -L "$SHARE" ]; then
+else
+    if [ -L "$SHARE" ]; then $SUDO unlink "$SHARE"; fi     # (a --dev install's link before)
+    $SUDO mkdir -p "$SHARE/tools/bin"
+    # the icon themes are ~16,000 links (one artwork, many names), kept as
+    # links: a clone made with core.symlinks=false holds them as small text
+    # files GTK can't draw (Files, Terminal, Spotify... went invisible in the Dock)
+    if [ -d "$SRC/.git" ] && [ -f "$SRC/data/icons/Sonata-MacTahoe/apps/scalable/system-file-manager.svg" ] &&
+            [ ! -L "$SRC/data/icons/Sonata-MacTahoe/apps/scalable/system-file-manager.svg" ]; then
+        git -C "$SRC" -c core.symlinks=true checkout -- data/icons
+    fi
     # updated in place: unchanged files (the bundled font, icons, sounds) keep
     # their inode -- the running Dock lost its font when the copy was deleted
     # and every name label went blank (Vini)
-    $SUDO python3 "$SRC/tools/sync-tree.py" "$tmp/sonata2" "$SHARE"
-else
-    $SUDO rm -rf "$SHARE"
-    $SUDO cp -a "$tmp/sonata2" "$SHARE"
+    for d in data locale config; do
+        if command -v rsync >/dev/null; then
+            $SUDO rsync -a --delete "$SRC/$d/" "$SHARE/$d/"
+        else
+            $SUDO cp -a "$SRC/$d" "$SHARE/$d.new.$$"
+            [ ! -e "$SHARE/$d" ] || $SUDO mv "$SHARE/$d" "$tmp/$d.old"
+            $SUDO mv "$SHARE/$d.new.$$" "$SHARE/$d"
+        fi
+    done
+    $SUDO install -m 755 "$SRC/tools/session-env.sh" "$SRC/tools/sonata-session" "$SRC/tools/wayfire-config.sh" "$SHARE/tools/"
+    $SUDO install -m 755 "$SRC/tools/bin/xdg-terminal-exec" "$SHARE/tools/bin/"
+    for f in VERSION LICENSE README.md; do [ -e "$SRC/$f" ] && $SUDO cp "$SRC/$f" "$SHARE/"; done
 fi
 
-cat > "$tmp/sonata2-launcher" <<EOF
-#!/bin/sh
-# Sonata 2 launcher (installed by install.sh): sonata2 <dock|topbar|launchpad|settings|...>
-SONATA_HOME="$SHARE"
-export PYTHONPATH="\$SONATA_HOME\${PYTHONPATH:+:\$PYTHONPATH}"
-export SONATA2_LAUNCHER="$BIN/sonata2"
-# "Sonata (Rust preview)" (rust/install-rs.sh --session): what the Rust
-# build runs, it runs -- Launchpad, the Dock and D-Bus start apps through here
-# (by its path: D-Bus starts the portal with a PATH without ~/.local/bin,
-# and it stayed the Python one)
-if [ "\${SONATA2_RS_SESSION:-}" = 1 ] && [ -x "$BIN/sonata2-rs" ] && "$BIN/sonata2-rs" --handles "\${1:-}"; then
-    exec "$BIN/sonata2-rs" "\$@"
+# -- the upgrade: what older Sonatas kept, carried over (nothing lost) ---------------------------
+# The new Sonata is in place: only now can the old one's files go -- to a
+# backup, never deleted. ~/.config/sonata2 and sonata2-data stay as they are.
+BACKUP="$DATA/sonata2-backups/upgrade-$(date +%Y%m%d-%H%M%S)"
+"$BIN/sonata2-rs" migrate user --backup "$BACKUP"
+if [ "$MODE" = system ]; then
+    $SUDO "$BIN/sonata2-rs" migrate install --prefix "$PREFIX" --system --backup "$PREFIX/share/sonata2-backups/$(basename "$BACKUP")"
+else
+    "$BIN/sonata2-rs" migrate install --prefix "$PREFIX" --backup "$BACKUP"
 fi
-exec python3 -m sonata2 "\$@"
-EOF
+# the "Sonata (Rust preview)" login entry (its launcher went to the backup above)
+if [ -f "$PREVIEW_SESSION_FILE" ]; then
+    mkdir -p "$BACKUP" && cp "$PREVIEW_SESSION_FILE" "$BACKUP/"
+    sudo rm -f "$PREVIEW_SESSION_FILE" && echo "  \"Sonata (Rust preview)\" is now simply \"Sonata\" on the login screen"
+fi
+# the preview's "Calculator (Rust)"... entries (generated; Sonata's own are written below)
+for f in "$APPS"/io.github.vinioliveiras.sonata2rs.*.desktop; do
+    [ -e "$f" ] || continue
+    mkdir -p "$BACKUP/applications" && mv "$f" "$BACKUP/applications/"
+done
+if [ -d "$BACKUP" ]; then echo "  what the old install left is in $BACKUP"; fi
+
+# `sonata2` is Sonata: the session, Wayfire's keys, D-Bus services and every
+# desktop entry (web apps' too, written with `sonata2 webapp`) start it so
+$SUDO ln -sf sonata2-rs "$BIN/sonata2"
 cat > "$tmp/sonata-session-launcher" <<EOF
 #!/bin/sh
 # Starts a Sonata session (the login screen's "Sonata" entry runs this).
 # Everything up to Wayfire's start is traced to login.log (Wayfire and the
 # shell then log to session.log next to it): in memory, or ~/.cache/sonata2
-# with Settings > About > Logs on (sonata2/logs.py).
+# with Settings > About > Logs on.
 logdir="\${XDG_RUNTIME_DIR:-/tmp}/sonata2-logs"
 if [ "\${SONATA_DEBUG:-}" = 1 ] || [ -e "\${XDG_CONFIG_HOME:-\$HOME/.config}/sonata2/debug-logging" ]; then
     logdir="\${XDG_CACHE_HOME:-\$HOME/.cache}/sonata2"
@@ -352,9 +386,11 @@ date; echo "XDG_SESSION_TYPE=\$XDG_SESSION_TYPE WAYLAND_DISPLAY=\$WAYLAND_DISPLA
 export PATH="$BIN:\$PATH" SONATA2_LAUNCHER="$BIN/sonata2"
 exec bash -x "$SHARE/tools/sonata-session" "\$@"
 EOF
-$SUDO install -m 755 "$tmp/sonata2-launcher" "$BIN/sonata2"
 $SUDO install -m 755 "$tmp/sonata-session-launcher" "$BIN/sonata-session"
-$SUDO chmod 755 "$SHARE/tools/sonata-session" "$SHARE/tools/session-env.sh" "$SHARE/tools/wayfire-config.sh"
+# Sonata's apps in Launchpad and the app menus (their entries start `sonata2`)
+if [ "$MODE" != system ]; then
+    SONATA2_LAUNCHER="$BIN/sonata2" "$BIN/sonata2-rs" desktop-files >/dev/null || echo "  (the apps' entries are written at the next login)"
+fi
 
 # -- a terminal for apps that need one (xdg-terminal-exec) -----------------------------------------
 # Apps with Terminal=true (CachyOS' update: its tray icon and "Run"
@@ -480,7 +516,7 @@ $SUDO mkdir -p "$PORTAL_DIR"
 printf '[preferred]\ndefault=sonata;gtk\norg.freedesktop.impl.portal.FileChooser=sonata\norg.freedesktop.impl.portal.Settings=sonata\norg.freedesktop.impl.portal.Access=sonata\norg.freedesktop.impl.portal.Screenshot=wlr\norg.freedesktop.impl.portal.ScreenCast=wlr\n' \
     > "$tmp/sonata-portals.conf"
 $SUDO install -m 644 "$tmp/sonata-portals.conf" "$PORTAL_DIR/sonata-portals.conf"
-# Sonata's Open/Save panels (sonata2/portal.py): a portal backend D-Bus starts
+# Sonata's Open/Save panels (`sonata2 portal`): a portal backend D-Bus starts
 # on demand; xdg-desktop-portal lists backends only from its system folder
 printf '[portal]\nDBusName=org.freedesktop.impl.portal.desktop.sonata\nInterfaces=org.freedesktop.impl.portal.FileChooser;org.freedesktop.impl.portal.Settings;org.freedesktop.impl.portal.Access;\nUseIn=Sonata\n' \
     > "$tmp/sonata.portal"
@@ -489,14 +525,14 @@ printf '[D-BUS Service]\nName=org.freedesktop.impl.portal.desktop.sonata\nExec=%
     > "$DBUS_DIR/org.freedesktop.impl.portal.desktop.sonata.service"
 
 # Screen sharing (Chrome, Firefox, Discord, OBS...): xdg-desktop-portal-wlr
-# captures, Sonata's picker (sonata2/shell/sharepicker.py) asks which
+# captures, Sonata's picker (`sonata2 share-picker`) asks which
 # screen. Its config for XDG_CURRENT_DESKTOP=Sonata only (other desktops keep theirs).
 mkdir -p "$CFG/xdg-desktop-portal-wlr"
 printf '[screencast]\nchooser_type=dmenu\nchooser_cmd=%s share-picker\nmax_fps=60\n' "$BIN/sonata2" \
     > "$CFG/xdg-desktop-portal-wlr/Sonata"
 systemctl --user try-restart xdg-desktop-portal-wlr.service 2>/dev/null || true
 # the Open/Save panels (Sonata's portal) run all session: the new code on next use
-pkill -f -- "sonata2 portal( |$)" 2>/dev/null || true
+pkill -f -- "sonata2(-rs)? portal( |$)" 2>/dev/null || true
 
 # -- login screen entry ---------------------------------------------------------------------------------
 # The login screen checks TryExec as its own user (gdm, sddm...), which can't
@@ -600,7 +636,7 @@ if command -v systemctl >/dev/null 2>&1; then
         echo "USB protection: careful -- USBGuard on its own blocks every USB device it has no rule for,"
         echo "  keyboard and mouse included. Sonata sets it up to allow every device while unlocked and"
         echo "  block only new ones plugged in while the screen is locked (--no-usbguard skips this)."
-        setup="$(PYTHONPATH="$SRC" python3 -c 'from sonata2.backend.usbprotect import SETUP; print(SETUP)' 2>/dev/null || true)"
+        setup="$("$BIN/sonata2-rs" settings-usb-setup 2>/dev/null || true)"
         if [ -n "$setup" ] && sudo sh -c "$setup" >/dev/null; then
             echo "USB protection: on (Settings > Security & Privacy > USB)."
         else
@@ -624,16 +660,15 @@ fi
 
 # -- Sonata's login screen (greetd) -------------------------------------------------------------------
 if [ -x /usr/local/bin/sonata-greeter ] && [ "$GREETER" != 0 ]; then
-    "$SRC/tools/greeter-setup.sh" install >/dev/null && echo "Login screen: updated to this version."
+    SONATA2_BIN="$BIN/sonata2-rs" "$SRC/tools/greeter-setup.sh" install >/dev/null && echo "Login screen: updated to this version."
 elif [ "$GREETER" = 1 ] || { [ "$GREETER" = ask ] && ask "Use Sonata's own login screen (replaces GDM/SDDM from the next boot; ./install.sh --gdm undoes it)?"; }; then
     say "Sonata's login screen (greetd)"
-    "$SRC/tools/greeter-setup.sh" install
+    SONATA2_BIN="$BIN/sonata2-rs" "$SRC/tools/greeter-setup.sh" install
 else
     echo "Login screen: kept as it is (./install.sh --greeter to use Sonata's)."
 fi
 
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "Note: $BIN is not in your PATH (the session adds it itself)." ;; esac
 say "Checking this computer (sonata2 doctor):"
-PYTHONPATH="$SHARE" python3 -m sonata2 doctor || true
-say "Done. Log out and pick \"Sonata\" on the login screen, or try it inside your desktop with:"
-echo "  $SRC/tools/dev-session.sh"
+"$BIN/sonata2-rs" doctor || true
+say "Done. Log out and pick \"Sonata\" on the login screen."

@@ -15,7 +15,7 @@ use std::path::PathBuf;
 pub const VERSION: u32 = 1;
 
 pub fn data_dir() -> PathBuf {
-    sonata_config::own_data_dir("textedit")
+    sonata_config::data_dir("textedit")
 }
 
 fn buffers() -> PathBuf {

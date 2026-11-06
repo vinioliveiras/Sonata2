@@ -49,11 +49,7 @@ pub const MIME_TYPES: [&str; 15] = ["video/mp4", "video/x-matroska", "video/webm
 pub const AUDIO_TYPES: [&str; 16] = ["audio/mpeg", "audio/mp3", "audio/flac", "audio/x-flac", "audio/ogg", "audio/x-vorbis+ogg", "audio/vorbis", "audio/opus", "audio/x-opus+ogg", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/x-aac", "audio/wav", "audio/x-wav", "audio/vnd.wave"];
 
 pub fn app_id() -> &'static str {
-    if sonata_config::side_by_side() {
-        "io.github.vinioliveiras.sonata2rs.videos"
-    } else {
-        "io.github.vinioliveiras.sonata2.videos"
-    }
+    "io.github.vinioliveiras.sonata2.videos"
 }
 
 fn defaults() -> Value {
