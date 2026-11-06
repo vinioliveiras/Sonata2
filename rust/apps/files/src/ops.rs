@@ -276,17 +276,6 @@ pub fn delete(f: &gio::File, cancel: Option<&gio::Cancellable>) -> Result<(), gl
     f.delete(cancel)
 }
 
-fn delete_all(files: &[gio::File], report: &dyn Fn(&gio::File, &glib::Error)) -> usize {
-    let mut n = 0;
-    for f in files {
-        match delete(f, None) {
-            Ok(()) => n += 1,
-            Err(e) => report(f, &e),
-        }
-    }
-    n
-}
-
 /// The Trash's items erased each as a whole: gvfs's trash:/// deletes a
 /// trashed folder with everything in it, but refuses anything inside one
 /// ("Items in the wastebasket may not be modified") -- going in to delete
