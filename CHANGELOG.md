@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Web apps keep their window's size again: each opened at the size it had before the move to Rust.
 - Apps: a right-click on an app inside an open folder shows its menu again (nothing happened).
 - Dock: an app dragged out of a folder now stays on the Dock where its place opened, also when the drop doesn't reach the Dock (it went back into its folder, or into a new folder with the app beside it). Taken out of a folder, an app no longer makes a new folder with the app it's over: it goes where its place opens.
 - Now Playing: a player that sends no artwork (Chrome playing Netflix) shows its app's icon in the square instead of an empty square with a note, and the menu bar's Now Playing has a volume slider under the player, as in Control Center's Sound.

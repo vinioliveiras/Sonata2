@@ -466,7 +466,9 @@ pub fn view_size(views: &Value, wm_class: &str) -> Option<(i32, i32)> {
             return None;
         }
         let g = v.get("geometry");
-        let num = |k: &str| g.and_then(|g| g.get(k)).and_then(Value::as_i64).unwrap_or(0);
+        // (Wayfire sends them as floats, 1404.0: read as integers they were
+        // 0, and no size was ever kept)
+        let num = |k: &str| g.and_then(|g| g.get(k)).and_then(Value::as_f64).map_or(0, |f| f.round() as i64);
         if num("width") > 0 && num("height") > 0 {
             return Some((num("width") as i32, num("height") as i32));
         }

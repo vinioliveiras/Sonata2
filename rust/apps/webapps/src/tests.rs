@@ -402,6 +402,16 @@ fn test_view_size() {
     assert_eq!(view_size(&json!([]), "chrome-x__-Default"), None);
 }
 
+/// Vini: web apps didn't keep their window's size -- every one opened at
+/// the size it had under the Python Sonata. Wayfire gives the geometry as
+/// floats (1404.0), which read as integers came out 0: no size was seen,
+/// none saved.
+#[test]
+fn test_web_app_window_size_not_kept() {
+    let views = json!([{"app-id": "chrome-x__-Default", "geometry": {"x": 10.0, "y": 32.0, "width": 1404.0, "height": 933.0}, "tiled-edges": 0, "fullscreen": false}]);
+    assert_eq!(view_size(&views, "chrome-x__-Default"), Some((1404, 933)));
+}
+
 // -- video and memory (test_webapp_video_images.py) --------------------------------------------
 
 /// Vini: WhatsApp said the mp4 was not supported -- WebKit's video through
