@@ -395,6 +395,16 @@ impl Model {
         self.normalize();
     }
 
+    /// Ungroup (the folder's menu): its apps take its place, in its order;
+    /// what no longer fits the page flows on (normalize). False: no such folder.
+    pub fn ungroup(&mut self, folder: &Folder) -> bool {
+        let Some((p, i)) = self.position(&Item::Folder(folder.clone())) else { return false };
+        let apps: Vec<Item> = folder.apps.iter().map(|a| Item::App(a.clone())).collect();
+        self.pages[p].splice(i..i + 1, apps);
+        self.normalize();
+        true
+    }
+
     /// A folder dropped in from the Dock: its apps (installed, not hidden)
     /// leave where they were and come together at page/index. One app alone
     /// is placed as itself. A folder with the same link (dragged back) is
@@ -591,6 +601,24 @@ mod tests {
         assert_eq!(m.pages[0][0], app("x"));
         assert_eq!(m.pages[0].len(), 35);
         assert_eq!(m.pages[1], [app("app034")]);
+    }
+
+    /// Vini: a folder in Apps had no Ungroup in its menu (the Dock's do).
+    /// Its apps take its place, in order; nothing else moves.
+    #[test]
+    fn test_no_ungroup_in_apps_folders() {
+        let mut m = Model::new(&json!({}), installed(5));
+        let f = m.make_folder(&app("app001"), "app003", "Games").unwrap();
+        let before: Vec<Item> = m.pages[0].clone();
+        let at = before.iter().position(|it| *it == Item::Folder(f.clone())).unwrap();
+        assert!(m.ungroup(&f));
+        assert_eq!(m.pages[0][at], app("app001"));
+        assert_eq!(m.pages[0][at + 1], app("app003"));
+        assert!(!m.pages.iter().flatten().any(|it| matches!(it, Item::Folder(_))));
+        let mut all = m.all_apps();
+        all.sort();
+        assert_eq!(all, installed(5).into_keys().collect::<Vec<_>>());
+        assert!(!m.ungroup(&f)); // gone already
     }
 
     #[test]
