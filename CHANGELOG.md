@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Now Playing: a player that sends no artwork (Chrome playing Netflix) shows its app's icon in the square instead of an empty square with a note, and the menu bar's Now Playing has a volume slider under the player, as in Control Center's Sound.
 - Dock: an app dragged out of a folder's panel and dropped on the Dock stays there (it used to go back into its folder); dropped on another app it makes or joins a folder, let go anywhere else it goes back. The panel is now drawn in the Dock itself, with the same look, and closes with Esc or a click anywhere else.
 - Search closes again with a click beside it, or on its menu bar icon again.
 - Menu bar: clicking a menu keeps the app in front's name and menus, also once the menu has closed, and their items (About, Hide, Quit, the File and Window menus) act on that app (with Chrome in front they turned into Files').
