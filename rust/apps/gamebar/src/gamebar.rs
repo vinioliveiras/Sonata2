@@ -81,11 +81,20 @@ pub const BAR_TOP: i32 = 14;
 pub const WIDGET_TOP: i32 = 76;
 pub const WIDGET_SIDE: i32 = 24;
 pub const WIDGET_W: i32 = 340;
+/// a widget's modules: GAP between them, and as wide a border around them
+/// (its own padding and the body's), as macOS's Control Center -- Vini,
+/// with a photo of it: 16 px outside and between there; ours had 10
+/// outside, 6 between. Control Center's own (ccgrid::SPACING)
+pub const GAP: i32 = 8;
+/// the widget's padding (gamebar.py's gb_pad): around its header too
+pub const WIDGET_PAD: i32 = 6;
+/// the body's, at the sides and bottom (gb_body): WIDGET_PAD + BODY_PAD = GAP
+pub const BODY_PAD: i32 = 2;
 /// the content's width inside a widget (its padding and the body's): long
 /// text wraps or ellipsizes, never widens a widget
-pub const WIDGET_INNER: i32 = WIDGET_W - 2 * 6 - 2 * 4;
-/// two graphs a row, the Grid's 6 px between
-pub const PERF_CELL: (i32, i32) = ((WIDGET_INNER - 6) / 2, 92);
+pub const WIDGET_INNER: i32 = WIDGET_W - 2 * WIDGET_PAD - 2 * BODY_PAD;
+/// two graphs a row, GAP between
+pub const PERF_CELL: (i32, i32) = ((WIDGET_INNER - GAP) / 2, 92);
 /// the panels' tint over the glass (menu_bg at this alpha)
 pub const GLASS_TINT: f32 = 0.55;
 
@@ -465,7 +474,7 @@ impl Widget {
         head.prepend(&gtk::Image::builder().icon_name(icon).pixel_size(16).margin_end(6).build());
         head.set_cursor_from_name(Some("grab"));
         frame.append(&head);
-        let body = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(8).css_classes(["gb-widget-body"]).build();
+        let body = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(GAP).css_classes(["gb-widget-body"]).build();
         let empty = gtk::Label::builder().label(tr!("Coming soon")).css_classes(["gb-widget-empty"]).build();
         body.append(&empty);
         frame.append(&body);
@@ -1257,7 +1266,7 @@ impl GameBar {
     // -- Audio -----------------------------------------------------------------------------------
     fn audio_controls(self: &Rc<Self>) -> gtk::Box {
         use sonata_backend::system;
-        let b = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(8).build();
+        let b = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(GAP).build();
         let (out, vol) = Level::new(speaker_icon, |v| {
             gio::spawn_blocking(move || system::set_volume(Some(v as i64), Some(false)));
         });
@@ -1341,7 +1350,7 @@ impl GameBar {
         });
         let q = self.host.quick_controls(open_displays)?;
         self.has_controls.set(true);
-        let b = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(6).build();
+        let b = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(GAP).build();
         b.append(&q.radios);
         b.append(&q.dnd);
         let title = gtk::Label::builder().label(tr!("Display")).xalign(0.0).css_classes(["panel-module-title"]).build();
@@ -1357,7 +1366,7 @@ impl GameBar {
 
     // -- Performance -----------------------------------------------------------------------------
     fn performance(&self) -> gtk::Box {
-        let b = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(6).css_classes(["gb-perf"]).build();
+        let b = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(GAP).css_classes(["gb-perf"]).build();
         // Control Center's FPS Limit, the same module (Vini): Off / 30 / 60 /
         // 90 / 120 / Max, and the game's frame times -- read only while on screen
         let fps = crate::fpsmodule::FpsModule::new();
@@ -1366,7 +1375,7 @@ impl GameBar {
         }
         b.append(&fps.root);
         self.fps_limit.replace(Some(fps));
-        let grid = gtk::Grid::builder().column_spacing(6).row_spacing(6).column_homogeneous(true).build();
+        let grid = gtk::Grid::builder().column_spacing(GAP).row_spacing(GAP).column_homogeneous(true).build();
         for (i, k) in perf_kinds(&self.host.stats_kinds()).iter().enumerate() {
             // read only while shown
             let m = self.host.stats_module(k).unwrap_or_else(|| crate::perf::module(k).upcast());
@@ -1830,7 +1839,22 @@ mod tests {
         let blocks = sonata_ui::css::blocks("shell/gamebar.py");
         assert!(blocks.iter().any(|(_, css, _)| css.contains("%(dim)s")));
         assert_eq!(DIM.to_string(), "0.45");
-        assert_eq!(WIDGET_INNER, 320);
-        assert_eq!(PERF_CELL, (157, 92));
+        assert_eq!(WIDGET_INNER, 324);
+        assert_eq!(PERF_CELL, (158, 92));
+    }
+
+    /// Vini, with a photo of macOS's Control Center (16 px outside its
+    /// modules and between them): a Game Bar widget had 10 px round its
+    /// modules and 6 between them -- the same width all round now, GAP.
+    #[test]
+    fn test_widget_border_wider_than_its_gaps() {
+        let blocks = sonata_ui::css::blocks("shell/gamebar.py");
+        let (_, css, local) = blocks.iter().find(|(k, _, _)| k == "gamebar").expect("its CSS");
+        assert!(css.contains("border-radius: %(r_dialog)s; padding: %(gb_pad)spx;"));
+        assert!(css.contains(".gb-widget-body { padding: 4px %(gb_body)spx %(gb_body)spx; }"));
+        assert_eq!(local.get("gb_pad"), Some(&WIDGET_PAD.to_string()));
+        assert_eq!(local.get("gb_body"), Some(&BODY_PAD.to_string()));
+        assert_eq!(WIDGET_PAD + BODY_PAD, GAP);
+        assert_eq!(GAP, 8); // Control Center's (topbar's ccgrid::SPACING)
     }
 }

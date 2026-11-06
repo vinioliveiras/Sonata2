@@ -56,7 +56,7 @@ while it's closed: the clock ticks only while it's on screen.
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from .. import config, ui  # noqa: E402
 from ..i18n import N_, _  # noqa: E402
@@ -101,10 +101,45 @@ BAR_TOP = 14                 # the bar below the screen's top edge
 WIDGET_TOP = 76              # widgets start under the bar
 WIDGET_SIDE = 24
 WIDGET_W = 340
+# a widget's modules: GAP between them, and as wide a border around them
+# (its own padding and the body's), as macOS's Control Center -- Vini, with
+# a photo of it: 16 px outside and between there; ours had 10 outside, 6 between
+GAP = 8                      # Control Center's own (controlcenter.SPACING)
+WIDGET_PAD = 6               # the widget's padding: around its header too
+BODY_PAD = 2                 # the body's, at the sides and bottom: WIDGET_PAD + BODY_PAD = GAP
 # the content's width inside a widget (its padding and the body's): long text
 # (an FPS hint, a sound choice) wraps or ellipsizes, never widens a widget
-WIDGET_INNER = WIDGET_W - 2 * 6 - 2 * 4
-PERF_CELL = ((WIDGET_INNER - 6) // 2, 92)       # two graphs a row, the Grid's 6 px between
+WIDGET_INNER = WIDGET_W - 2 * WIDGET_PAD - 2 * BODY_PAD
+PERF_CELL = ((WIDGET_INNER - GAP) // 2, 92)     # two graphs a row, GAP between
+
+
+def output_off_loop(argv: list, done) -> bool:
+    """`argv`'s output, read on a worker thread: done(its GLib.Bytes) on the
+    main loop, done(None) if it failed. False: no such program, nothing asked.
+
+    Why not Gio.Subprocess.communicate_async (frost.capture): it reads the
+    pipe from the main loop, 8 KB a turn, and grim can't finish while nobody
+    reads (the pipe holds 64 KB) -- the menu bar busy for a moment as the
+    Game Bar opened and the picture, ~25 ms of work, came after
+    FROST_WAIT_MS: the Game Bar opened solid (Vini: "sometimes without the
+    glass"). Read here, it's all there whatever the main loop is doing, and
+    comes back in one turn. (The Rust Game Bar's output_off_loop.)"""
+    if not argv or GLib.find_program_in_path(argv[0]) is None:
+        return False
+    import subprocess
+    import threading
+
+    def work():
+        try:
+            run = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            out = GLib.Bytes.new(run.stdout) if run.returncode == 0 else None
+        except OSError:
+            out = None
+        # only the bytes cross: done (GTK objects) runs on the main loop --
+        # HIGH, ahead of the FROST_WAIT_MS deadline when both are in after a busy moment
+        GLib.idle_add(lambda: (done(out), False)[1], priority=GLib.PRIORITY_HIGH)
+    threading.Thread(target=work, name="sonata2-gamebar-grim", daemon=True).start()
+    return True
 
 
 def _close_ms() -> int:
@@ -152,11 +187,12 @@ window.sonata-gamebar, window.sonata-gamebar > contents { background: none; box-
 .gb-root.frosted .gb-bar, .gb-root.frosted .gb-widget { background-color: transparent; }
 
 /* a widget: Control Center glass */
-.gb-widget { background-color: %(menu_bg)s; border-radius: %(r_dialog)s; padding: 6px;
+.gb-widget { background-color: %(menu_bg)s; border-radius: %(r_dialog)s; padding: %(gb_pad)spx;
   box-shadow: 0 0 0 0.5px %(hairline)s, inset 0 0 0 0.5px %(highlight)s, %(shadow_menu)s;
   color: %(label)s; font-family: %(font)s; font-size: %(text_body)s; }
 .gb-root.closing .gb-bar, .gb-root.closing .gb-widget, .gb-widget.hiding { opacity: 0; }
-.gb-widget-body { padding: 4px 4px 2px; }
+/* its modules: as far from its edges as from each other (GAP) */
+.gb-widget-body { padding: 4px %(gb_body)spx %(gb_body)spx; }
 .gb-widget-empty { color: %(label_secondary)s; font-size: %(text_small)s; margin: 14px 8px 16px; }
 
 /* Capture: two round actions, Control Center style */
@@ -200,7 +236,7 @@ window.sonata-gamebar-pin .gb-pin, window.sonata-gamebar-pin .gb-chips { opacity
 .gb-section { font-size: %(text_small)s; font-weight: 600; color: %(label_secondary)s; margin: 4px 4px 0; }
 .gb-widget .seg button { font-size: %(text_small)s; padding-left: 2px; padding-right: 2px; }
 .gb-perf .panel-module { padding: 8px; }
-""", key="gamebar", dim=DIM)
+""", key="gamebar", dim=DIM, gb_pad=WIDGET_PAD, gb_body=BODY_PAD)
 
 
 def _now() -> str:
@@ -310,7 +346,7 @@ class Widget(_GlassBox):
         head.set_cursor(Gdk.Cursor.new_from_name("grab"))
         self.head = head
         self.append(head)
-        self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, css_classes=["gb-widget-body"])
+        self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP, css_classes=["gb-widget-body"])
         self.empty = Gtk.Label(label=_("Coming soon"), css_classes=["gb-widget-empty"])
         self.body.append(self.empty)
         self.append(self.body)
@@ -735,17 +771,9 @@ class GameBar(Gtk.Window):
                 show()
             return False
         from .capture import focused_output
-        try:
-            proc = Gio.Subprocess.new(frost_command(focused_output()),
-                                      Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE)
-        except GLib.Error:
-            once()
-            return
-        GLib.timeout_add(FROST_WAIT_MS, once)
 
-        def done(p, res):
+        def done(out):
             try:
-                _ok, out, _err = p.communicate_finish(res)
                 tex = texture_from(out)
             except GLib.Error:
                 tex = None
@@ -753,7 +781,10 @@ class GameBar(Gtk.Window):
             if tex is not None and gen == self._frost_gen and not state["shown"]:
                 self._set_frost(tex)
             once()
-        proc.communicate_async(None, None, done)
+        if not output_off_loop(frost_command(focused_output()), done):
+            once()
+            return
+        GLib.timeout_add(FROST_WAIT_MS, once)
 
     def _set_frost(self, tex) -> None:
         """The picture blurred, the glass on (before the Game Bar shows)."""
@@ -809,7 +840,7 @@ class GameBar(Gtk.Window):
     def _audio_controls(self) -> Gtk.Widget:
         from ..backend import system
         from .topbar import _slider_with_icon, _speaker_icon, _volume_feedback
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
         out, self.vol = _slider_with_icon(_speaker_icon, 50, lambda v: system.run_async(
             system.set_volume, None, int(v), False))
         _volume_feedback(self.vol)
@@ -904,7 +935,7 @@ class GameBar(Gtk.Window):
         q.bright.set_focusable(True)
         q.bright.set_can_focus(True)
         conn = ui.panel.module(q.wifi, q.bt, q.plane, spacing=2)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
         box.append(conn)
         box.append(ui.panel.click_anywhere(ui.panel.module(q.dnd), q.dnd))
         box.append(ui.panel.module(Gtk.Label(label=_("Display"), xalign=0, css_classes=["panel-module-title"]), disp))
@@ -939,14 +970,14 @@ class GameBar(Gtk.Window):
     def _performance(self) -> Gtk.Widget:
         from . import statsui
         from .fpsmodule import FpsModule
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, css_classes=["gb-perf"])
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP, css_classes=["gb-perf"])
         # Control Center's FPS Limit, the same module (Vini): Off / 30 / 60 / 90 /
         # 120 / Max, and the game's frame times -- read only while on screen
         self.fps_limit = FpsModule()
         for b in list(self.fps_limit.buttons.values()) + [self.fps_limit.install_btn]:
             b.set_can_focus(True)                       # the controller reaches them
         box.append(self.fps_limit)
-        grid = Gtk.Grid(column_spacing=6, row_spacing=6, column_homogeneous=True)
+        grid = Gtk.Grid(column_spacing=GAP, row_spacing=GAP, column_homogeneous=True)
         self.perf_kinds = perf_kinds(statsui.KINDS)
         for i, k in enumerate(self.perf_kinds):
             m = statsui.module(k)                       # read only while shown (statsui._Live)

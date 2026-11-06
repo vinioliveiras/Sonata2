@@ -60,6 +60,24 @@ class FakeProc:
         return True, self.out, None
 
 
+class FakeGrim:
+    """grim read on its thread (G.output_off_loop): its picture handed back
+    5 ms later, or (out None) held until deliver()."""
+
+    def __init__(self, out):
+        self.out = out
+        self.argv = self.done = None
+
+    def __call__(self, argv, done):
+        self.argv, self.done = argv, done
+        if self.out is not None:
+            GLib.timeout_add(5, lambda: (done(self.out), False)[1])   # (an idle could wait behind frames)
+        return True
+
+    def deliver(self):
+        self.done(self.out)
+
+
 class GlassTest(unittest.TestCase):
     def setUp(self):
         config.save(G.CONFIG, dict(G.DEFAULTS))
@@ -76,12 +94,12 @@ class GlassTest(unittest.TestCase):
         self.bar.destroy()
 
     def open_with(self, out):
-        proc = FakeProc(out)
+        grim = FakeGrim(out)
         shown = []
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc) as new:
+        with mock.patch.object(G, "output_off_loop", grim):
             self.bar._frost_then(lambda: shown.append(1))
             spin(G.FROST_WAIT_MS + 350)
-        return new, shown, proc
+        return grim, shown
 
     def test_command(self):
         self.assertEqual(G.frost_command("DP-1"), ["grim", "-t", "ppm", "-o", "DP-1", "-"])
@@ -117,15 +135,15 @@ class GlassTest(unittest.TestCase):
         """Pressed again while it waited for its picture (it isn't on screen
         yet), the second press was taken as another opening: it opened. It's
         a close now -- it never shows, the pinned widgets stay over the game."""
-        proc = FakeProc(None)                                   # the picture not there yet
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc), \
+        proc = FakeGrim(None)                                   # the picture not there yet
+        with mock.patch.object(G, "output_off_loop", proc), \
                 mock.patch.object(self.bar, "_hide_pins") as take_pins:
             self.bar.toggle()
             self.assertTrue(self.bar.opening())
             self.bar.toggle()                                   # again, before it showed
             self.assertFalse(self.bar.opening())
             proc.out = red_png()
-            proc.done(proc, None)
+            proc.deliver()
             spin(G.FROST_WAIT_MS + 100)
         self.assertFalse(self.bar.get_visible())
         take_pins.assert_not_called()
@@ -135,7 +153,7 @@ class GlassTest(unittest.TestCase):
         Once it had shown, its opening was never over: closed (off the
         screen) it still looked "waiting for its picture", and the press
         was taken as a close."""
-        with mock.patch.object(G.Gio.Subprocess, "new", side_effect=lambda *a: FakeProc(red_png())):
+        with mock.patch.object(G, "output_off_loop", lambda argv, done: FakeGrim(red_png())(argv, done)):
             self.bar.toggle()
             spin(G.FROST_WAIT_MS + 100)
             self.assertTrue(self.bar.is_open())
@@ -153,10 +171,10 @@ class GlassTest(unittest.TestCase):
         Now it's gone first, then pictured."""
         seen = []
 
-        def new(*_a):
+        def grim(argv, done):
             seen.append(self.bar.get_visible())
-            return FakeProc(red_png())
-        with mock.patch.object(G.Gio.Subprocess, "new", side_effect=new):
+            return FakeGrim(red_png())(argv, done)
+        with mock.patch.object(G, "output_off_loop", grim):
             self.bar.toggle()
             spin(G.FROST_WAIT_MS + 100)
             self.assertTrue(self.bar.is_open())
@@ -183,9 +201,9 @@ class GlassTest(unittest.TestCase):
         """Vini: opening, the Game Bar showed solid panels and turned to
         glass in front of him once the game's picture came. Now it shows
         when the picture is ready, already in glass from its first frame."""
-        proc = FakeProc(red_png())
+        proc = FakeGrim(red_png())
         seen = []
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+        with mock.patch.object(G, "output_off_loop", proc):
             self.bar._frost_then(lambda: seen.append(self.bar.frost_tex is not None
                                                      and self.bar.root.has_css_class("frosted")))
             self.assertEqual(seen, [])                          # not before its glass
@@ -193,16 +211,35 @@ class GlassTest(unittest.TestCase):
         self.assertEqual(seen, [True])                          # shown once, in glass
         self.assertEqual(self.bar.frost_alpha, 1.0)
 
+    def test_glass_missing_when_the_menu_bar_was_busy(self):
+        """Vini: sometimes the Game Bar opened without its glass. grim's
+        picture was read from the main loop (Gio.Subprocess, 8 KB a turn),
+        and grim can't finish while nobody reads its pipe: the menu bar busy
+        for a moment as it opened, the picture came after FROST_WAIT_MS and
+        it opened solid. Read on a thread, the picture is in before a
+        deadline that waited behind the same busy moment."""
+        import time
+        w, h = 1920, 1080                                       # a 1080p picture, as grim's PPM
+        ppm = ["sh", "-c", f"printf 'P6\\n{w} {h}\\n255\\n'; head -c {w * h * 3} /dev/zero"]
+        seen = []
+        with mock.patch.object(G, "frost_command", return_value=ppm):
+            self.bar._frost_then(lambda: seen.append(self.bar.root.has_css_class("frosted")))
+            time.sleep((G.FROST_WAIT_MS + 50) / 1000)          # the menu bar busy meanwhile
+            spin(G.FROST_WAIT_MS + 100)
+        self.assertEqual(seen, [True])                          # shown once, in glass
+        self.assertIsNotNone(self.bar.frost_tex)
+        self.assertFalse(G.output_off_loop(["sonata2-no-such-program"], lambda _out: self.fail("ran")))
+
     def test_late_picture_never_turns_it_to_glass_in_front_of_you(self):
         """Later than FROST_WAIT_MS it opens solid -- and stays solid this
         time: no glass coming on while it's on screen (Vini)."""
-        proc = FakeProc(None)
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+        proc = FakeGrim(None)
+        with mock.patch.object(G, "output_off_loop", proc):
             self.bar._frost_then(self.bar.present)
             spin(G.FROST_WAIT_MS + 100)
         self.assertTrue(self.bar.get_visible())                 # not kept waiting
         proc.out = red_png()
-        proc.done(proc, None)
+        proc.deliver()
         spin(50)
         self.assertIsNone(self.bar.frost_tex)
         self.assertFalse(self.bar.root.has_css_class("frosted"))
@@ -210,8 +247,8 @@ class GlassTest(unittest.TestCase):
     def test_picture_first_then_shown_frosted(self):
         self.bar.present()
         spin(100)
-        new, shown, _p = self.open_with(red_png())
-        self.assertEqual(new.call_args.args[0][0], "grim")
+        grim, shown = self.open_with(red_png())
+        self.assertEqual(grim.argv[0], "grim")
         self.assertEqual(shown, [1])                            # once
         self.assertIsNotNone(self.bar.frost_tex)
         self.assertTrue(self.bar.root.has_css_class("frosted"))
@@ -223,8 +260,8 @@ class GlassTest(unittest.TestCase):
         FROST_WAIT_MS (the picture usually comes in ~25 ms), nothing fades
         or slides, and closing hides it at once."""
         from sonata2.ui import theme
-        proc = FakeProc(None)
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+        proc = FakeGrim(None)
+        with mock.patch.object(G, "output_off_loop", proc):
             self.bar._frost_then(self.bar.present)
             spin(G.FROST_WAIT_MS + 30)
             self.assertTrue(self.bar.get_visible())                   # no picture: solid, no longer wait
@@ -238,30 +275,30 @@ class GlassTest(unittest.TestCase):
         self.assertFalse(self.bar.get_visible())                     # closed at once
 
     def test_panels_shown_solid_if_the_picture_is_too_late(self):
-        proc = FakeProc(None)
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+        proc = FakeGrim(None)
+        with mock.patch.object(G, "output_off_loop", proc):
             self.bar._frost_then(self.bar.present)
             spin(G.FROST_WAIT_MS + 120)
         self.assertTrue(self.bar.get_visible())                   # not kept hidden
         self.assertIsNone(self.bar.frost_tex)
 
     def test_late_picture_ignored_once_closed_or_reopened(self):
-        proc = FakeProc(None)
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=proc):
+        proc = FakeGrim(None)
+        with mock.patch.object(G, "output_off_loop", proc):
             self.bar._frost_then(self.bar.present)
             spin(G.FROST_WAIT_MS + 150)
         self.bar.root.add_css_class("closing")                   # closing meanwhile
         proc.out = red_png()
-        proc.done(proc, None)
+        proc.deliver()
         self.assertIsNone(self.bar.frost_tex)
         self.bar.root.remove_css_class("closing")
-        old = FakeProc(None)
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=old):
+        old = FakeGrim(None)
+        with mock.patch.object(G, "output_off_loop", old):
             self.bar._frost_then(self.bar.present)
-        with mock.patch.object(G.Gio.Subprocess, "new", return_value=FakeProc(None)):
+        with mock.patch.object(G, "output_off_loop", FakeGrim(None)):
             self.bar._frost_then(self.bar.present)               # opened again: a new picture asked
         old.out = red_png()
-        old.done(old, None)                                      # the first one's: not this opening's
+        old.deliver()                                      # the first one's: not this opening's
         self.assertIsNone(self.bar.frost_tex)
 
     def test_without_grim_shown_at_once_solid(self):
