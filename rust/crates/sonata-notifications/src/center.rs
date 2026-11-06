@@ -40,7 +40,22 @@ pub const SQUARE_TOP: [&str; 1] = ["nt-peek"];
 /// macOS: behind the whole column, the blurred display, fading out to
 /// nothing this far to the left of it (its picture: drawn once per frame
 /// from a texture, never blurred again)
-pub const BACKDROP_FADE: f32 = 220.0;
+/// (Vini: at 220 px and full strength it read as a slab; macOS's is a
+/// whisper -- long, soft, never more than about half there)
+pub const BACKDROP_FADE: f32 = 420.0;
+/// How much of the blurred picture shows at most, next to the column.
+pub const BACKDROP_ALPHA: f32 = 0.55;
+
+/// The fade's stops, (offset, alpha): a smoothstep from nothing to
+/// BACKDROP_ALPHA, so no edge shows where it starts or ends.
+pub fn backdrop_stops() -> Vec<(f32, f32)> {
+    (0..=8)
+        .map(|i| {
+            let t = i as f32 / 8.0;
+            (t, BACKDROP_ALPHA * t * t * (3.0 - 2.0 * t))
+        })
+        .collect()
+}
 
 /// Notification Center's backdrop in the column's own coordinates: ((x, y,
 /// w, h) it covers, (x0, x1) its fade -- transparent at x0, the whole
@@ -129,11 +144,10 @@ impl Backdrop {
             return;
         }
         let area = Rect::new(x, y, w, h);
-        let clear = gtk::gdk::RGBA::new(0.0, 0.0, 0.0, 0.0);
-        let full = gtk::gdk::RGBA::new(0.0, 0.0, 0.0, 1.0);
+        let stops: Vec<gtk::gsk::ColorStop> = backdrop_stops().into_iter().map(|(t, a)| gtk::gsk::ColorStop::new(t, gtk::gdk::RGBA::new(0.0, 0.0, 0.0, a))).collect();
         snap.push_mask(gtk::gsk::MaskMode::Alpha);
-        // the mask: the fade
-        snap.append_linear_gradient(&area, &Point::new(x0, 0.0), &Point::new(x1, 0.0), &[gtk::gsk::ColorStop::new(0.0, clear), gtk::gsk::ColorStop::new(1.0, full)]);
+        // the mask: the fade, soft (backdrop_stops)
+        snap.append_linear_gradient(&area, &Point::new(x0, 0.0), &Point::new(x1, 0.0), &stops);
         snap.pop();
         snap.push_clip(&area);
         snap.append_texture(&tex, &Rect::new(-at.x(), -at.y(), root.width() as f32, root.height() as f32));

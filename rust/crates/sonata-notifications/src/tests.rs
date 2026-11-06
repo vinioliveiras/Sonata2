@@ -1039,3 +1039,22 @@ fn test_calendar_touched_the_menu_bar() {
         assert_eq!(calendar_top - bar, 8);
     }
 }
+
+/// Vini: Notification Center's backdrop "didn't look good -- it could be
+/// super soft": it was the whole picture next to the column, fading in a
+/// straight line over 220 px. Now at most about half there, over a longer
+/// smoothstep, starting and ending flat.
+#[test]
+fn test_backdrop_too_strong() {
+    use crate::center::{backdrop_stops, BACKDROP_ALPHA, BACKDROP_FADE};
+    let s = backdrop_stops();
+    assert!(BACKDROP_ALPHA <= 0.6 && BACKDROP_FADE >= 400.0);
+    assert_eq!(s.first(), Some(&(0.0, 0.0)));
+    assert!((s.last().unwrap().1 - BACKDROP_ALPHA).abs() < 1e-6);
+    assert!(s.windows(2).all(|w| w[1].0 > w[0].0 && w[1].1 >= w[0].1));
+    // flat at both ends: the first and last steps are the smallest
+    let steps: Vec<f32> = s.windows(2).map(|w| w[1].1 - w[0].1).collect();
+    let mid = steps[steps.len() / 2];
+    assert!(steps[0] < mid / 2.0 && steps[steps.len() - 1] < mid / 2.0);
+}
+
