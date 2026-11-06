@@ -99,9 +99,10 @@ pub fn plan_close(index: i64, count: i64, views: &[(i64, i64)], mut current: i64
 /// display's own coordinates (get_workarea() is cut from the output's
 /// relative geometry) while "geometry" is in the layout's, so the two are
 /// never to be subtracted: on a second display at y 201 that put the bar at
-/// the very top, over the menu bar.
+/// the very top, over the menu bar. The numbers come as floats (32.0):
+/// as_i64 read them as nothing, and the bar sat at 0 on every display.
 pub fn bar_top(out: &Value) -> i32 {
-    out["workarea"]["y"].as_i64().unwrap_or(0).max(0) as i32
+    num(&out["workarea"], "y").max(0.0) as i32
 }
 
 /// (desktops, the current one) of an output.
@@ -862,6 +863,16 @@ mod tests {
         assert_eq!(bar_top(&edp), 32);
         assert_eq!(bar_top(&out(3, 1)), 30); // the first display: as it was
         assert_eq!(bar_top(&json!({})), 0);
+    }
+
+    /// Vini, after the fix above: the desktops and the + still over the
+    /// menu bar on both displays -- Wayfire sends the work area as floats
+    /// ({"y": 32.0}), which as_i64 read as nothing.
+    #[test]
+    fn test_desktops_bar_ignored_a_work_area_given_in_floats() {
+        let hdmi = json!({"name": "HDMI-A-1", "geometry": {"x": 0.0, "y": 0.0, "width": 1920.0, "height": 1080.0},
+                          "workarea": {"x": 0.0, "y": 32.0, "width": 1920.0, "height": 979.0}});
+        assert_eq!(bar_top(&hdmi), 32);
     }
 
     #[test]
