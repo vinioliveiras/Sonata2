@@ -639,6 +639,17 @@ impl ModuleGrid {
 mod tests {
     use super::*;
 
+    /// Vini, with a photo of macOS's: Control Center's own border (6 px)
+    /// narrower than the gaps between its modules (8 px) looked cramped --
+    /// the same width all round, as there.
+    #[test]
+    fn test_control_center_border_narrower_than_its_gaps() {
+        let blocks = sonata_ui::css::blocks("shell/controlcenter.py");
+        let (_, css, local) = blocks.iter().find(|(k, _, _)| k == "controlcenter").expect("its CSS");
+        assert!(css.contains("popover.sonata-panel.cc-panel > contents { padding: %(cc_pad)spx; }"));
+        assert_eq!(local.get("cc_pad").map(String::as_str), Some(SPACING.to_string().as_str()));
+    }
+
     fn ids(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
     }

@@ -380,4 +380,7 @@ ui.register("""
 .cc-drag-icon { opacity: 0.92; }
 .cc-edit-bar { margin-top: 2px; }
 .panel-module.cc-conn { padding-top: 8px; padding-bottom: 8px; }
-""", key="controlcenter")
+/* the panel's own border as wide as the gaps between its modules (SPACING),
+   as macOS's Control Center (Vini: the 6 px border looked cramped) */
+popover.sonata-panel.cc-panel > contents { padding: %(cc_pad)spx; }
+""", key="controlcenter", cc_pad=SPACING)

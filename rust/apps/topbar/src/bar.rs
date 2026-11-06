@@ -1705,6 +1705,7 @@ impl Bar {
         }
         let pop = kit::panel(btn, &cc.root, PANEL_GAP, Some(cc.width), false, true);
         pop.add_css_class("instant"); // no grow-in: there at once
+        pop.add_css_class("cc-panel"); // its border as wide as the modules' gaps (controlcenter.py)
         self.cc_panel.replace(Some(pop.clone()));
         Some(pop)
     }

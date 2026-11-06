@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Control Center: its border is as wide as the gaps between its modules, like macOS's (it was narrower and looked cramped).
 - Rust preview session: the colour tags' dots in Files are round again (they were drawn as squares); Mission Control's desktops and + sit under the menu bar on every display.
 - Mission Control on a second display: the desktops and the + sit under the menu bar instead of over it. Rust preview session: Mission Control opens without the pause before the windows and desktops show (the wallpaper is decoded ahead, off the main loop), and the x on desktops and windows follows window buttons kept on the right.
 - Rust preview session: animations run at Sonata's speed again -- the Dock's hide, magnification and icons making room, the switcher's glide, Launchpad's zoom, notification banners, the volume display's fade and every sliding or fading part of the apps were about a third slower than in the Python session. The app switcher, the volume display and Notification Center are drawn once, unseen, after login, so their first opening has no lag, and an auto-hidden menu bar stays down while any of its menus is open.
