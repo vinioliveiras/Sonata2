@@ -170,13 +170,13 @@ pub fn reopen(pop: &gtk::Popover) {
     sonata_ui::panel::reopen(pop);
 }
 
-/// Left-align a popover below `anchor` instead of GTK's centring.
 thread_local! {
     /// a panel's width around its content (padding, border, shadow room),
     /// as the last one shown had it
     static FRAME: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
 }
 
+/// Left-align a popover below `anchor` instead of GTK's centring.
 pub fn align_to_start(pop: &gtk::Popover, anchor: &gtk::Widget, gap: i32) {
     // placed before it shows: set only once it was on screen, it opened
     // centred and jumped to the left edge (Vini: "thrown to the right")
