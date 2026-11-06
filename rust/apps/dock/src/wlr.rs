@@ -520,8 +520,8 @@ mod tests {
             assert_eq!(CStr::from_ptr(ifs.manager.name).to_str().unwrap(), MANAGER_NAME);
             assert_eq!(*(*ifs.manager.events).types, &ifs.handle as *const Interface);
         }
-        // the XML Python reads is the protocol's own
-        let xml = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../sonata2/wl/protocols/wlr-foreign-toplevel-management-unstable-v1.xml")).unwrap();
+        // the protocol's own XML (the one the Python Sonata read)
+        let xml = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/protocols/wlr-foreign-toplevel-management-unstable-v1.xml")).unwrap();
         let handle_part = &xml[xml.find("zwlr_foreign_toplevel_handle_v1\" version").unwrap()..];
         let names: Vec<&str> = handle_part.match_indices("<request name=\"").map(|(i, _)| handle_part[i + 15..].split('"').next().unwrap()).collect();
         assert_eq!(names.iter().position(|n| *n == "set_rectangle"), Some(REQ_SET_RECTANGLE as usize));

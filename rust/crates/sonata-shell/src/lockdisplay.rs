@@ -226,17 +226,13 @@ mod tests {
         assert_eq!(dark_seconds_for(-1), None);
     }
 
+    /// The commands the Python Sonata's idlelock ran (recorded from it, with
+    /// its cache folder as {CACHE}): a lock that darkened the screen with
+    /// one Sonata must light it again with the other.
     #[test]
     fn the_same_shell_commands_as_python() {
-        // python3: from sonata2.shell import idlelock; print(idlelock.BL_OFF)
-        let py = std::process::Command::new("python3").current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."))
-            .args(["-c", "import sys,types; sys.modules['gi']=types.ModuleType('gi')\ntry:\n from sonata2.shell import idlelock as i\nexcept Exception:\n sys.exit(3)\nprint(i.BL_OFF); print(i.BL_ON); print(i.KBD_OFF); print(i.KBD_ON)"])
-            .output();
-        if let Ok(o) = py {
-            if o.status.success() {
-                let want = String::from_utf8_lossy(&o.stdout).to_string();
-                assert_eq!(want, format!("{}\n{}\n{}\n{}\n", bl_off(), bl_on(), kbd_off(), kbd_on()));
-            }
-        }
+        let cache = cache().display().to_string();
+        let want = [r#"b=$(brightnessctl -c backlight g 2>/dev/null); if [ "${b:-0}" -gt 0 ] 2>/dev/null; then mkdir -p "$(dirname {CACHE}/backlight-before-dark)"; echo "$b" > {CACHE}/backlight-before-dark; brightnessctl -q -c backlight set 0; fi"#, r#"if [ -s {CACHE}/backlight-before-dark ]; then brightnessctl -q -c backlight set "$(cat {CACHE}/backlight-before-dark)"; rm -f {CACHE}/backlight-before-dark; fi"#, r#"for d in $(brightnessctl -l -m -c leds 2>/dev/null | cut -d, -f1 | grep 'kbd_backlight'); do b=$(brightnessctl -d "$d" g 2>/dev/null); if [ "${b:-0}" -gt 0 ] 2>/dev/null; then mkdir -p {CACHE}/keyboards-before-dark; echo "$b" > {CACHE}/keyboards-before-dark/"$d"; brightnessctl -q -d "$d" set 0; fi; done"#, r#"for f in {CACHE}/keyboards-before-dark/*; do [ -s "$f" ] || continue; brightnessctl -q -d "$(basename "$f")" set "$(cat "$f")"; rm -f "$f"; done; if [ -s {CACHE}/lights-before-dark ]; then brightnessctl -q -d '*::kbd_backlight' set "$(cat {CACHE}/lights-before-dark)"; rm -f {CACHE}/lights-before-dark; fi"#].map(|t| t.replace("{CACHE}", &cache));
+        assert_eq!([bl_off(), bl_on(), kbd_off(), kbd_on()], want);
     }
 }

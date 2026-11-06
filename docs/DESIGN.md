@@ -70,8 +70,11 @@ login), other GTK 4 apps (adwstyle), GTK/GNOME apps' button layout (prefs).
 (`sonata-backend`'s wfconfig keeps copies of the frame numbers; a test keeps
 them equal to tokens.json.) A Windows-style theme is a different FRAME
 (buttons on the right, title on the left...); Sonata's own windows still place
-their traffic lights on the left by code. The dot pictures are files: run `tools/gen-decor.py` after
-changing `dot` or the colours (a test fails until they match).
+their traffic lights on the left by code. The dot pictures Wayfire's title bars
+use are files (`data/decor/*.png`): their generator was Python
+(tools/gen-decor.py, drawing with the Python Sonata's traffic lights) and went
+with it, so a change to `dot` or the colours needs new pictures made by hand
+(or a Rust generator, not written yet).
 
 ## Components
 
