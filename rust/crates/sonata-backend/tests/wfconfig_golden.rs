@@ -63,7 +63,7 @@ fn home(case: &Case) -> tempfile::TempDir {
 
 /// Both Python steps as the script runs them: the first's failure ignored
 /// (`|| true`), the second's exit status returned.
-fn run_python(case: &Case, docs: &[String]) -> (Vec<u8>, Vec<u8>, bool) {
+fn run_python(case: &Case, docs: &[String]) -> (Vec<u8>, Vec<u8>, bool, Vec<u8>) {
     let h = home(case);
     let out = h.path().join("out.ini");
     let over = h.path().join("over.ini");
@@ -88,10 +88,10 @@ fn run_python(case: &Case, docs: &[String]) -> (Vec<u8>, Vec<u8>, bool) {
         std::fs::write(&over, o).unwrap();
         ok = py(&docs[1], &[&out, &over]);
     }
-    (first, std::fs::read(&out).unwrap(), ok)
+    (first, std::fs::read(&out).unwrap(), ok, std::fs::read(&over).unwrap_or_default())
 }
 
-fn run_rust(case: &Case) -> (Vec<u8>, Vec<u8>, bool) {
+fn run_rust(case: &Case) -> (Vec<u8>, Vec<u8>, bool, Vec<u8>) {
     let h = home(case);
     let out = h.path().join("out.ini");
     let over = h.path().join("over.ini");
@@ -103,7 +103,7 @@ fn run_rust(case: &Case) -> (Vec<u8>, Vec<u8>, bool) {
         std::fs::write(&over, o).unwrap();
         ok = wfconfig::overrides_step_file(&out, &over).is_ok();
     }
-    (first, std::fs::read(&out).unwrap(), ok)
+    (first, std::fs::read(&out).unwrap(), ok, std::fs::read(&over).unwrap_or_default())
 }
 
 /// config/wayfire.ini as the script's sed leaves it (@SONATA@ filled in).
@@ -186,6 +186,12 @@ fn cases() -> Vec<Case> {
             appearance: None,
             overrides: Some("[input]\n\u{a0}xkb_layout\u{1c}= us\u{2028}\n"),
         },
+        Case {
+            name: "screenshot keys kept under their old names",
+            base: d.replace("always_binding_", "binding_") + "[command]\nalways_binding_capture = KEY_F9\n",
+            appearance: None,
+            overrides: Some("[command]\nbinding_screenshot = <super> KEY_F12\nalways_binding_screenshot_area = KEY_F11\nbinding_screenshot_area = KEY_F10\n"),
+        },
         Case { name: "empty config", base: String::new(), appearance: None, overrides: Some("[core]\nvwidth = 2\n") },
         Case { name: "only an xwayland line elsewhere", base: "xwayland_startup_script =\n[core]\nxwayland_startup_script =   own\n".into(), appearance: None, overrides: None },
     ]
@@ -204,6 +210,9 @@ fn rust_steps_write_what_the_python_steps_write() {
         let rs = run_rust(&case);
         if py.0 != rs.0 {
             failed.push(format!("{}: frame step differs\n--- python\n{}\n--- rust\n{}", case.name, String::from_utf8_lossy(&py.0), String::from_utf8_lossy(&rs.0)));
+        }
+        if py.3 != rs.3 {
+            failed.push(format!("{}: overrides file migrated differently\n--- python\n{}\n--- rust\n{}", case.name, String::from_utf8_lossy(&py.3), String::from_utf8_lossy(&rs.3)));
         }
         if py.1 != rs.1 || py.2 != rs.2 {
             failed.push(format!("{}: overrides step differs (ok {} / {})\n--- python\n{}\n--- rust\n{}", case.name, py.2, rs.2, String::from_utf8_lossy(&py.1), String::from_utf8_lossy(&rs.1)));

@@ -34,7 +34,7 @@ class PrintScreenTests(unittest.TestCase):
         """Print / SysRq run `screenshot edit`, not the toolbar."""
         ini = configparser.ConfigParser(interpolation=None, strict=False)
         ini.read(os.path.join(REPO, "config", "wayfire.ini"))
-        self.assertIn("KEY_PRINT", ini["command"]["binding_capture_print"])
+        self.assertIn("KEY_PRINT", ini["command"]["always_binding_capture_print"])
         self.assertEqual(ini["command"]["command_capture_print"].strip(), "sonata2 screenshot edit")
 
     def _print(self, cfg, views=(), outs=({"id": 1, "name": "HDMI-A-1", "geometry": {}},)):

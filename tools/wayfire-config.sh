@@ -93,6 +93,8 @@ if m and "sonata-resize" in m.group(1).split():
 with open(sys.argv[1], encoding="utf-8") as f:
     text = f.read()
 moved = wfconfig.migrate_mission_control(text, 134)
+# the screenshot shortcuts work in Mission Control too: always_binding_ keys
+moved = wfconfig.migrate_always_bindings(moved)
 if moved != text:
     with open(sys.argv[1], "w", encoding="utf-8") as f:
         f.write(moved)
@@ -124,6 +126,9 @@ elif [ -f "$over" ]; then
 import sys
 from sonata2 import wfconfig as system
 out, over = sys.argv[1], sys.argv[2]
+# the screenshot shortcuts' old binding_ keys renamed in the overrides too
+# (Settings reads and writes always_binding_ now)
+system.migrate_file(over, system.migrate_always_bindings)
 system._wayfire_files = lambda: [out]          # write only the resolved copy
 sec = None
 for line in open(over, encoding="utf-8"):
@@ -134,6 +139,6 @@ for line in open(over, encoding="utf-8"):
         k, v = s.split("=", 1)
         if sec in ("pixdecor", "decoration") and k.strip() in system.BUTTON_KEYS:
             continue                           # set from the side above (an old right offset cut the close button)
-        system.wayfire_set(sec, k.strip(), v.strip())
+        system.wayfire_set(sec, system.current_key(sec, k.strip()), v.strip())
 PY
 fi

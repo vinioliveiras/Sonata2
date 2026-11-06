@@ -133,8 +133,32 @@ def runtime_set(section: str, key: str, value) -> bool:
         return _set(section, key, value, [run])
 
 
+# The screenshot shortcuts are Wayfire's "always" bindings (Vini: they did
+# nothing in Mission Control): the command plugin refuses its binding_ keys
+# while a plugin holding the input (scale, expo) is open, its always_binding_
+# ones run regardless. Their command_ keys stay as they are.
+ALWAYS_BINDINGS = ("screenshot", "screenshot_area", "capture", "capture_print")
+
+
+def current_key(section: str, key: str) -> str:
+    """The name a key has now: binding_screenshot (a config kept from before)
+    is always_binding_screenshot."""
+    if section == "command" and key.startswith("binding_") and key[len("binding_"):] in ALWAYS_BINDINGS:
+        return "always_" + key
+    return key
+
+
+def _old_key(section: str, key: str):
+    """The name a kept config gives `key` (always_binding_screenshot ->
+    binding_screenshot), or None."""
+    if section == "command" and key.startswith("always_binding_") and key[len("always_binding_"):] in ALWAYS_BINDINGS:
+        return key[len("always_"):]
+    return None
+
+
 def _set(section: str, key: str, value, files=None) -> bool:
     ok = False
+    old = _old_key(section, key)        # never both names: Wayfire would run the shortcut twice
     for path in files or _wayfire_files():
         try:
             with open(path, encoding="utf-8") as f:
@@ -152,6 +176,8 @@ def _set(section: str, key: str, value, files=None) -> bool:
                 if value is not None:
                     out.append(f"{key} = {value}\n")
                 done = True
+                continue
+            elif old and cur == section and "=" in s and not s.startswith("#") and s.split("=", 1)[0].strip() == old:
                 continue
             out.append(line)
         if not done and value is not None:
@@ -247,3 +273,52 @@ def migrate_mission_control(text: str, margin: int) -> str:
                 line = "vwidth = 1\n"
         out.append(line)
     return "".join(out)
+
+
+def migrate_always_bindings(text: str) -> str:
+    """A wayfire.ini or overrides kept from before the screenshot shortcuts
+    were "always" bindings (Vini: they did nothing in Mission Control):
+    binding_screenshot becomes always_binding_screenshot, the user's keys
+    kept. Where both names are there the new one stays and the old goes --
+    one key, or Wayfire would bind it twice."""
+    lines = text.splitlines(keepends=True)
+    have, sec = set(), None
+    for line in lines:
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            sec = s[1:-1]
+        elif sec == "command" and "=" in s and not s.startswith("#"):
+            have.add(s.split("=", 1)[0].strip())
+    out, sec = [], None
+    for line in lines:
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            sec = s[1:-1]
+        elif sec == "command" and "=" in s and not s.startswith("#"):
+            key = s.split("=", 1)[0].strip()
+            new = current_key(sec, key)
+            if new != key:
+                if new in have:
+                    continue
+                have.add(new)
+                at = line.index(key)
+                line = line[:at] + "always_" + line[at:]
+        out.append(line)
+    return "".join(out)
+
+
+def migrate_file(path: str, step) -> None:
+    """`step` (text -> text) on the file at `path`, written only when it
+    changes it (Sonata's overrides at login)."""
+    with _locked():
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            return
+        new = step(text)
+        if new != text:
+            try:
+                config.atomic_write(path, new.encode("utf-8"), fsync=False)
+            except OSError:
+                pass

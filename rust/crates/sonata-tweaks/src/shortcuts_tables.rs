@@ -27,11 +27,11 @@ pub const SHORTCUTS: [Shortcut; 32] = [
     Shortcut { id: "spaces", title: n_!("Show All Spaces"), group: n_!("Spaces"), section: "expo", key: "toggle" },
     Shortcut { id: "space_left", title: n_!("Previous Space"), group: n_!("Spaces"), section: "vswitch", key: "binding_left" },
     Shortcut { id: "space_right", title: n_!("Next Space"), group: n_!("Spaces"), section: "vswitch", key: "binding_right" },
-    Shortcut { id: "shot", title: n_!("Screenshot"), group: n_!("Screenshots"), section: "command", key: "binding_screenshot" },
-    Shortcut { id: "shot_area", title: n_!("Screenshot of a Selection"), group: n_!("Screenshots"), section: "command", key: "binding_screenshot_area" },
+    Shortcut { id: "shot", title: n_!("Screenshot"), group: n_!("Screenshots"), section: "command", key: "always_binding_screenshot" },
+    Shortcut { id: "shot_area", title: n_!("Screenshot of a Selection"), group: n_!("Screenshots"), section: "command", key: "always_binding_screenshot_area" },
     Shortcut { id: "draw", title: n_!("Draw on the Screen"), group: n_!("Screenshots"), section: "command", key: "binding_draw" },
-    Shortcut { id: "capture", title: n_!("Screenshot and Recording Options"), group: n_!("Screenshots"), section: "command", key: "binding_capture" },
-    Shortcut { id: "capture_print", title: n_!("Screenshot and Edit"), group: n_!("Screenshots"), section: "command", key: "binding_capture_print" },
+    Shortcut { id: "capture", title: n_!("Screenshot and Recording Options"), group: n_!("Screenshots"), section: "command", key: "always_binding_capture" },
+    Shortcut { id: "capture_print", title: n_!("Screenshot and Edit"), group: n_!("Screenshots"), section: "command", key: "always_binding_capture_print" },
     Shortcut { id: "lock", title: n_!("Lock Screen"), group: n_!("System"), section: "command", key: "binding_lock" },
 ];
 pub const EVDEV: [(u32, &str); 242] = [

@@ -969,6 +969,11 @@ def screenshot(mode: str) -> int:
     """macOS screenshots. The menu bar does it when it runs (floating
     thumbnail, Super+Shift+5 toolbar, recording); otherwise
     "Screenshot 2026-09-29 at 01.52.10.png" on the Desktop and a notification."""
+    from .shell import idlelock
+    if idlelock.is_locked():
+        # Wayfire runs the screenshot keys (always_binding_) even over the
+        # lock screen: no capture of it, no editor behind it
+        return 0
     if _topbar_action("capture", mode):
         return 0
     if mode not in ("screen", "area", "edit"):

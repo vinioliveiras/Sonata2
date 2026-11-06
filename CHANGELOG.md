@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Screenshots: Super+Shift+3/4/5 and Print Screen now work while Mission Control is open. Shortcuts you changed in Settings carry over.
 - Rust preview session: the files and folders on the desktop show again -- none was drawn, so a new folder looked invisible.
 - Now Playing: when a player hands over its app's icon as the artwork (Chrome, for Netflix or YouTube), it's drawn smaller in the square instead of stretched over it.
 - Mission Control: a click on a window brings it forward even when the mouse moved a little while clicking (it was taken for a drag and nothing happened). Needs Sonata's Wayfire rebuilt (tools/build-wayfire.sh).

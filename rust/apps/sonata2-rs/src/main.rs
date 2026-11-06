@@ -146,6 +146,9 @@ fn main() -> ExitCode {
             ExitCode::from(code.value() as u8)
         }
         "key" if args.len() > 1 => ExitCode::from(sonata_session::keys::key(&args[1]) as u8),
+        // Wayfire runs the screenshot keys (always_binding_) even over the
+        // lock screen: no capture of it, no editor behind it (__main__.py screenshot)
+        "screenshot" if sonata_sessionui::idlelock::is_locked() => ExitCode::SUCCESS,
         "screenshot" => ExitCode::from(sonata_session::keys::screenshot(args.get(1).map_or("screen", String::as_str)) as u8),
         "welcome" => {
             let code = sonata_welcome::run(&args[1..]);
@@ -409,6 +412,21 @@ mod launchpad_tests {
         let t = std::time::Instant::now();
         assert!(!super::tell_launchpad("toggle", 800));
         assert!(t.elapsed() < std::time::Duration::from_secs(2));
+    }
+}
+
+#[cfg(test)]
+mod screenshot_tests {
+    /// The screenshot keys are Wayfire always_binding_ keys (they work in
+    /// Mission Control), so they run over the lock screen too: `screenshot`
+    /// does nothing there (no capture of it, no editor behind it), checked
+    /// before the menu bar or grim are asked.
+    #[test]
+    fn test_screenshot_over_the_lock_screen() {
+        let src = include_str!("main.rs");
+        let main = &src[src.find("fn main() -> ExitCode").unwrap()..];
+        let guard = main.find("\"screenshot\" if sonata_sessionui::idlelock::is_locked() => ExitCode::SUCCESS").expect("the lock guard");
+        assert!(guard < main.find("\"screenshot\" => ExitCode::from(sonata_session::keys::screenshot").unwrap());
     }
 }
 

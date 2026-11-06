@@ -66,9 +66,32 @@ pub fn get(section: &str, key: &str, default: &str) -> String {
     default.to_string()
 }
 
+/// The screenshot shortcuts are Wayfire's "always" bindings (Vini: they did
+/// nothing in Mission Control): the command plugin refuses its binding_
+/// keys while a plugin holding the input (scale, expo) is open, its
+/// always_binding_ ones run regardless. Their command_ keys stay.
+pub const ALWAYS_BINDINGS: [&str; 4] = ["screenshot", "screenshot_area", "capture", "capture_print"];
+
+/// The name a key has now: binding_screenshot (a config kept from before)
+/// is always_binding_screenshot.
+pub fn current_key(section: &str, key: &str) -> String {
+    match key.strip_prefix("binding_") {
+        Some(name) if section == "command" && ALWAYS_BINDINGS.contains(&name) => format!("always_{key}"),
+        _ => key.to_string(),
+    }
+}
+
+/// The name a kept config gives `key` (always_binding_screenshot ->
+/// binding_screenshot), if it has one.
+fn old_key<'a>(section: &str, key: &'a str) -> Option<&'a str> {
+    let name = key.strip_prefix("always_binding_")?;
+    (section == "command" && ALWAYS_BINDINGS.contains(&name)).then(|| &key["always_".len()..])
+}
+
 /// `text` with `key = value` set in [section] (None removes it); comments
 /// and other lines stay as they are.
 pub fn set_in(text: &str, section: &str, key: &str, value: Option<&str>) -> String {
+    let old = old_key(section, key); // never both names: Wayfire would run the shortcut twice
     let lines: Vec<String> = text.split_inclusive('\n').map(String::from).collect();
     let mut out: Vec<String> = Vec::new();
     let (mut cur, mut done, mut sec_end): (Option<String>, bool, Option<usize>) = (None, false, None);
@@ -84,6 +107,8 @@ pub fn set_in(text: &str, section: &str, key: &str, value: Option<&str>) -> Stri
                 out.push(format!("{key} = {v}\n"));
             }
             done = true;
+            continue;
+        } else if old.is_some() && cur.as_deref() == Some(section) && s.contains('=') && !s.starts_with('#') && s.split_once('=').map(|x| py_strip(x.0)) == old {
             continue;
         }
         out.push(line.clone());
@@ -437,6 +462,50 @@ pub fn migrate_mission_control(text: &str, margin: i64) -> String {
     out
 }
 
+/// A wayfire.ini or overrides kept from before the screenshot shortcuts
+/// were "always" bindings (Vini: they did nothing in Mission Control):
+/// binding_screenshot becomes always_binding_screenshot, the user's keys
+/// kept. Where both names are there the new one stays and the old goes --
+/// one key, or Wayfire would bind it twice.
+pub fn migrate_always_bindings(text: &str) -> String {
+    let lines = py_splitlines(text);
+    let key_of = |s: &str| py_strip(s.split_once('=').map_or(s, |x| x.0)).to_string();
+    let mut have: Vec<String> = Vec::new();
+    let mut sec: Option<&str> = None;
+    for line in &lines {
+        let s = py_strip(line);
+        if s.starts_with('[') && s.ends_with(']') {
+            sec = Some(&s[1..s.len() - 1]);
+        } else if sec == Some("command") && s.contains('=') && !s.starts_with('#') {
+            have.push(key_of(s));
+        }
+    }
+    let mut out = String::with_capacity(text.len() + 64);
+    let mut sec: Option<&str> = None;
+    for line in &lines {
+        let s = py_strip(line);
+        if s.starts_with('[') && s.ends_with(']') {
+            sec = Some(&s[1..s.len() - 1]);
+        } else if sec == Some("command") && s.contains('=') && !s.starts_with('#') {
+            let key = key_of(s);
+            let new = current_key("command", &key);
+            if new != key {
+                if have.contains(&new) {
+                    continue;
+                }
+                have.push(new);
+                let at = line.find(&key).unwrap_or(0);
+                out.push_str(&line[..at]);
+                out.push_str("always_");
+                out.push_str(&line[at..]);
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    out
+}
+
 /// What follows the "=" of every line `^<key> *=` (any section), in order
 /// (the regexes wayfire-config.sh's Python step used, `re.M`).
 fn line_values<'a>(text: &'a str, key: &'a str) -> impl Iterator<Item = &'a str> {
@@ -460,6 +529,8 @@ pub fn login_frame_step(text: &str, frame: &LoginFrame, here: &str) -> String {
     }
     // Super+Tab is Mission Control now (a wayfire.ini kept from before had it on the app switcher)
     t = migrate_mission_control(&t, SCALE_MARGIN);
+    // the screenshot shortcuts work in Mission Control too: always_binding_ keys
+    t = migrate_always_bindings(&t);
     // X11 apps get Sonata's look from its XSETTINGS manager; a script of the user's stays
     let own = line_values(&t, "xwayland_startup_script").any(|v| v.trim_start_matches(' ').chars().next().is_some_and(|c| !py_space(c)));
     if !own {
@@ -484,7 +555,7 @@ pub fn apply_overrides(text: &str, overrides: &str) -> String {
             if (sec == "pixdecor" || sec == "decoration") && BUTTON_KEYS.contains(&k) {
                 continue;
             }
-            t = set_in(&t, &sec, k, Some(py_strip(v)));
+            t = set_in(&t, &sec, &current_key(&sec, k), Some(py_strip(v)));
         }
     }
     t
@@ -517,6 +588,9 @@ pub fn frame_step_file(out: &std::path::Path, folder: &std::path::Path, here: &s
 
 /// The second step: `overrides` (wayfire-overrides.ini) on the file `out`.
 pub fn overrides_step_file(out: &std::path::Path, overrides: &std::path::Path) -> std::io::Result<()> {
+    // the screenshot shortcuts' old binding_ keys renamed in the overrides
+    // too (Settings reads and writes always_binding_ now)
+    rewrite(overrides, migrate_always_bindings)?;
     let o = String::from_utf8(std::fs::read(overrides)?).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     rewrite(out, |t| apply_overrides(t, &o))
 }
@@ -622,6 +696,105 @@ outer_margin = 28
         assert!(migrate_mission_control(&again, SCALE_MARGIN).contains("outer_margin = 134\n"));
         let own = OLD.replace("outer_margin = 28", "outer_margin = 40");
         assert!(migrate_mission_control(&own, SCALE_MARGIN).contains("outer_margin = 40\n"), "a margin of the user's stays");
+    }
+
+    /// Vini: the screenshot keys did nothing while Mission Control was open
+    /// -- always_binding_ keys now (config/wayfire.ini), with their commands.
+    #[test]
+    fn test_screenshot_keys_dead_in_mission_control() {
+        let ini = include_str!("../../../../config/wayfire.ini");
+        let keys: Vec<&str> = ini.lines().filter(|l| !l.trim_start().starts_with('#')).filter_map(|l| l.split_once('=')).map(|(k, _)| k.trim()).collect();
+        for name in ALWAYS_BINDINGS {
+            assert!(keys.contains(&format!("always_binding_{name}").as_str()), "{name}");
+            assert!(!keys.contains(&format!("binding_{name}").as_str()), "{name}");
+            assert!(keys.contains(&format!("command_{name}").as_str()), "{name}");
+        }
+        assert!(keys.contains(&"binding_draw"), "not a capture: stays as it was");
+        assert_eq!(migrate_always_bindings(ini), ini, "nothing to move");
+    }
+
+    const KEPT_SHOTS: &str = "[command]
+binding_launchpad = <super> | KEY_F4
+# binding_screenshot = <super> KEY_X
+binding_screenshot = <super> <shift> KEY_9
+command_screenshot = sonata2 screenshot
+binding_screenshot_area = <super> <shift> KEY_4
+  binding_capture   =   <super> <shift> KEY_5
+binding_capture_print = KEY_PRINT
+always_binding_capture_print = KEY_SYSRQ
+binding_draw = <super> <shift> KEY_D
+
+[vswitch]
+binding_screenshot = KEY_LEFT
+";
+
+    fn command_keys(text: &str) -> Vec<String> {
+        let mut sec = "";
+        let mut out = Vec::new();
+        for l in text.lines() {
+            let s = l.trim();
+            if s.starts_with('[') && s.ends_with(']') {
+                sec = &s[1..s.len() - 1];
+            } else if sec == "command" && !s.starts_with('#') {
+                if let Some((k, _)) = s.split_once('=') {
+                    out.push(k.trim().to_string());
+                }
+            }
+        }
+        out
+    }
+
+    /// Vini: a wayfire.ini or overrides kept from before still had the old
+    /// binding_ names (dead in Mission Control): renamed, the user's keys
+    /// kept, never both names (Wayfire would bind the key twice).
+    #[test]
+    fn test_kept_config_screenshot_keys_dead_in_mission_control() {
+        let new = migrate_always_bindings(KEPT_SHOTS);
+        assert!(new.contains("\nalways_binding_screenshot = <super> <shift> KEY_9\n"), "the user's own: {new}");
+        assert!(new.contains("\nalways_binding_screenshot_area = <super> <shift> KEY_4\n"));
+        assert!(new.contains("\n  always_binding_capture   =   <super> <shift> KEY_5\n"), "the line as it was");
+        assert!(new.contains("\nalways_binding_capture_print = KEY_SYSRQ\n") && !new.contains("KEY_PRINT"), "both: the new one stays");
+        let keys = command_keys(&new);
+        for name in ALWAYS_BINDINGS {
+            assert!(!keys.contains(&format!("binding_{name}")), "{name}");
+            assert_eq!(keys.iter().filter(|k| **k == format!("always_binding_{name}")).count(), 1, "{name}");
+        }
+        assert!(new.contains("# binding_screenshot = <super> KEY_X\n"), "comments untouched");
+        assert!(new.contains("binding_launchpad = <super> | KEY_F4\n") && new.contains("binding_draw = <super> <shift> KEY_D\n"));
+        assert!(new.ends_with("[vswitch]\nbinding_screenshot = KEY_LEFT\n"), "only [command]");
+        assert_eq!(migrate_always_bindings(&new), new, "once");
+        assert_eq!(migrate_always_bindings("[command]\nbinding_screenshot = KEY_A\nbinding_screenshot = KEY_B\n"), "[command]\nalways_binding_screenshot = KEY_A\n");
+    }
+
+    /// A file still holding the old name: Settings' change replaces it, not
+    /// a second binding for the same shortcut (Wayfire would run it twice).
+    #[test]
+    fn test_settings_wrote_screenshot_key_twice() {
+        let text = "[command]\nbinding_screenshot = KEY_A\ncommand_screenshot = sonata2 screenshot\n";
+        assert_eq!(set_in(text, "command", "always_binding_screenshot", Some("KEY_B")), "[command]\ncommand_screenshot = sonata2 screenshot\nalways_binding_screenshot = KEY_B\n");
+        assert_eq!(set_in("[vswitch]\nbinding_screenshot = KEY_A\n", "vswitch", "always_binding_screenshot", Some("KEY_B")), "[vswitch]\nbinding_screenshot = KEY_A\nalways_binding_screenshot = KEY_B\n", "only [command]");
+    }
+
+    /// The login's steps on a kept config and overrides with the old names:
+    /// the user's key wins under the new name only, and the overrides file
+    /// is renamed too (Settings reads always_binding_).
+    #[test]
+    fn test_kept_overrides_screenshot_key_lost_at_login() {
+        let d = tempfile::tempdir().unwrap();
+        let (out, over) = (d.path().join("out.ini"), d.path().join("over.ini"));
+        let base = include_str!("../../../../config/wayfire.ini").replace("always_binding_", "binding_");
+        std::fs::write(&out, base).unwrap();
+        std::fs::write(&over, "[command]\nbinding_screenshot = <super> KEY_F12\n").unwrap();
+        std::fs::write(&out, login_frame_step(&std::fs::read_to_string(&out).unwrap(), &left(), "/s")).unwrap();
+        overrides_step_file(&out, &over).unwrap();
+        let text = std::fs::read_to_string(&out).unwrap();
+        let keys = command_keys(&text);
+        for name in ALWAYS_BINDINGS {
+            assert!(!keys.contains(&format!("binding_{name}")), "{name}");
+            assert_eq!(keys.iter().filter(|k| **k == format!("always_binding_{name}")).count(), 1, "{name}");
+        }
+        assert!(text.contains("\nalways_binding_screenshot = <super> KEY_F12\n"));
+        assert_eq!(std::fs::read_to_string(&over).unwrap(), "[command]\nalways_binding_screenshot = <super> KEY_F12\n");
     }
 
     /// Vini: a kept config started with four desktops; one to start with now (0.19).

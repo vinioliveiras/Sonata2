@@ -60,11 +60,11 @@ SHORTCUTS = [
     Shortcut("spaces", N_("Show All Spaces"), N_("Spaces"), "expo", "toggle"),
     Shortcut("space_left", N_("Previous Space"), N_("Spaces"), "vswitch", "binding_left"),
     Shortcut("space_right", N_("Next Space"), N_("Spaces"), "vswitch", "binding_right"),
-    Shortcut("shot", N_("Screenshot"), N_("Screenshots"), "command", "binding_screenshot"),
-    Shortcut("shot_area", N_("Screenshot of a Selection"), N_("Screenshots"), "command", "binding_screenshot_area"),
+    Shortcut("shot", N_("Screenshot"), N_("Screenshots"), "command", "always_binding_screenshot"),
+    Shortcut("shot_area", N_("Screenshot of a Selection"), N_("Screenshots"), "command", "always_binding_screenshot_area"),
     Shortcut("draw", N_("Draw on the Screen"), N_("Screenshots"), "command", "binding_draw"),
-    Shortcut("capture", N_("Screenshot and Recording Options"), N_("Screenshots"), "command", "binding_capture"),
-    Shortcut("capture_print", N_("Screenshot and Edit"), N_("Screenshots"), "command", "binding_capture_print"),
+    Shortcut("capture", N_("Screenshot and Recording Options"), N_("Screenshots"), "command", "always_binding_capture"),
+    Shortcut("capture_print", N_("Screenshot and Edit"), N_("Screenshots"), "command", "always_binding_capture_print"),
     Shortcut("lock", N_("Lock Screen"), N_("System"), "command", "binding_lock"),
 ]
 GROUPS = [N_("Apps and Search"), N_("Windows"), N_("Spaces"), N_("Screenshots"), N_("System")]

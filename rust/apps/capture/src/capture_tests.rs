@@ -160,7 +160,7 @@ fn test_toolbar_stays_after_print() {
 fn test_print_key_captures_and_edits() {
     let ini = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../config/wayfire.ini")).unwrap();
     let line = |k: &str| ini.lines().find(|l| l.trim_start().starts_with(k)).map(|l| l.split_once('=').unwrap().1.trim().to_string()).unwrap();
-    assert!(line("binding_capture_print").contains("KEY_PRINT"));
+    assert!(line("always_binding_capture_print").contains("KEY_PRINT"));
     assert_eq!(line("command_capture_print"), "sonata2 screenshot edit");
 }
 
