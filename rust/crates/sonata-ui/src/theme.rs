@@ -73,8 +73,21 @@ pub fn register_with(key: &str, template: &str, local: Values) {
 }
 
 pub fn is_dark() -> bool {
-    adw::StyleManager::default().is_dark()
+    use std::sync::atomic::Ordering;
+    // libadwaita belongs to the main thread: asked from another (Settings'
+    // display read, for the wallpaper's Light / Dark picture) it panicked and
+    // took that thread down -- Vini: Settings > Displays came up empty, no
+    // displays, no brightness. Elsewhere, the last answer the main thread had.
+    if !gtk::is_initialized_main_thread() {
+        return DARK.load(Ordering::Relaxed);
+    }
+    let dark = adw::StyleManager::default().is_dark();
+    DARK.store(dark, Ordering::Relaxed);
+    dark
 }
+
+/// The last is_dark() the main thread saw (for the other threads).
+static DARK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn accent() -> String {
     let a = sonata_config::load("appearance", &json!({"accent": "blue"}));
@@ -325,7 +338,11 @@ pub fn setup() {
     crate::dialog::register_css();
     crate::panel::register_css();
     crate::transition::register_css();
-    adw::StyleManager::default().connect_dark_notify(|_| load_fading(true));
+    is_dark(); // (kept for the other threads, and on every change below)
+    adw::StyleManager::default().connect_dark_notify(|_| {
+        is_dark();
+        load_fading(true)
+    });
     buttons_changed(); // what the buttons look like now
     // what the look is now, so the first appearance.json / dock.json write
     // compares with it (Vini: the Dock writing its recents cross-faded
@@ -634,6 +651,17 @@ pub fn rgba(token: &str) -> gtk::gdk::RGBA {
     let t = ease((gtk::glib::monotonic_time() - t0) as f64 / (FADE_MS * 1000) as f64) as f32;
     let mix = |a: f32, b: f32| a + (b - a) * t;
     gtk::gdk::RGBA::new(mix(o.red(), new.red()), mix(o.green(), new.green()), mix(o.blue(), new.blue()), mix(o.alpha(), new.alpha()))
+}
+
+#[cfg(test)]
+mod thread_tests {
+    /// Vini: Settings > Displays came up empty -- its display read, on a
+    /// worker thread, asked is_dark() for the wallpaper's picture, and
+    /// libadwaita panicked off the main thread, taking the read with it.
+    #[test]
+    fn test_displays_empty_in_settings() {
+        assert!(std::thread::spawn(super::is_dark).join().is_ok(), "is_dark() panicked off the main thread");
+    }
 }
 
 #[cfg(test)]

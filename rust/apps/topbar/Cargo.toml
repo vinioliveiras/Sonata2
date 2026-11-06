@@ -24,6 +24,8 @@ sonata-tray.workspace = true
 sonata-ui.workspace = true
 # quiet.rs: the full-screen game's state file (gamemode.STATE)
 sonata-tweaks.workspace = true
+# About This Computer's Displays: a display's pixels and real size (monitors.rs)
+sonata-sessionui.workspace = true
 # Notification Center's glass: the display's picture blurred once (frost.py)
 sonata-mission.workspace = true
 # the menu bar logo's words (ui/logo.py's text logos)

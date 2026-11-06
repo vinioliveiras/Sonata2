@@ -240,6 +240,23 @@ mod tests {
         assert_eq!(base, crate::bar::icons_signature(&[retitled, t(2, false, false, false)])); // a title alone: no redraw
     }
 
+    /// Vini: with Chrome in front, clicking a menu bar item turned the
+    /// app name and menus into Files' -- the open menu took the keyboard and
+    /// Wayfire reported no window focused, read as the desktop.
+    #[test]
+    fn test_menus_turned_into_files_on_click() {
+        use crate::bar::keeps_front_app as keep;
+        use serde_json::json;
+        let bar = json!({"type": "panel", "app-id": "sonata2-topbar"});
+        let desktop = json!({"type": "background", "app-id": "sonata2-wallpaper"});
+        assert!(keep(None, 1, None, 1)); // a menu of ours open: Chrome's stay
+        assert!(keep(None, 0, Some(&bar), 1)); // the bar kept the keyboard after its menu closed
+        assert!(keep(None, 0, None, 2)); // the focus nowhere, windows still shown
+        assert!(!keep(None, 0, Some(&desktop), 2)); // the desktop clicked: Files'
+        assert!(!keep(None, 0, None, 0)); // no window left: Files'
+        assert!(!keep(Some("google-chrome"), 1, None, 1)); // a window focused: follow it
+    }
+
     #[test]
     fn test_wifi_panel_opened_off_to_the_right() {
         assert!(!crate::bar::STATUS_ALIGN_START);

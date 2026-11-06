@@ -62,70 +62,14 @@ pub fn thousands(n: u64) -> String {
 
 /// Segment widths filling `width`, each at least `min_w` (tiny partitions stay visible).
 pub fn widths(sizes: &[u64], width: f64, min_w: f64) -> Vec<f64> {
-    let total = sizes.iter().sum::<u64>().max(1) as f64;
-    let raw: Vec<f64> = sizes.iter().map(|s| (width * *s as f64 / total).max(min_w)).collect();
-    let k = width / raw.iter().sum::<f64>().max(1.0);
-    raw.into_iter().map(|w| w * k).collect()
+    sonata_ui::progress::segment_widths(sizes, width, min_w)
 }
 
-fn token(name: &str) -> gtk::gdk::RGBA {
-    sonata_ui::rgba(name)
-}
-
-fn px(name: &str) -> f64 {
-    sonata_ui::values().get(name).and_then(|v| v.trim_end_matches("px").trim().parse().ok()).unwrap_or(6.0)
-}
-
-/// The segmented capacity bar (Disk Utility's coloured strip).
+/// The segmented capacity bar (Disk Utility's coloured strip): sonata-ui's,
+/// shared with About This Computer's Storage.
 fn capacity_bar(segments: Rc<RefCell<Vec<(String, u64, &'static str)>>>) -> gtk::DrawingArea {
-    let bar = gtk::DrawingArea::builder().hexpand(true).css_classes(["du-bar"]).content_height(BAR_HEIGHT).build();
-    bar.set_draw_func(move |_, cr, w, h| {
-        let (w, h) = (w as f64, h as f64);
-        let r = px("r_label");
-        let rounded = |x: f64, y: f64, ww: f64, hh: f64| {
-            use std::f64::consts::PI;
-            cr.new_sub_path();
-            cr.arc(x + ww - r, y + r, r, -PI / 2.0, 0.0);
-            cr.arc(x + ww - r, y + hh - r, r, 0.0, PI / 2.0);
-            cr.arc(x + r, y + hh - r, r, PI / 2.0, PI);
-            cr.arc(x + r, y + r, r, PI, 3.0 * PI / 2.0);
-            cr.close_path();
-        };
-        let set = |c: &gtk::gdk::RGBA| cr.set_source_rgba(c.red() as f64, c.green() as f64, c.blue() as f64, c.alpha() as f64);
-        rounded(0.5, 0.5, w - 1.0, h - 1.0);
-        let _ = cr.save();
-        cr.clip_preserve();
-        set(&token("content_bg"));
-        let _ = cr.fill();
-        let segs = segments.borrow();
-        let segs: Vec<&(String, u64, &str)> = segs.iter().filter(|s| s.1 > 0).collect();
-        let mut x = 0.0;
-        for (s, sw) in segs.iter().zip(widths(&segs.iter().map(|s| s.1).collect::<Vec<_>>(), w, 4.0)) {
-            set(&if s.2 == "free" { token("control_off") } else { token(s.2) });
-            cr.rectangle(x, 0.0, sw, h);
-            let _ = cr.fill();
-            if x > 0.0 {
-                // a hairline gap between segments
-                set(&token("content_bg"));
-                cr.rectangle(x - 0.5, 0.0, 1.0, h);
-                let _ = cr.fill();
-            }
-            x += sw;
-        }
-        let _ = cr.restore();
-        rounded(0.5, 0.5, w - 1.0, h - 1.0);
-        set(&token("separator"));
-        cr.set_line_width(1.0);
-        let _ = cr.stroke();
-    });
-    sonata_ui::on_change({
-        let b = bar.downgrade();
-        move || {
-            if let Some(b) = b.upgrade() {
-                b.queue_draw();
-            }
-        }
-    });
+    let bar = sonata_ui::progress::capacity_bar(segments, BAR_HEIGHT);
+    bar.add_css_class("du-bar");
     bar
 }
 

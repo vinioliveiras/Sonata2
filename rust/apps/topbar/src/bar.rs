@@ -372,6 +372,32 @@ fn set_icon(btn: &gtk::Button, name: &str) {
     }
 }
 
+/// Whether the app name and menus stay as they are when no window is
+/// focused. Wayfire's IPC reports none as soon as a surface of ours takes
+/// the keyboard (a menu bar menu, and after it closes the focus may stay
+/// nowhere), where the Python bar read wlr-foreign-toplevel, which keeps
+/// the last window activated -- Vini: Chrome in front, a click on a menu
+/// turned them into Files'. Files' only for the desktop itself, or when no
+/// window is left to be in front.
+/// `focus`: Wayfire's focused view ("type", "app-id"), None when nothing.
+pub fn keeps_front_app(focused: Option<&str>, menus_open: u32, focus: Option<&serde_json::Value>, windows_shown: usize) -> bool {
+    if focused.is_some() {
+        return false; // a window in front: follow it
+    }
+    if menus_open > 0 {
+        return true;
+    }
+    match focus {
+        Some(v) => {
+            let app = v.get("app-id").and_then(|a| a.as_str()).unwrap_or("");
+            let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            // the desktop (the wallpaper's layer) has it: Files'
+            !(kind == "background" || app.contains("sonata2-wallpaper")) && windows_shown > 0
+        }
+        None => windows_shown > 0,
+    }
+}
+
 /// What redraws the icon items when it changes (icons_soon): the window in
 /// front, how many there are, how many minimized and maximized. Vini: Wi-Fi,
 /// Search and Control Center went dark after minimizing or maximizing an
@@ -942,6 +968,11 @@ impl Bar {
             self.icons_soon();
         }
         let (key, wins) = self.active();
+        let focus = if key.is_none() { sonata_backend::wfipc::call("window-rules/get-focused-view", serde_json::json!({})).and_then(|v| v.get("info").cloned()).filter(|v| !v.is_null()) } else { None };
+        let shown = tops.iter().filter(|t| !t.minimized).count();
+        if keeps_front_app(key.as_deref(), self.open_menus.get(), focus.as_ref(), shown) {
+            return; // a menu of ours took the focus: the app in front is still Chrome's...
+        }
         self.go_btn.set_visible(key.is_none());
         match key {
             Some(key) => {
