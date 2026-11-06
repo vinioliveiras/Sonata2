@@ -63,9 +63,17 @@ pub fn displays() -> Vec<(i32, i32, i32)> {
 /// Where the x goes for a window drawn at `bx` (output-local): its top
 /// corner on the side of the user's window buttons, a little out of it.
 pub fn close_spot(bx: &Value, end: bool) -> (i32, i32) {
-    let n = |k: &str| bx[k].as_i64().unwrap_or(0) as i32;
+    // (Wayfire's JSON gives the box as floats, 186.0: as_i64 read nothing)
+    let n = |k: &str| bx[k].as_f64().unwrap_or(0.0) as i32;
     let x = if end { n("x") + n("width") - CLOSE_SIZE + CLOSE_OUT } else { n("x") - CLOSE_OUT };
     (x.max(0), (n("y") - CLOSE_OUT).max(0))
+}
+
+/// A window under the pointer, with a box to put the x on. (The width
+/// comes as a float, 1494.0: as_i64 took every window for none, and the x
+/// never showed -- Vini.)
+pub fn hovered_box(ev: &Value) -> bool {
+    ev["view-id"].as_i64().unwrap_or(-1) >= 0 && ev["width"].as_f64().unwrap_or(0.0) > 0.0
 }
 
 /// What an IPC event asks of Mission Control.
@@ -313,7 +321,7 @@ impl CloseOverlay {
     /// The window under the pointer (view-id -1: none).
     pub fn hover(&self, ev: &Value) {
         let vid = ev["view-id"].as_i64().unwrap_or(-1);
-        if vid < 0 || ev["width"].as_i64().unwrap_or(0) <= 0 {
+        if !hovered_box(ev) {
             self.clear();
             return;
         }
@@ -714,6 +722,19 @@ impl Ipc for SampleDesktops {
 
 #[cfg(test)]
 mod tests {
+
+    /// Vini: no x on the windows in Mission Control -- Sonata's Wayfire
+    /// sends the hovered window's box as floats ("width": 1494.0), and
+    /// as_i64 read the width as 0: every hover was taken for none.
+    #[test]
+    fn test_close_button_missing_in_mission_control() {
+        let ev = json!({"view-id": 35, "output": "HDMI-A-1", "x": 186.0, "y": 114.0, "width": 1494.0, "height": 763.0});
+        assert_eq!(close_spot(&ev, false), (186 - CLOSE_OUT, 114 - CLOSE_OUT));
+        assert_eq!(close_spot(&ev, true), (186 + 1494 - CLOSE_SIZE + CLOSE_OUT, 114 - CLOSE_OUT));
+        assert!(hovered_box(&ev));
+        assert!(!hovered_box(&json!({"view-id": -1, "width": 0.0})));
+    }
+
     use super::*;
 
     #[test]
