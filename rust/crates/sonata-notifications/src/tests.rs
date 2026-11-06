@@ -843,10 +843,190 @@ fn notification_center_glass_gtk() {
     let tex: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(2, 2, gtk::gdk::MemoryFormat::R8g8b8a8, &glib::Bytes::from_owned(vec![0u8; 16]), 8).upcast();
     c.frost_done(c.frost_opening(), Some(tex.clone()));
     assert!(!c.win.has_css_class("no-frost") && c.pictured());
+    // the backdrop: the same picture behind the whole column, fading out
+    // to the left (tests/test_nc_glass.py)
+    assert!(c.backdrop().has_picture());
+    let ctx = glib::MainContext::default();
+    let until = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < until {
+        ctx.iteration(false);
+    }
+    if c.backdrop().width() > 0 {
+        let node = c.backdrop().node().expect("the backdrop drawn");
+        assert_eq!(node.node_type(), gtk::gsk::RenderNodeType::MaskNode);
+        let fade = node.downcast_ref::<gtk::gsk::MaskNode>().unwrap().mask();
+        assert_eq!(fade.node_type(), gtk::gsk::RenderNodeType::LinearGradientNode);
+        // (reaching past the column's left; the picture itself ends at
+        // this window's edge -- a full-screen layer in the session)
+        assert!((fade.bounds().x() + crate::center::BACKDROP_FADE).abs() < 0.5);
+        assert_eq!(fade.bounds().width(), c.backdrop().width() as f32 + crate::center::BACKDROP_FADE);
+    }
     c.frost_done(c.frost_opening() - 1, None); // an older opening's answer
     assert!(c.pictured());
     c.frost_done(c.frost_opening(), None); // none this time: solid
     assert!(c.win.has_css_class("no-frost") && !c.pictured());
+    assert!(!c.backdrop().has_picture() && c.backdrop().node().is_none()); // and nothing behind them
+}
+
+// -- Notification Center's groups (tests/test_nc_groups.py) -----------------------------------
+
+fn gnote(id: u32, app: &str, desktop: &str) -> Note {
+    let mut n = Note::new(id, app, &format!("Title {id}"), "");
+    n.desktop = desktop.into();
+    n
+}
+
+fn keys(units: &[Unit]) -> Vec<UnitKey> {
+    units.iter().map(Unit::key).collect()
+}
+
+/// Vini: ten messages from one chat were ten cards. Three from Chat and
+/// one from Mail: Chat's are one stack, where its newest one is; Mail's
+/// stays a card.
+#[test]
+fn test_one_apps_notifications_were_a_long_list() {
+    let newest_first = [gnote(4, "Chat", ""), gnote(3, "Mail", ""), gnote(2, "Chat", ""), gnote(1, "Chat", "")];
+    let units = layout(&newest_first, &Default::default());
+    assert_eq!(keys(&units), [UnitKey::Stack("Chat".into()), UnitKey::Card(3)]);
+    let Unit::Stack(_, notes) = &units[0] else { panic!() };
+    assert_eq!(notes.iter().map(|n| n.id).collect::<Vec<_>>(), [4, 2, 1]); // newest on top
+    assert_eq!(units[0].made(), Made::Stack(newest_first[0].clone(), STACK_LAYERS));
+}
+
+#[test]
+fn test_single_notification_stays_a_card() {
+    let units = layout(&[gnote(1, "Chat", ""), gnote(2, "Mail", "")], &Default::default());
+    assert_eq!(keys(&units), [UnitKey::Card(1), UnitKey::Card(2)]);
+}
+
+/// The desktop entry groups (as Settings > Notifications keys apps);
+/// without one, the name; with neither, each on its own.
+#[test]
+fn test_grouped_by_desktop_entry_then_name() {
+    let units = layout(&[gnote(5, "", ""), gnote(3, "WhatsApp", "web-wa"), gnote(2, "Chrome", "web-wa"), gnote(1, "", "")], &Default::default());
+    assert_eq!(keys(&units), [UnitKey::Card(5), UnitKey::Stack("web-wa".into()), UnitKey::Card(1)]);
+    assert_eq!(group_name(&[gnote(1, "", "nothing-here")]), "nothing-here");
+}
+
+#[test]
+fn test_expanded_group_is_a_header_and_its_cards() {
+    let expanded = std::collections::HashSet::from(["Chat".to_string()]);
+    let units = layout(&[gnote(3, "Chat", ""), gnote(2, "Chat", ""), gnote(1, "Mail", "")], &expanded);
+    assert_eq!(keys(&units), [UnitKey::Head("Chat".into()), UnitKey::Card(3), UnitKey::Card(2), UnitKey::Card(1)]);
+    assert_eq!(units[0].made(), Made::Head("Chat".into()));
+    assert_eq!(units[0].made().at(), None);
+}
+
+/// A stack shows one edge for two notifications, two for three or more.
+#[test]
+fn test_stack_shows_two_edges_at_most() {
+    for (n, edges) in [(2, 1), (3, 2), (6, 2)] {
+        let notes: Vec<Note> = (1..=n).rev().map(|i| gnote(i, "Chat", "")).collect();
+        let units = layout(&notes, &Default::default());
+        assert!(matches!(units[0].made(), Made::Stack(_, e) if e == edges));
+    }
+}
+
+/// Clear All (and a group's x): every notification gone in one change --
+/// cleared one by one, a stack turned into a card on its way out.
+#[test]
+fn test_clear_all_is_one_change() {
+    let _l = one_at_a_time();
+    fresh_config();
+    let (s, p) = server(&Rc::default());
+    for app in ["Chat", "Chat", "Mail"] {
+        send(&s, app, 1);
+    }
+    let changes: Rc<Cell<u32>> = Rc::default();
+    let c = changes.clone();
+    s.connect_changed(move || c.set(c.get() + 1));
+    let chat: Vec<u32> = s.notes().iter().filter(|n| n.app == "Chat").map(|n| n.id).collect();
+    s.dismiss(&chat);
+    assert_eq!(changes.get(), 1);
+    assert_eq!(s.notes().iter().map(|n| n.app.as_str()).collect::<Vec<_>>(), ["Mail"]);
+    assert!(chat.iter().all(|id| p.hidden.borrow().contains(id)));
+    s.clear();
+    assert_eq!(changes.get(), 2);
+    assert!(s.notes().is_empty());
+}
+
+/// Vini: the glass was only under each card and the calendar, the rest
+/// of the screen sharp around them. Behind the whole column now, the
+/// blurred display: from under the menu bar down, fully there from the
+/// column's left edge, fading to nothing BACKDROP_FADE px left of it.
+#[test]
+fn test_glass_only_under_the_panels() {
+    use crate::center::{backdrop_geometry, BACKDROP_FADE};
+    let ((x, y, w, h), (x0, x1)) = backdrop_geometry(400.0, 900.0, 32.0);
+    assert_eq!((x, y, w, h), (-BACKDROP_FADE, 32.0, 400.0 + BACKDROP_FADE, 868.0));
+    assert_eq!((x0, x1), (-BACKDROP_FADE, 0.0));
+    assert_eq!(backdrop_geometry(400.0, 10.0, 32.0).0 .3, 0.0);
+}
+
+/// An app's stack in Notification Center: a click opens it into a header
+/// and its cards, Show Less closes it, the header's x clears the group
+/// only; down to one, a plain card again.
+#[test]
+fn test_notification_center_listed_every_card() {
+    in_own_process("tests::notification_center_groups_gtk");
+}
+
+fn find_class(w: &gtk::Widget, class: &str) -> Option<gtk::Widget> {
+    use gtk::prelude::*;
+    if w.has_css_class(class) {
+        return Some(w.clone());
+    }
+    let mut c = w.first_child();
+    while let Some(x) = c {
+        if let Some(f) = find_class(&x, class) {
+            return Some(f);
+        }
+        c = x.next_sibling();
+    }
+    None
+}
+
+#[test]
+#[ignore = "GTK: run by test_notification_center_listed_every_card in a process of its own"]
+fn notification_center_groups_gtk() {
+    use gtk::prelude::*;
+    if gtk::init().is_err() {
+        return; // (no display)
+    }
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("XDG_CONFIG_HOME", home.path().join("config"));
+    std::env::set_var("XDG_RUNTIME_DIR", home.path());
+    sonata_ui::setup();
+    let server = Server::new(false);
+    let app = gtk::Application::builder().flags(gio::ApplicationFlags::NON_UNIQUE).build();
+    app.register(gio::Cancellable::NONE).unwrap();
+    let c = crate::center::Center::new(&app, &server, None);
+    let mail = server.notify(req("Mail", "Hi", "", &[], 1, ""));
+    let a = server.notify(req("Chat", "Hi", "", &[], 1, ""));
+    let b = server.notify(req("Chat", "Hi again", "", &[], 1, ""));
+    c.rebuild();
+    let stack = UnitKey::Stack("Chat".into());
+    assert_eq!(c.order(), [stack.clone(), UnitKey::Card(mail)]);
+    let row = c.row(&stack).unwrap();
+    assert!(find_class(&row, "nt-peek").is_some());
+    assert_eq!(row.observe_children().n_items(), 2); // the card, one edge
+    c.expand("Chat", true);
+    let head = UnitKey::Head("Chat".into());
+    assert_eq!(c.order(), [head.clone(), UnitKey::Card(b), UnitKey::Card(a), UnitKey::Card(mail)]);
+    c.expand("Chat", false);
+    assert_eq!(c.order(), [stack, UnitKey::Card(mail)]);
+    c.expand("Chat", true);
+    let x = find_class(&c.row(&head).unwrap(), "nc-group-clear").unwrap();
+    x.downcast::<gtk::Button>().unwrap().emit_clicked();
+    assert_eq!(server.notes().iter().map(|n| n.id).collect::<Vec<_>>(), [mail]);
+    c.rebuild();
+    assert_eq!(c.order(), [UnitKey::Card(mail)]);
+    // a group down to one is no longer open: the next one stacks again
+    let d = server.notify(req("Chat", "Back", "", &[], 1, ""));
+    let e = server.notify(req("Chat", "Again", "", &[], 1, ""));
+    c.rebuild();
+    assert_eq!(c.order()[0], UnitKey::Stack("Chat".into()));
+    let _ = (d, e);
 }
 
 /// Vini: Notification Center's calendar all but touched the menu bar (2 px

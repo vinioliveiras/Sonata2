@@ -266,8 +266,28 @@ impl Server {
 
     /// Clear All.
     pub fn clear(&self) {
-        for n in self.notes() {
-            self.close(n.id, DISMISSED);
+        let ids: Vec<u32> = self.notes().iter().map(|n| n.id).collect();
+        self.dismiss(&ids);
+    }
+
+    /// Several dismissed at once -- Clear All, a group's x: one change to
+    /// the list, so Notification Center sees them all leave together (one
+    /// by one, a stack turned into a card on its way out).
+    pub fn dismiss(&self, ids: &[u32]) {
+        if let Some(p) = self.presenter() {
+            for id in ids {
+                p.hide_banner(*id);
+            }
+        }
+        let mut gone = false;
+        for id in ids {
+            gone |= self.core.borrow_mut().remove(*id);
+        }
+        if gone {
+            self.changed();
+        }
+        for id in ids {
+            self.emit("NotificationClosed", (*id, DISMISSED).to_variant());
         }
     }
 

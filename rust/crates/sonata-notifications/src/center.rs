@@ -8,9 +8,15 @@
 //! never blurs it (Vini: it lagged with many notifications). The picture
 //! comes through a hook ([`FrostFn`], the menu bar's: sonata-mission's
 //! frost); without one, or no picture, the panels are solid (`.no-frost`).
+//! Behind the whole column, as macOS's, the same picture fading out to
+//! the left ([`Backdrop`]).
+//!
+//! An app's several notifications are one stack (macOS): its newest card,
+//! the next ones peeking under it; a click opens it into its cards under a
+//! header (model::layout).
 
 use crate::card;
-use crate::model::{self, Note, BANNER_W, SHOWN};
+use crate::model::{self, Made, Note, Unit, UnitKey, BANNER_W, PEEK_H, PEEK_INSET, SHOWN, STACK_LAYERS};
 use crate::server::Server;
 use crate::today;
 use chrono::{NaiveDate, NaiveDateTime};
@@ -19,7 +25,7 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use sonata_i18n::tr;
 use sonata_ui::fixed::FixedWidth;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
@@ -28,7 +34,113 @@ use std::time::Duration;
 pub type FrostFn = Rc<dyn Fn(Option<&str>, Box<dyn FnOnce(Option<gtk::gdk::Texture>)>, Box<dyn FnOnce() -> Option<gtk::gsk::Renderer>>) -> bool>;
 
 /// Its panels and their radius, as their CSS (r_dialog *).
-pub const PANELS: [(&str, f32); 2] = [("nt-card", 1.08), ("nc-widget", 1.5)];
+pub const PANELS: [(&str, f32); 3] = [("nt-card", 1.08), ("nc-widget", 1.5), ("nt-peek", 0.75)];
+/// (a stack's edges: rounded at the bottom only)
+pub const SQUARE_TOP: [&str; 1] = ["nt-peek"];
+/// macOS: behind the whole column, the blurred display, fading out to
+/// nothing this far to the left of it (its picture: drawn once per frame
+/// from a texture, never blurred again)
+pub const BACKDROP_FADE: f32 = 220.0;
+
+/// Notification Center's backdrop in the column's own coordinates: ((x, y,
+/// w, h) it covers, (x0, x1) its fade -- transparent at x0, the whole
+/// picture from x1, the column's left edge, on). From under the menu bar
+/// (`top`) down; it reaches past the column's left by BACKDROP_FADE.
+pub fn backdrop_geometry(width: f32, height: f32, top: f32) -> ((f32, f32, f32, f32), (f32, f32)) {
+    ((-BACKDROP_FADE, top, width + BACKDROP_FADE, (height - top).max(0.0)), (-BACKDROP_FADE, 0.0))
+}
+
+mod backdrop_imp {
+    use super::*;
+    use gtk::subclass::prelude::*;
+
+    #[derive(Default)]
+    pub struct Backdrop {
+        pub tex: RefCell<Option<gtk::gdk::Texture>>,
+        /// where it starts: under the menu bar
+        pub top: Cell<f32>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for Backdrop {
+        const NAME: &'static str = "SonataNcBackdrop";
+        type Type = super::Backdrop;
+        type ParentType = gtk::Box;
+    }
+
+    impl ObjectImpl for Backdrop {}
+
+    impl WidgetImpl for Backdrop {
+        fn snapshot(&self, snap: &gtk::Snapshot) {
+            self.obj().draw(snap);
+            self.parent_snapshot(snap);
+        }
+    }
+
+    impl BoxImpl for Backdrop {}
+}
+
+glib::wrapper! {
+    /// The column, sliding in and out (CSS .nc-slide), with macOS's
+    /// backdrop behind it: the display's blurred picture (fixed where the
+    /// display is, as the panels' glass) behind the whole column, fading
+    /// out to the left. Moves and fades with the column.
+    pub struct Backdrop(ObjectSubclass<backdrop_imp::Backdrop>) @extends gtk::Box, gtk::Widget, @implements gtk::Orientable;
+}
+
+impl Backdrop {
+    fn new(top: f32) -> Self {
+        use gtk::subclass::prelude::ObjectSubclassIsExt;
+        let b: Self = glib::Object::builder().property("orientation", gtk::Orientation::Horizontal).build();
+        b.imp().top.set(top);
+        b
+    }
+
+    pub fn set_picture(&self, tex: Option<gtk::gdk::Texture>) {
+        use gtk::subclass::prelude::ObjectSubclassIsExt;
+        self.imp().tex.replace(tex);
+        self.queue_draw();
+    }
+
+    pub fn has_picture(&self) -> bool {
+        use gtk::subclass::prelude::ObjectSubclassIsExt;
+        self.imp().tex.borrow().is_some()
+    }
+
+    /// The backdrop alone, as drawn now (tests): None without a picture
+    /// or before it has a place on screen.
+    pub fn node(&self) -> Option<gtk::gsk::RenderNode> {
+        let snap = gtk::Snapshot::new();
+        self.draw(&snap);
+        snap.to_node()
+    }
+
+    fn draw(&self, snap: &gtk::Snapshot) {
+        use gtk::graphene::{Point, Rect};
+        use gtk::subclass::prelude::ObjectSubclassIsExt;
+        let Some(tex) = self.imp().tex.borrow().clone() else { return };
+        let Some(root) = self.root() else { return };
+        let Some(at) = self.compute_point(&root, &Point::new(0.0, 0.0)) else { return };
+        if self.width() <= 0 {
+            return;
+        }
+        let ((x, y, w, h), (x0, x1)) = backdrop_geometry(self.width() as f32, self.height() as f32, self.imp().top.get());
+        if h <= 0.0 {
+            return;
+        }
+        let area = Rect::new(x, y, w, h);
+        let clear = gtk::gdk::RGBA::new(0.0, 0.0, 0.0, 0.0);
+        let full = gtk::gdk::RGBA::new(0.0, 0.0, 0.0, 1.0);
+        snap.push_mask(gtk::gsk::MaskMode::Alpha);
+        // the mask: the fade
+        snap.append_linear_gradient(&area, &Point::new(x0, 0.0), &Point::new(x1, 0.0), &[gtk::gsk::ColorStop::new(0.0, clear), gtk::gsk::ColorStop::new(1.0, full)]);
+        snap.pop();
+        snap.push_clip(&area);
+        snap.append_texture(&tex, &Rect::new(-at.x(), -at.y(), root.width() as f32, root.height() as f32));
+        snap.pop();
+        snap.pop();
+    }
+}
 
 mod frost_imp {
     use super::*;
@@ -117,7 +229,13 @@ impl FrostBox {
             if b.width() <= 0.0 {
                 continue;
             }
-            snap.push_rounded_clip(&gtk::gsk::RoundedRect::from_rect(b, r * k));
+            let clip = if SQUARE_TOP.iter().any(|c| w.has_css_class(c)) {
+                let (zero, round) = (gtk::graphene::Size::new(0.0, 0.0), gtk::graphene::Size::new(r * k, r * k));
+                gtk::gsk::RoundedRect::new(b, zero, zero, round, round)
+            } else {
+                gtk::gsk::RoundedRect::from_rect(b, r * k)
+            };
+            snap.push_rounded_clip(&clip);
             snap.append_texture(&tex, &screen);
             snap.pop();
         }
@@ -149,9 +267,10 @@ impl FrostBox {
 
 struct Slot {
     rev: gtk::Revealer,
-    when: gtk::Label,
-    /// the note its card was made for
-    made: Note,
+    /// its "5m ago" (a header has none)
+    when: Option<gtk::Label>,
+    /// what it was made for
+    made: Made,
 }
 
 /// What the column was last built for: the list, the day, Calendar's
@@ -167,13 +286,15 @@ struct StateKey {
 pub struct Center {
     pub win: gtk::Window,
     server: Weak<Server>,
-    slide: gtk::Box,
+    slide: Backdrop,
     top: FrostBox,
     col: FrostBox,
     head: gtk::Box,
     title: gtk::Label,
     clear: gtk::Button,
-    slots: RefCell<HashMap<u32, Slot>>,
+    slots: RefCell<HashMap<UnitKey, Slot>>,
+    /// the groups shown as every card (their stack clicked)
+    expanded: RefCell<HashSet<String>>,
     /// slots sliding out, removed when they've gone
     leaving: RefCell<Vec<gtk::Revealer>>,
     /// the Today widgets
@@ -219,7 +340,10 @@ impl Center {
         // moved and faded, never laid out again each frame (a Revealer
         // re-measured every card and the calendar per frame -- Vini: the
         // opening lagged)
-        let slide = gtk::Box::builder().css_classes(["nc-slide"]).halign(gtk::Align::End).valign(gtk::Align::Fill).build();
+        let slide = Backdrop::new((gap - 12) as f32);
+        slide.add_css_class("nc-slide");
+        slide.set_halign(gtk::Align::End);
+        slide.set_valign(gtk::Align::Fill);
         slide.append(&outer);
         slide.set_can_target(false);
         win.set_child(Some(&slide));
@@ -250,6 +374,7 @@ impl Center {
             title,
             clear,
             slots: RefCell::default(),
+            expanded: RefCell::default(),
             leaving: RefCell::default(),
             cal: RefCell::default(),
             cal_key: RefCell::default(),
@@ -318,7 +443,8 @@ impl Center {
     fn follow_slide(&self) {
         let (top, col) = (self.top.downgrade(), self.col.downgrade());
         let until = glib::monotonic_time() + i64::from(sonata_ui::tokens::ms(SLIDE_MS)) * 1000 + 50_000;
-        self.slide.add_tick_callback(move |_, _| {
+        self.slide.add_tick_callback(move |slide, _| {
+            slide.queue_draw(); // (the backdrop)
             for b in [top.upgrade(), col.upgrade()].into_iter().flatten() {
                 b.queue_draw();
             }
@@ -388,6 +514,7 @@ impl Center {
                 for b in [&c.top, &c.col] {
                     b.set_picture(None); // (a new picture each opening)
                 }
+                c.slide.set_picture(None);
             }
         });
         self.hiding.replace(Some(src));
@@ -401,6 +528,7 @@ impl Center {
         for b in [&self.top, &self.col] {
             b.set_picture(None);
         }
+        self.slide.set_picture(None);
         let gen = self.frost_gen.get() + 1;
         self.frost_gen.set(gen);
         let out = self.monitor.borrow().as_ref().and_then(|m| m.connector()).map(|c| c.to_string());
@@ -427,6 +555,11 @@ impl Center {
         self.top.has_picture() && self.col.has_picture()
     }
 
+    /// The column, with its backdrop (tests).
+    pub fn backdrop(&self) -> &Backdrop {
+        &self.slide
+    }
+
     /// The picture for opening `gen` came (None: there is none).
     pub fn frost_done(&self, gen: u64, tex: Option<gtk::gdk::Texture>) {
         if gen != self.frost_gen.get() || !self.is_open() {
@@ -440,6 +573,7 @@ impl Center {
         for b in [&self.top, &self.col] {
             b.set_picture(tex.clone());
         }
+        self.slide.set_picture(tex.clone());
         // the glass drawn now and once the column has slid in: Vini, the
         // calendar's glass only showed after the pointer went over it (its
         // panel's last picture, drawn while sliding, was kept)
@@ -506,16 +640,16 @@ impl Center {
             }
             return;
         }
-        let notes = self.notes();
-        let ids: std::collections::HashSet<u32> = notes.iter().map(|n| n.id).collect();
-        let gone: Vec<u32> = self.slots.borrow().keys().filter(|id| !ids.contains(id)).copied().collect();
-        let new = notes.iter().rev().take(SHOWN).any(|n| !self.slots.borrow().contains_key(&n.id));
+        let units = self.units();
+        let keys: HashSet<UnitKey> = units.iter().map(Unit::key).collect();
+        let gone: Vec<UnitKey> = self.slots.borrow().keys().filter(|k| !keys.contains(k)).cloned().collect();
+        let new = units.iter().any(|u| self.slots.borrow().get(&u.key()).is_none_or(|s| s.made != u.made()));
         if new || gone.is_empty() {
             self.rebuild();
             return;
         }
-        for (i, id) in gone.iter().enumerate() {
-            let Some(slot) = self.slots.borrow_mut().remove(id) else { continue };
+        for (i, key) in gone.iter().enumerate() {
+            let Some(slot) = self.slots.borrow_mut().remove(key) else { continue };
             let rev = slot.rev;
             self.leaving.borrow_mut().push(rev.clone());
             glib::timeout_add_local_once(Duration::from_millis(1 + i.min(8) as u64 * 45), move || {
@@ -542,42 +676,177 @@ impl Center {
         StateKey { notes: self.notes().iter().map(|n| (n.id, n.at.to_bits())).collect(), day: day_now(), calendar: today::stamp(&today::folder()), ended }
     }
 
+    /// The column's units (model::layout) for the newest notes shown; a
+    /// group no longer several notifications is no longer expanded.
+    fn units(&self) -> Vec<Unit> {
+        let notes: Vec<Note> = self.notes().into_iter().rev().take(SHOWN).collect();
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for n in &notes {
+            *counts.entry(model::group_key(n)).or_default() += 1;
+        }
+        self.expanded.borrow_mut().retain(|k| counts.get(k).is_some_and(|c| *c > 1));
+        model::layout(&notes, &self.expanded.borrow())
+    }
+
+    /// The column's rows, top to bottom (tests).
+    pub fn order(&self) -> Vec<UnitKey> {
+        let slots = self.slots.borrow();
+        let mut out = Vec::new();
+        let mut w = self.col.first_child();
+        while let Some(x) = w {
+            if let Some((k, _)) = slots.iter().find(|(_, s)| s.rev.upcast_ref::<gtk::Widget>() == &x) {
+                out.push(k.clone());
+            }
+            w = x.next_sibling();
+        }
+        out
+    }
+
+    /// A row's widget (tests).
+    pub fn row(&self, key: &UnitKey) -> Option<gtk::Widget> {
+        self.slots.borrow().get(key).and_then(|s| s.rev.child())
+    }
+
+    /// A stack clicked: its cards, under a header (macOS); Show Less (`on`
+    /// false): the stack again.
+    pub fn expand(self: &Rc<Self>, group: &str, on: bool) {
+        if on {
+            self.expanded.borrow_mut().insert(group.to_string());
+        } else {
+            self.expanded.borrow_mut().remove(group);
+        }
+        self.rebuild_with(true);
+    }
+
+    /// A group's x: every one of its notifications dismissed, at once.
+    fn dismiss_group(&self, group: &str) {
+        let Some(server) = self.server.upgrade() else { return };
+        let ids: Vec<u32> = server.notes().iter().filter(|n| model::group_key(n) == group).map(|n| n.id).collect();
+        server.dismiss(&ids);
+    }
+
+    fn unit_widget(self: &Rc<Self>, u: &Unit, server: &Rc<Server>) -> (gtk::Widget, Option<gtk::Label>) {
+        match u {
+            Unit::Card(n) => {
+                let c = card::card(n, server);
+                (c.root, Some(c.when))
+            }
+            Unit::Stack(g, notes) => self.stack(g, notes, server),
+            Unit::Head(g, notes) => (self.group_head(g, notes), None),
+        }
+    }
+
+    /// An app's notifications, stacked: its newest card -- a click opens
+    /// the stack, its x clears it -- and the next cards' edges under it.
+    fn stack(self: &Rc<Self>, group: &str, notes: &[Note], server: &Rc<Server>) -> (gtk::Widget, Option<gtk::Label>) {
+        let bx = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["nt-stack"]).build();
+        let (w, g) = (Rc::downgrade(self), group.to_string());
+        let expand: Rc<dyn Fn()> = Rc::new(move || {
+            if let Some(c) = w.upgrade() {
+                c.expand(&g, true);
+            }
+        });
+        let (w, g) = (Rc::downgrade(self), group.to_string());
+        let clear: Rc<dyn Fn()> = Rc::new(move || {
+            if let Some(c) = w.upgrade() {
+                c.dismiss_group(&g);
+            }
+        });
+        let c = card::card_with(&notes[0], server, Some(expand.clone()), Some(clear));
+        bx.append(&c.root);
+        for i in 0..STACK_LAYERS.min(notes.len() - 1) {
+            let inset = PEEK_INSET * (i as i32 + 1);
+            // (6: the card's own margin)
+            let peek = gtk::Box::builder().css_classes(["nt-peek"]).margin_start(6 + inset).margin_end(inset).build();
+            if i > 0 {
+                peek.add_css_class("second");
+            }
+            if !sonata_ui::glass() {
+                peek.add_css_class("solid");
+            }
+            peek.set_size_request(-1, PEEK_H);
+            let click = gtk::GestureClick::new();
+            let e = expand.clone();
+            click.connect_released(move |_, _, _, _| e());
+            peek.add_controller(click);
+            bx.append(&peek);
+        }
+        (bx.upcast(), Some(c.when))
+    }
+
+    /// An expanded stack's header (macOS): its app, Show Less, and an x
+    /// that reads Clear under the pointer -- every one of its cards goes.
+    fn group_head(self: &Rc<Self>, group: &str, notes: &[Note]) -> gtk::Widget {
+        let row = gtk::Box::builder().spacing(6).margin_start(6).margin_top(4).build();
+        row.append(&gtk::Label::builder().label(model::group_name(notes)).xalign(0.0).hexpand(true).max_width_chars(1).ellipsize(gtk::pango::EllipsizeMode::End).css_classes(["nc-group-name"]).build());
+        let less = gtk::Button::builder().label(tr!("Show Less")).css_classes(["nc-clear"]).valign(gtk::Align::Center).build();
+        let (w, g) = (Rc::downgrade(self), group.to_string());
+        less.connect_clicked(move |_| {
+            if let Some(c) = w.upgrade() {
+                c.expand(&g, false);
+            }
+        });
+        row.append(&less);
+        let x = gtk::Button::builder().icon_name("window-close-symbolic").css_classes(["nc-clear", "nc-group-clear"]).valign(gtk::Align::Center).tooltip_text(tr!("Clear")).build();
+        let (w, g) = (Rc::downgrade(self), group.to_string());
+        x.connect_clicked(move |_| {
+            if let Some(c) = w.upgrade() {
+                c.dismiss_group(&g);
+            }
+        });
+        let hover = gtk::EventControllerMotion::new();
+        let b = x.clone();
+        hover.connect_enter(move |_, _, _| b.set_label(&tr!("Clear")));
+        let b = x.clone();
+        hover.connect_leave(move |_| b.set_icon_name("window-close-symbolic"));
+        x.add_controller(hover);
+        row.append(&x);
+        row.upcast()
+    }
+
     /// The column brought up to the list: a new note gets its card, a
     /// closed one loses its own, the others stay as they are -- built and
     /// laid out already. (Every notification used to rebuild all 40 cards
     /// and the calendar, so the next opening laid them all out again
     /// before its first frame: Vini, it opened laggy whenever there were
-    /// notifications.)
-    fn rebuild(self: &Rc<Self>) {
+    /// notifications.) An app's several notifications are one stack, or
+    /// its header and cards once expanded (model::layout).
+    pub(crate) fn rebuild(self: &Rc<Self>) {
+        self.rebuild_with(false);
+    }
+
+    /// animate: new rows slide open (a stack expanded).
+    fn rebuild_with(self: &Rc<Self>, animate: bool) {
         self.built_for.replace(Some(self.state_key()));
         let Some(server) = self.server.upgrade() else { return };
-        let notes: Vec<Note> = server.notes().into_iter().rev().take(SHOWN).collect();
-        self.title.set_label(&if notes.is_empty() { tr!("No Notifications") } else { tr!("Notifications") });
-        self.clear.set_visible(!notes.is_empty());
+        let units = self.units();
+        self.title.set_label(&if units.is_empty() { tr!("No Notifications") } else { tr!("Notifications") });
+        self.clear.set_visible(!units.is_empty());
         for rev in self.leaving.take() {
             // (done sliding out)
             if rev.parent().as_ref() == Some(self.col.upcast_ref()) {
                 self.col.remove(&rev);
             }
         }
-        let wanted: std::collections::HashSet<u32> = notes.iter().map(|n| n.id).collect();
+        let wanted: HashSet<UnitKey> = units.iter().map(Unit::key).collect();
         let mut slots = self.slots.borrow_mut();
-        slots.retain(|id, slot| {
-            let keep = wanted.contains(id);
+        slots.retain(|key, slot| {
+            let keep = wanted.contains(key);
             if !keep {
                 self.col.remove(&slot.rev);
             }
             keep
         });
         let mut prev: gtk::Widget = self.head.clone().upcast();
-        for n in &notes {
-            if slots.get(&n.id).is_some_and(|s| s.made != *n) {
-                // replaced in place (same id, new text)
-                if let Some(old) = slots.remove(&n.id) {
+        for u in &units {
+            let (key, made) = (u.key(), u.made());
+            if slots.get(&key).is_some_and(|s| s.made != made) {
+                // replaced in place (same id, new text; a stack's new top)
+                if let Some(old) = slots.remove(&key) {
                     self.col.remove(&old.rev);
                 }
             }
-            let rev = match slots.get(&n.id) {
+            let rev = match slots.get(&key) {
                 Some(slot) => {
                     if slot.rev.prev_sibling().as_ref() != Some(&prev) {
                         self.col.reorder_child_after(&slot.rev, Some(&prev));
@@ -585,16 +854,20 @@ impl Center {
                     slot.rev.clone()
                 }
                 None => {
-                    let c = card::card(n, &server);
+                    let (w, when) = self.unit_widget(u, &server);
                     let rev = gtk::Revealer::builder()
-                        .child(&c.root)
-                        .reveal_child(true)
+                        .child(&w)
+                        .reveal_child(!animate)
                         .css_classes(["nc-slot"])
                         .transition_type(gtk::RevealerTransitionType::SlideUp)
                         .transition_duration(sonata_ui::tokens::ms(260.0))
                         .build();
                     self.col.insert_child_after(&rev, Some(&prev));
-                    slots.insert(n.id, Slot { rev: rev.clone(), when: c.when, made: n.clone() });
+                    if animate {
+                        let r = rev.downgrade();
+                        glib::idle_add_local_once(move || r.upgrade().iter().for_each(|r| r.set_reveal_child(true)));
+                    }
+                    slots.insert(key, Slot { rev: rev.clone(), when, made });
                     rev
                 }
             };
@@ -609,9 +882,10 @@ impl Center {
     fn refresh_times(&self) {
         let now = model::now();
         for slot in self.slots.borrow().values() {
-            let text = model::ago(slot.made.at, now);
-            if slot.when.label() != text {
-                slot.when.set_label(&text);
+            let (Some(when), Some(at)) = (&slot.when, slot.made.at()) else { continue };
+            let text = model::ago(at, now);
+            if when.label() != text {
+                when.set_label(&text);
             }
         }
     }

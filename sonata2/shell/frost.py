@@ -7,6 +7,7 @@ display's height, and each frame of scrolling or sliding was a blur pass
 over all of it). Both are in glass.NEVER_BLUR.
 
     capture(connector, done)                 # done(texture or None), blurred, on the main loop
+    capture(connector, done, blur=NC_BLUR, vibrancy=NC_VIBRANCY)   # Notification Center's
 """
 import shutil
 
@@ -17,6 +18,12 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 FROST_SCALE = 0.25          # the display's picture at this scale (blurred: no detail needed)
 FROST_BLUR = 28             # blurred this much (px at full size)
+# Notification Center's, closer to macOS (Vini): blurred more, and the
+# colours lifted -- (saturation, brightness) -- so its glass looks vivid
+# rather than washed out. Baked into the picture once, never per frame.
+NC_BLUR = 40
+NC_VIBRANCY = (1.35, 1.06)
+LUMA = (0.2126, 0.7152, 0.0722)     # each channel's share of brightness (Rec. 709)
 
 
 def available() -> bool:
@@ -71,8 +78,30 @@ def texture_from(data):
         return None
 
 
-def blur_texture(renderer, texture):
-    """The picture shrunk to FROST_SCALE and blurred once (GSK, on the GPU)."""
+def vibrancy_matrix(saturation: float, brightness: float) -> list:
+    """GSK's colour matrix (16 floats, row by row) that saturates a colour
+    around its own grey and brightens it. GSK multiplies the colour as a row
+    vector (colour x matrix): row i is what input channel i gives to each
+    output channel."""
+    s, b = saturation, brightness
+    m = [0.0] * 16
+    for i in range(3):
+        for j in range(3):
+            m[i * 4 + j] = (LUMA[i] * (1 - s) + (s if i == j else 0)) * b
+    m[15] = 1.0                                          # alpha as it is
+    return m
+
+
+def vibrant(rgb, saturation: float, brightness: float):
+    """What vibrancy_matrix does to one colour (0..1 channels), clamped."""
+    m = vibrancy_matrix(saturation, brightness)
+    return tuple(min(1.0, max(0.0, sum(rgb[i] * m[i * 4 + j] for i in range(3)))) for j in range(3))
+
+
+def blur_texture(renderer, texture, blur=FROST_BLUR, vibrancy=None):
+    """The picture shrunk to FROST_SCALE and blurred once (GSK, on the GPU);
+    vibrancy (saturation, brightness): its colours lifted too, in the same
+    pass."""
     if renderer is None:
         return texture
     from gi.repository import Graphene, Gsk
@@ -81,20 +110,26 @@ def blur_texture(renderer, texture):
     snap = Gtk.Snapshot()
     r = Graphene.Rect().init(0, 0, w, h)
     snap.push_clip(r)
-    snap.push_blur(FROST_BLUR * FROST_SCALE)
+    if vibrancy is not None:
+        matrix = Graphene.Matrix().init_from_float(vibrancy_matrix(*vibrancy))
+        snap.push_color_matrix(matrix, Graphene.Vec4().init(0, 0, 0, 0))
+    snap.push_blur(blur * FROST_SCALE)
     snap.append_scaled_texture(texture, Gsk.ScalingFilter.TRILINEAR,      # (mipmapped: no shimmer)
                                Graphene.Rect().init(-8, -8, w + 16, h + 16))   # no dark edges
     snap.pop()
+    if vibrancy is not None:
+        snap.pop()
     snap.pop()
     node = snap.to_node()
     return renderer.render_texture(node, r) if node is not None else texture
 
 
-def capture(output, done, renderer_of=None) -> bool:
+def capture(output, done, renderer_of=None, blur=FROST_BLUR, vibrancy=None) -> bool:
     """The display `output` (a connector, None: grim's choice) pictured and
     blurred: done(texture) on the main loop, done(None) if it couldn't be.
     renderer_of(): the renderer to blur with, asked when the picture comes
-    (the window may only be realized by then). False: no grim, nothing asked."""
+    (the window may only be realized by then). False: no grim, nothing asked.
+    blur, vibrancy: as blur_texture's."""
     if not available():
         return False
     try:
@@ -112,6 +147,6 @@ def capture(output, done, renderer_of=None) -> bool:
         renderer = renderer_of() if renderer_of else None
         # never the picture unblurred: without a renderer yet, no glass this
         # time (the panels solid) -- not a sharp screenshot behind them
-        done(blur_texture(renderer, tex) if tex is not None and renderer is not None else None)
+        done(blur_texture(renderer, tex, blur, vibrancy) if tex is not None and renderer is not None else None)
     proc.communicate_async(None, None, finished)
     return True

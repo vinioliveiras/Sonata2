@@ -142,8 +142,12 @@ pub fn run_with(args: &[String], services: Services, started: impl Fn(&gtk::Appl
             seams::start_mixer_service(app); // each app's saved volume, from the start
             let nc = sonata_notifications::Notifications::new(app);
             // Notification Center's glass: the display pictured and blurred
-            // once as it opens (frost.py; the panels were always solid)
-            nc.set_frost(Rc::new(|out, done, renderer| sonata_mission::frost::capture(out, done, renderer)));
+            // once as it opens (frost.py; the panels were always solid) --
+            // blurred more and its colours lifted, as macOS's
+            nc.set_frost(Rc::new(|out, done, renderer| {
+                use sonata_mission::frost;
+                frost::capture_with(out, frost::NC_BLUR, Some(frost::NC_VIBRANCY), done, renderer)
+            }));
             win.bar.notifications.replace(Some(nc));
             glib::timeout_add_seconds_local_once(4, prefetch); // menus open already filled
             if !sonata_config::side_by_side() {

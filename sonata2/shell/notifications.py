@@ -148,6 +148,17 @@ XML = """
 </node>"""
 
 NC_SLIDE_PX = BANNER_W + 40         # off the right edge: the column's width and its margins
+# macOS: behind the whole column, the blurred display, fading out to nothing
+# this far to the left of it (its picture, frost.py: drawn once per frame
+# from a texture, never blurred again)
+BACKDROP_FADE = 220
+# an app's notifications stacked (macOS): the cards under the newest one
+# peek out as thin edges, this tall, each this much narrower on each side
+# -- more than a card's corner radius, so an edge starts under its straight
+# bottom, not in the gap of its rounded corner
+STACK_LAYERS = 2
+PEEK_H = 7
+PEEK_INSET = 14
 
 
 class _FrostBox(Gtk.Box):
@@ -158,7 +169,8 @@ class _FrostBox(Gtk.Box):
     Notification Center (glass.NEVER_BLUR: Vini, it lagged with many
     notifications); without a picture, nothing here (the panels go solid:
     .no-frost)."""
-    PANELS = {"nt-card": 1.08, "nc-widget": 1.5}    # their radius, as their CSS (r_dialog *)
+    PANELS = {"nt-card": 1.08, "nc-widget": 1.5, "nt-peek": 0.75}   # their radius, as their CSS (r_dialog *)
+    SQUARE_TOP = ("nt-peek",)                       # (a stack's edges: rounded at the bottom only)
 
     def do_snapshot(self, snap) -> None:
         win = self.get_root()
@@ -174,7 +186,12 @@ class _FrostBox(Gtk.Box):
                     if not ok or b.get_width() <= 0:
                         continue
                     rr = Gsk.RoundedRect()
-                    rr.init_from_rect(b, ui.theme.px("r_dialog") * k)
+                    r = ui.theme.px("r_dialog") * k
+                    if any(w.has_css_class(c) for c in self.SQUARE_TOP):
+                        zero, round_ = Graphene.Size().init(0, 0), Graphene.Size().init(r, r)
+                        rr.init(b, zero, zero, round_, round_)
+                    else:
+                        rr.init_from_rect(b, r)
                     snap.push_rounded_clip(rr)
                     snap.append_texture(tex, screen)
                     snap.pop()
@@ -195,17 +212,84 @@ class _FrostBox(Gtk.Box):
                 w = w.get_next_sibling()
 
 
+def backdrop_geometry(width: float, height: float, top: float):
+    """Notification Center's backdrop in the column's own coordinates:
+    ((x, y, w, h) it covers, (x0, x1) its fade -- transparent at x0, the
+    whole picture from x1, the column's left edge, on). From under the menu
+    bar (`top`) down; it reaches past the column's left by BACKDROP_FADE."""
+    return (-BACKDROP_FADE, top, width + BACKDROP_FADE, max(0, height - top)), (-BACKDROP_FADE, 0)
+
+
+def backdrop(snap, slide, win, tex) -> bool:
+    """macOS's Notification Center backdrop: the display's blurred picture
+    (fixed where the display is, as the panels' glass) behind the whole
+    column, fading out to the left. Moves and fades with the column. False:
+    nowhere to draw it yet."""
+    p = Graphene.Point()
+    p.x, p.y = 0, 0
+    ok, at = slide.compute_point(win, p)
+    if not ok or slide.get_width() <= 0:
+        return False
+    (x, y, w, h), (x0, x1) = backdrop_geometry(slide.get_width(), slide.get_height(), TOP_GAP - 12)
+    if h <= 0:
+        return False
+    area = Graphene.Rect().init(x, y, w, h)
+    stops = []
+    for offset, alpha in ((0.0, 0.0), (1.0, 1.0)):
+        stop = Gsk.ColorStop()
+        stop.offset = offset
+        stop.color = Gdk.RGBA(red=0, green=0, blue=0, alpha=alpha)
+        stops.append(stop)
+    a, b = Graphene.Point(), Graphene.Point()
+    a.x, a.y, b.x, b.y = x0, 0, x1, 0
+    snap.push_mask(Gsk.MaskMode.ALPHA)
+    snap.append_linear_gradient(area, a, b, stops)             # the mask: the fade
+    snap.pop()
+    snap.push_clip(area)
+    snap.append_texture(tex, Graphene.Rect().init(-at.x, -at.y, win.get_width(), win.get_height()))
+    snap.pop()
+    snap.pop()
+    return True
+
+
 class _Slide(Gtk.Box):
     """The Notification Center column, sliding in and out (CSS .nc-slide).
-    Keeps a Revealer's two calls (prewarm and show/hide use them)."""
+    Keeps a Revealer's two calls (prewarm and show/hide use them). Draws the
+    backdrop behind it (backdrop())."""
+    SLIDE_MS = 250                  # its CSS transform's
 
     def __init__(self, child):
         super().__init__(css_classes=["nc-slide"], halign=Gtk.Align.END, valign=Gtk.Align.FILL)
         self.append(child)
+        self.follow = []            # the _FrostBoxes in it, drawn again as it slides
+
+    def do_snapshot(self, snap) -> None:
+        win = self.get_root()
+        tex = getattr(win, "frost_tex", None)
+        if tex is not None:
+            backdrop(snap, self, win, tex)
+        Gtk.Box.do_snapshot(self, snap)
 
     def set_reveal_child(self, on: bool) -> None:
         (self.add_css_class if on else self.remove_css_class)("shown")
         self.set_can_target(on)
+        self._follow_slide()
+
+    def _follow_slide(self) -> None:
+        """The glass is the display's picture, fixed where the display is:
+        drawn again on every frame of the slide, or it moved with the
+        column and only fell into place once the slide was over (Vini, in
+        the Rust port: the calendar's glass "adjusted after the
+        animation")."""
+        from ..ui import tokens
+        until = GLib.get_monotonic_time() + (tokens.ms(self.SLIDE_MS) + 50) * 1000
+
+        def tick(_w, _clock):
+            self.queue_draw()
+            for b in self.follow:
+                b.queue_draw()
+            return GLib.get_monotonic_time() < until
+        self.add_tick_callback(tick)
 
     def get_reveal_child(self) -> bool:
         return self.has_css_class("shown")
@@ -235,7 +319,16 @@ window.sonata-nc, window.sonata-nc > contents { background: none; box-shadow: no
 /* Notification Center without its glass (no grim, no picture): solid panels
    -- the compositor doesn't blur behind it (_FrostBox) */
 window.sonata-nc.no-frost .nt-card, window.sonata-nc.no-frost .nc-widget,
-window.sonata-nc.no-frost button.nc-clear { background: %(menu_bg)s; }
+window.sonata-nc.no-frost .nt-peek, window.sonata-nc.no-frost button.nc-clear { background: %(menu_bg)s; }
+/* an app's stack (macOS): the cards under the newest one peek out below it */
+.nt-peek { background: %(glass_tint)s; border-radius: 0 0 calc(%(r_dialog)s * 0.75) calc(%(r_dialog)s * 0.75);
+  box-shadow: 0 0 0 0.5px %(hairline)s, 0 4px 10px rgba(0,0,0,0.12); }
+.nt-peek.second { opacity: 0.7; }
+.nt-peek.solid { background: %(menu_bg)s; }
+/* an expanded stack's header: the app, Show Less, and its x (Clear on hover) */
+.nc-group-name { font-weight: 700; font-size: %(text_body)s; color: white; text-shadow: 0 1px 4px rgba(0,0,0,0.45);
+  margin-left: 4px; }
+button.nc-group-clear { min-width: 20px; }
 .nt-title { font-weight: 700; font-size: %(text_body)s; }
 .nt-image { border-radius: 5px; }
 .nt-body { font-size: %(text_body)s; }
@@ -332,6 +425,66 @@ def tidy(body: str, actions: list, web: bool, browser: bool = False):
         actions = [(k, lbl) for k, lbl in actions if k.lower() != "settings" and lbl.lower() != "settings"]
     lines = [ln for ln in (body or "").splitlines() if ln.strip()]
     return "\n".join(lines), actions
+
+
+def group_key(n: Note) -> str:
+    """The app a notification is grouped under in Notification Center (as
+    Settings > Notifications keys it); one with no app is a group of its own."""
+    return app_key(n.desktop, n.app) or "#%d" % n.id
+
+
+def group_name(notes) -> str:
+    """A group's header: its app's name."""
+    n = notes[0]
+    if n.app:
+        return n.app
+    info = apps.lookup(n.desktop) if n.desktop else None
+    return (info.get_name() if info is not None else "") or n.desktop
+
+
+def layout(notes, expanded=()) -> list:
+    """Notification Center's column for `notes` (newest first), as macOS
+    groups it: each app's notifications together, where its newest one is,
+    newest first. An app with one is a plain card; with more, a stack (the
+    newest card, the next ones peeking under it) -- or, expanded (its key in
+    `expanded`), a header and every card. Each unit is (kind, key, what):
+    ("card", note id, Note), ("stack", "stack:" + group, [Note]),
+    ("head", "head:" + group, [Note])."""
+    groups, order = {}, []
+    for n in notes:
+        k = group_key(n)
+        if k not in groups:
+            groups[k] = []
+            order.append(k)
+        groups[k].append(n)
+    out = []
+    for k in order:
+        g = groups[k]
+        if len(g) == 1:
+            out.append(("card", g[0].id, g[0]))
+        elif k in expanded:
+            out.append(("head", "head:" + k, g))
+            out.extend(("card", n.id, n) for n in g)
+        else:
+            out.append(("stack", "stack:" + k, g))
+    return out
+
+
+def signature(kind: str, what):
+    """What a unit's widget was made from: made again when it changes. A
+    card: its note (the same id replaced in place is a new one) and time; a
+    stack: its top card and how many edges peek; a header: its name. The
+    second item is the time its "5m ago" shows, if any."""
+    if kind == "card":
+        return (what, what.at)
+    if kind == "stack":
+        return (what[0], what[0].at, min(STACK_LAYERS, len(what) - 1))
+    return (None, None, group_name(what))
+
+
+def same(made, sig) -> bool:
+    return made is not None and len(made) == len(sig) and \
+        all(a is b or (not isinstance(a, Note) and a == b) for a, b in zip(made, sig))
 
 
 def thumbnail(path: str, size: int = THUMB, scale: int = 2):
@@ -573,8 +726,24 @@ class Notifications:
         self.close(n.id, 2)
 
     def clear(self) -> None:
-        for n in list(self.notes):
-            self.close(n.id, 2)
+        self.dismiss([n.id for n in self.notes])
+
+    def dismiss(self, ids) -> None:
+        """Several dismissed at once -- Clear All, a group's x: one change to
+        the list, so Notification Center sees them all leave together (one
+        by one, a stack turned into a card on its way out)."""
+        ids = list(ids)
+        for nid in ids:
+            self._hide_banner(nid)
+        gone = set(ids)
+        before = len(self.notes)
+        self.notes = [n for n in self.notes if n.id not in gone]
+        if len(self.notes) != before:
+            self._changed()
+        if self._conn:
+            for nid in ids:
+                self._conn.emit_signal(None, "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+                                       "NotificationClosed", GLib.Variant("(uu)", (nid, 2)))
 
     def _changed(self):
         from .. import badges
@@ -628,7 +797,9 @@ class Notifications:
             gone()
 
     # -- a notification card (banner and Notification Center) ---------------------------------
-    def card(self, n: Note, banner=False) -> Gtk.Widget:
+    def card(self, n: Note, banner=False, on_click=None, on_close=None) -> Gtk.Widget:
+        """on_click(), on_close(): in place of its default action and of
+        closing it (a stack's top card: expands it, clears the stack)."""
         over = Gtk.Overlay()
         box = Gtk.Box(spacing=10, css_classes=["nt-card"] + ([] if ui.theme.glass() else ["solid"]))
         box.set_size_request(BANNER_W, -1)
@@ -663,11 +834,12 @@ class Notifications:
         from ..ui.fixed import FixedWidth
         over.set_child(FixedWidth(box, BANNER_W))            # a long title or body never widens it
         click = Gtk.GestureClick()
-        click.connect("released", lambda g, *_: g.get_current_button() == 1 and self.invoke(n))
+        click.connect("released", lambda g, *_: g.get_current_button() == 1 and (
+            on_click() if on_click is not None else self.invoke(n)))
         box.add_controller(click)
         close = Gtk.Button(icon_name="window-close-symbolic", css_classes=["nt-close"], halign=Gtk.Align.START,
                            valign=Gtk.Align.START, margin_start=0, margin_top=0, visible=False)
-        close.connect("clicked", lambda *_: self.close(n.id, 2))
+        close.connect("clicked", lambda *_: on_close() if on_close is not None else self.close(n.id, 2))
         over.add_overlay(close)
         hover = Gtk.EventControllerMotion()
         hover.connect("enter", lambda *_: close.set_visible(True))
@@ -749,6 +921,7 @@ class _Center(Gtk.Window):
         outer.append(self.top)
         outer.append(scroller)
         self.rev = _Slide(outer)
+        self.rev.follow = [self.top, self.col]
         self.set_child(self.rev)
         outside = Gtk.GestureClick()
         outside.connect("released", self._clicked)
@@ -766,8 +939,9 @@ class _Center(Gtk.Window):
             LS.set_exclusive_zone(self, -1)
             LS.set_keyboard_mode(self, LS.KeyboardMode.ON_DEMAND)
             self.keyboard_mode = LS.KeyboardMode.ON_DEMAND        # (layer.prewarm restores it)
-        self._slots = {}             # note id -> Revealer around its card
-        self._shown = {}             # note id -> (the Note, its time) its card was made for
+        self._slots = {}             # unit key (layout(): a note id, "stack:...", "head:...") -> its Revealer
+        self._shown = {}             # unit key -> what its widget was made for (signature())
+        self._expanded = set()       # the groups shown as every card (their stack clicked)
         self._leaving = []           # slots sliding out, removed when they've gone
         self._head = self._title = self._clear = None
         self._cal = None             # the Today widgets
@@ -821,9 +995,11 @@ class _Center(Gtk.Window):
                 return                                   # closed, or opened again since
             self.frost_tex = tex
             (self.remove_css_class if tex is not None else self.add_css_class)("no-frost")
+            self.rev.queue_draw()                        # (the backdrop)
             self.top.queue_draw()
             self.col.queue_draw()
-        if not layer.layer_shell() or not frost.capture(out, done, self.get_renderer):
+        if not layer.layer_shell() or not frost.capture(out, done, self.get_renderer,
+                                                        blur=frost.NC_BLUR, vibrancy=frost.NC_VIBRANCY):
             self.add_css_class("no-frost")
 
     def hide_center(self):
@@ -844,15 +1020,17 @@ class _Center(Gtk.Window):
             if not self._later:
                 self._later = GLib.timeout_add(1000, self._rebuild_closed)
             return
-        ids = {n.id for n in self.owner.notes}
-        gone = [nid for nid in self._slots if nid not in ids]
-        new = [n.id for n in list(reversed(self.owner.notes))[:SHOWN] if n.id not in self._slots]
+        units = self._units()
+        keys = {key for _k, key, _w in units}
+        gone = [key for key in self._slots if key not in keys]
+        new = [key for kind, key, what in units
+               if key not in self._slots or not same(self._shown.get(key), signature(kind, what))]
         if new or not gone:
             self._rebuild()
             return
-        for i, nid in enumerate(gone):
-            slot = self._slots.pop(nid)
-            self._shown.pop(nid, None)
+        for i, key in enumerate(gone):
+            slot = self._slots.pop(key)
+            self._shown.pop(key, None)
             self._leaving.append(slot)
 
             def leave(slot=slot):
@@ -882,13 +1060,81 @@ class _Center(Gtk.Window):
                 GLib.DateTime.new_now_local().format("%Y-%m-%d"), _calendar_stamp(),
                 self._cal_until is not None and dt.datetime.now() >= self._cal_until)
 
-    def _rebuild(self):
+    def _units(self) -> list:
+        """The column's units (layout()) for the newest notes shown; a
+        group no longer several notifications is no longer expanded."""
+        notes = list(reversed(self.owner.notes))[:SHOWN]
+        counts = {}
+        for n in notes:
+            counts[group_key(n)] = counts.get(group_key(n), 0) + 1
+        self._expanded = {k for k in self._expanded if counts.get(k, 0) > 1}
+        return layout(notes, self._expanded)
+
+    def _group(self, key: str) -> list:
+        return [n for n in self.owner.notes if group_key(n) == key]
+
+    def _expand(self, key: str, on: bool = True) -> None:
+        """A stack clicked: its cards, under a header (macOS); Show Less:
+        the stack again."""
+        (self._expanded.add if on else self._expanded.discard)(key)
+        self._rebuild(animate=True)
+
+    def _unit(self, kind: str, key, what) -> Gtk.Widget:
+        if kind == "card":
+            return self.owner.card(what)
+        group = group_key(what[0])
+        if kind == "stack":
+            return self._stack(group, what)
+        return self._group_head(group, what)
+
+    def _stack(self, group: str, notes) -> Gtk.Widget:
+        """An app's notifications, stacked: its newest card -- a click opens
+        the stack, its x clears it -- and the next cards' edges under it."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["nt-stack"])
+        card = self.owner.card(notes[0], on_click=lambda: self._expand(group),
+                               on_close=lambda: self.owner.dismiss([n.id for n in self._group(group)]))
+        box.append(card)
+        for i in range(min(STACK_LAYERS, len(notes) - 1)):
+            inset = PEEK_INSET * (i + 1)
+            peek = Gtk.Box(css_classes=["nt-peek"] + (["second"] if i else []) + ([] if ui.theme.glass() else ["solid"]),
+                           margin_start=6 + inset, margin_end=inset)        # (6: the card's own margin)
+            peek.set_size_request(-1, PEEK_H)
+            click = Gtk.GestureClick()
+            click.connect("released", lambda *_: self._expand(group))
+            peek.add_controller(click)
+            box.append(peek)
+        box.when = getattr(card, "when", None)
+        return box
+
+    def _group_head(self, group: str, notes) -> Gtk.Widget:
+        """An expanded stack's header (macOS): its app, Show Less, and an x
+        that reads Clear under the pointer -- every one of its cards goes."""
+        row = Gtk.Box(spacing=6, margin_start=6, margin_top=4)
+        row.append(Gtk.Label(label=group_name(notes), xalign=0, hexpand=True, max_width_chars=1,
+                             ellipsize=Pango.EllipsizeMode.END, css_classes=["nc-group-name"]))
+        less = Gtk.Button(label=_("Show Less"), css_classes=["nc-clear"], valign=Gtk.Align.CENTER)
+        less.connect("clicked", lambda *_: self._expand(group, False))
+        row.append(less)
+        x = Gtk.Button(icon_name="window-close-symbolic", css_classes=["nc-clear", "nc-group-clear"],
+                       valign=Gtk.Align.CENTER, tooltip_text=_("Clear"))
+        x.connect("clicked", lambda *_: self.owner.dismiss([n.id for n in self._group(group)]))
+        hover = Gtk.EventControllerMotion()
+        hover.connect("enter", lambda *_: x.set_label(_("Clear")))
+        hover.connect("leave", lambda *_: x.set_icon_name("window-close-symbolic"))
+        x.add_controller(hover)
+        row.append(x)
+        row.clear_button = x
+        return row
+
+    def _rebuild(self, animate=False):
         """The column brought up to the list: a new note gets its card, a
         closed one loses its own, the others stay as they are -- built and
         laid out already. (Every notification used to rebuild all 40 cards
         and the calendar, so the next opening laid them all out again before
         its first frame: Vini, it opened laggy whenever there were
-        notifications.)"""
+        notifications.) An app's several notifications are one stack, or
+        its header and cards once expanded (layout()). animate: new ones
+        slide open (a stack expanded)."""
         self._built_for = self._state_key()
         notes = list(reversed(self.owner.notes))[:SHOWN]
         if self._head is None:
@@ -905,24 +1151,27 @@ class _Center(Gtk.Window):
             if slot.get_parent() is self.col:
                 self.col.remove(slot)
         self._leaving = []
-        wanted = {n.id for n in notes}
-        for nid in [nid for nid in self._slots if nid not in wanted]:
-            self.col.remove(self._slots.pop(nid))
-            self._shown.pop(nid, None)
+        units = self._units()
+        wanted = {key for _k, key, _w in units}
+        for key in [key for key in self._slots if key not in wanted]:
+            self.col.remove(self._slots.pop(key))
+            self._shown.pop(key, None)
         prev = self._head
-        for n in notes:
-            slot = self._slots.get(n.id)
-            made = self._shown.get(n.id)
-            if slot is not None and (made is None or made[0] is not n or made[1] != n.at):
-                self.col.remove(slot)                 # replaced in place (same id, new text)
+        for kind, key, what in units:
+            slot = self._slots.get(key)
+            sig = signature(kind, what)
+            if slot is not None and not same(self._shown.get(key), sig):
+                self.col.remove(slot)                 # replaced in place (same id, new text; a stack's new top)
                 slot = None
             if slot is None:
-                card = self.owner.card(n)
-                slot = Gtk.Revealer(child=card, reveal_child=True, css_classes=["nc-slot"],
+                w = self._unit(kind, key, what)
+                slot = Gtk.Revealer(child=w, reveal_child=not animate, css_classes=["nc-slot"],
                                     transition_type=Gtk.RevealerTransitionType.SLIDE_UP, transition_duration=260)
-                slot.when = getattr(card, "when", None)
-                self._slots[n.id], self._shown[n.id] = slot, (n, n.at)
+                slot.when = getattr(w, "when", None)
+                self._slots[key], self._shown[key] = slot, sig
                 self.col.insert_child_after(slot, prev)
+                if animate:
+                    GLib.idle_add(lambda slot=slot: (slot.set_reveal_child(True), False)[1])
             elif slot.get_prev_sibling() is not prev:
                 self.col.reorder_child_after(slot, prev)
             prev = slot
@@ -931,9 +1180,9 @@ class _Center(Gtk.Window):
     def _refresh_times(self):
         """Each card's "5m ago" as of this opening (only the ones that changed
         are set: a label set anew is laid out again)."""
-        for nid, slot in self._slots.items():
-            made, when = self._shown.get(nid), getattr(slot, "when", None)
-            if made is not None and when is not None:
+        for key, slot in self._slots.items():
+            made, when = self._shown.get(key), getattr(slot, "when", None)
+            if made is not None and when is not None and made[1] is not None:
                 text = _ago(made[1])
                 if when.get_label() != text:
                     when.set_label(text)

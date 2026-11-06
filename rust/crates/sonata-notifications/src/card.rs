@@ -52,6 +52,13 @@ fn set_icon(img: &gtk::Image, n: &Note) {
 }
 
 pub fn card(n: &Note, server: &Rc<Server>) -> Card {
+    card_with(n, server, None, None)
+}
+
+/// A card whose click and x do `on_click` / `on_close` in place of its
+/// default action and closing it (a stack's top card: they expand the
+/// stack, clear it).
+pub fn card_with(n: &Note, server: &Rc<Server>, on_click: Option<Rc<dyn Fn()>>, on_close: Option<Rc<dyn Fn()>>) -> Card {
     let over = gtk::Overlay::new();
     let row = gtk::Box::builder().spacing(10).css_classes(["nt-card"]).build();
     if !sonata_ui::glass() {
@@ -111,7 +118,9 @@ pub fn card(n: &Note, server: &Rc<Server>) -> Card {
     let (w, note) = (Rc::downgrade(server), n.clone());
     click.connect_released(move |g, _, _, _| {
         if g.current_button() == 1 {
-            if let Some(s) = w.upgrade() {
+            if let Some(f) = &on_click {
+                f();
+            } else if let Some(s) = w.upgrade() {
                 s.invoke(&note, "default");
             }
         }
@@ -126,7 +135,9 @@ pub fn card(n: &Note, server: &Rc<Server>) -> Card {
         .build();
     let (w, id) = (Rc::downgrade(server), n.id);
     close.connect_clicked(move |_| {
-        if let Some(s) = w.upgrade() {
+        if let Some(f) = &on_close {
+            f();
+        } else if let Some(s) = w.upgrade() {
             s.close(id, model::DISMISSED);
         }
     });

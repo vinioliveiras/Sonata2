@@ -37,7 +37,9 @@ def spin(ms=0):
 
 
 def note(i, **kw):
-    return N.Note(i, "Chat", "", f"Title {i}", f"body {i}", [], "", **kw)
+    # each from an app of its own: one app's several notifications are one
+    # stack (tests/test_nc_groups.py), these are about the cards
+    return N.Note(i, f"Chat {i}", "", f"Title {i}", f"body {i}", [], "", **kw)
 
 
 class CalendarWidthTest(unittest.TestCase):
@@ -81,9 +83,9 @@ class OpensLaggyWithNotificationsTest(unittest.TestCase):
         owner.notes, owner.listeners, owner._banners, owner._conn, owner.nc = [], [], {}, None, None
         real = N.Notifications.card
 
-        def card(n, banner=False):
+        def card(n, banner=False, **kw):
             self.made.append(n.id)
-            return real(owner, n, banner)
+            return real(owner, n, banner, **kw)
         owner.card = card
         self.owner = owner
         self.c = N._Center(None, owner)
@@ -140,7 +142,7 @@ class OpensLaggyWithNotificationsTest(unittest.TestCase):
             self.c._frost()
         self.assertTrue(self.c.has_css_class("no-frost"))                  # no picture: solid
         got = {}
-        with mock.patch.object(frost, "capture", side_effect=lambda out, done, r: (got.setdefault("done", done), True)[1]), \
+        with mock.patch.object(frost, "capture", side_effect=lambda out, done, r, **kw: (got.setdefault("done", done), True)[1]), \
                 mock.patch.object(N.layer, "layer_shell", return_value=object()), \
                 mock.patch.object(self.c, "get_visible", return_value=True):
             self.c._frost()

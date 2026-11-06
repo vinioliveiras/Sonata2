@@ -20,6 +20,13 @@ use gtk::{gdk, graphene, gsk};
 pub const FROST_SCALE: f64 = 0.25;
 /// blurred this much (px at full size)
 pub const FROST_BLUR: f64 = 28.0;
+/// Notification Center's, closer to macOS (Vini): blurred more, and the
+/// colours lifted -- (saturation, brightness) -- so its glass looks vivid
+/// rather than washed out. Baked into the picture once, never per frame.
+pub const NC_BLUR: f64 = 40.0;
+pub const NC_VIBRANCY: (f64, f64) = (1.35, 1.06);
+/// each channel's share of brightness (Rec. 709)
+pub const LUMA: [f64; 3] = [0.2126, 0.7152, 0.0722];
 
 pub fn available() -> bool {
     glib::find_program_in_path("grim").is_some()
@@ -82,18 +89,56 @@ pub fn texture_from(data: Option<&glib::Bytes>) -> Option<gdk::Texture> {
     gdk::Texture::from_bytes(data).ok()
 }
 
+/// GSK's colour matrix (16 floats, row by row) that saturates a colour
+/// around its own grey and brightens it. GSK multiplies the colour as a row
+/// vector (colour x matrix): row i is what input channel i gives to each
+/// output channel.
+pub fn vibrancy_matrix(saturation: f64, brightness: f64) -> [f32; 16] {
+    let (s, b) = (saturation, brightness);
+    let mut m = [0.0f32; 16];
+    for i in 0..3 {
+        for j in 0..3 {
+            m[i * 4 + j] = ((LUMA[i] * (1.0 - s) + if i == j { s } else { 0.0 }) * b) as f32;
+        }
+    }
+    m[15] = 1.0; // alpha as it is
+    m
+}
+
+/// What [`vibrancy_matrix`] does to one colour (0..1 channels), clamped.
+pub fn vibrant(rgb: [f64; 3], saturation: f64, brightness: f64) -> [f64; 3] {
+    let m = vibrancy_matrix(saturation, brightness);
+    let mut out = [0.0; 3];
+    for (j, o) in out.iter_mut().enumerate() {
+        *o = (0..3).map(|i| rgb[i] * f64::from(m[i * 4 + j])).sum::<f64>().clamp(0.0, 1.0);
+    }
+    out
+}
+
 /// The picture shrunk to FROST_SCALE and blurred once (GSK, on the GPU).
 pub fn blur_texture(renderer: Option<&gsk::Renderer>, texture: &gdk::Texture) -> gdk::Texture {
+    blur_texture_with(renderer, texture, FROST_BLUR, None)
+}
+
+/// [`blur_texture`] blurred `blur` px; `vibrancy` (saturation,
+/// brightness): its colours lifted too, in the same pass.
+pub fn blur_texture_with(renderer: Option<&gsk::Renderer>, texture: &gdk::Texture, blur: f64, vibrancy: Option<(f64, f64)>) -> gdk::Texture {
     let Some(renderer) = renderer else { return texture.clone() };
     let w = ((texture.width() as f64 * FROST_SCALE).round() as i32).max(1) as f32;
     let h = ((texture.height() as f64 * FROST_SCALE).round() as i32).max(1) as f32;
     let snap = gtk::Snapshot::new();
     let r = graphene::Rect::new(0.0, 0.0, w, h);
     snap.push_clip(&r);
-    snap.push_blur(FROST_BLUR * FROST_SCALE);
+    if let Some((s, b)) = vibrancy {
+        snap.push_color_matrix(&graphene::Matrix::from_float(vibrancy_matrix(s, b)), &graphene::Vec4::new(0.0, 0.0, 0.0, 0.0));
+    }
+    snap.push_blur(blur * FROST_SCALE);
     // (mipmapped: no shimmer; a little past the edges: no dark rim)
     snap.append_scaled_texture(texture, gsk::ScalingFilter::Trilinear, &graphene::Rect::new(-8.0, -8.0, w + 16.0, h + 16.0));
     snap.pop();
+    if vibrancy.is_some() {
+        snap.pop();
+    }
     snap.pop();
     match snap.to_node() {
         Some(node) => renderer.render_texture(node, Some(&r)),
@@ -106,6 +151,12 @@ pub fn blur_texture(renderer: Option<&gsk::Renderer>, texture: &gdk::Texture) ->
 /// renderer_of(): the renderer to blur with, asked when the picture comes
 /// (the window may only be realized by then). False: no grim, nothing asked.
 pub fn capture(output: Option<&str>, done: impl FnOnce(Option<gdk::Texture>) + 'static, renderer_of: impl FnOnce() -> Option<gsk::Renderer> + 'static) -> bool {
+    capture_with(output, FROST_BLUR, None, done, renderer_of)
+}
+
+/// [`capture`], blurred and lifted as [`blur_texture_with`]: Notification
+/// Center's (`NC_BLUR`, `NC_VIBRANCY`).
+pub fn capture_with(output: Option<&str>, blur: f64, vibrancy: Option<(f64, f64)>, done: impl FnOnce(Option<gdk::Texture>) + 'static, renderer_of: impl FnOnce() -> Option<gsk::Renderer> + 'static) -> bool {
     if !available() {
         return false;
     }
@@ -118,7 +169,7 @@ pub fn capture(output: Option<&str>, done: impl FnOnce(Option<gdk::Texture>) + '
         // time (the panels solid) -- not a sharp screenshot behind them
         let renderer = renderer_of();
         done(match (tex, renderer) {
-            (Some(t), Some(r)) => Some(blur_texture(Some(&r), &t)),
+            (Some(t), Some(r)) => Some(blur_texture_with(Some(&r), &t, blur, vibrancy)),
             _ => None,
         });
     });
@@ -150,5 +201,25 @@ mod tests {
         }
         assert!(texture_from(None).is_none());
         assert!(texture_from(Some(&glib::Bytes::from_static(b""))).is_none());
+    }
+
+    /// tests/test_nc_glass.py: test_glass_washed_out -- Vini wanted
+    /// Notification Center's glass closer to macOS: its colours lifted. A
+    /// colour gets more saturated and a little brighter; a grey stays grey
+    /// (only brighter); saturation 0 is its own grey.
+    #[test]
+    fn test_glass_washed_out() {
+        let (s, b) = NC_VIBRANCY;
+        assert!(s > 1.0 && b > 1.0 && NC_BLUR > FROST_BLUR);
+        let rgb = [200.0 / 255.0, 100.0 / 255.0, 60.0 / 255.0];
+        let out = vibrant(rgb, s, b);
+        assert!(out[0] - out[2] > rgb[0] - rgb[2]); // further apart: more saturated
+        assert!(out[0] > rgb[0]);
+        let grey = vibrant([0.5; 3], s, b);
+        assert!(grey.iter().all(|c| (c - 0.5 * b).abs() < 1e-6));
+        let flat = vibrant(rgb, 0.0, 1.0);
+        let y: f64 = (0..3).map(|i| rgb[i] * LUMA[i]).sum();
+        assert!(flat.iter().all(|c| (c - y).abs() < 1e-6));
+        assert_eq!(vibrancy_matrix(1.0, 1.0), [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
     }
 }

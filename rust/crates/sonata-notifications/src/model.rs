@@ -172,6 +172,121 @@ impl Note {
     }
 }
 
+// -- Notification Center's groups ---------------------------------------------------------
+
+/// an app's stack: at most this many cards' edges peek under its newest one
+pub const STACK_LAYERS: usize = 2;
+/// each edge this tall, and this much narrower on each side than the one
+/// above -- more than a card's corner radius, so an edge starts under its
+/// straight bottom, not in the gap of its rounded corner
+pub const PEEK_H: i32 = 7;
+pub const PEEK_INSET: i32 = 14;
+
+/// The app a notification is grouped under in Notification Center (as
+/// Settings > Notifications keys it); one with no app is a group of its own.
+pub fn group_key(n: &Note) -> String {
+    let k = app_key(&n.desktop, &n.app);
+    if k.is_empty() {
+        format!("#{}", n.id)
+    } else {
+        k
+    }
+}
+
+/// A group's header: its app's name.
+pub fn group_name(notes: &[Note]) -> String {
+    let Some(n) = notes.first() else { return String::new() };
+    if !n.app.is_empty() {
+        return n.app.clone();
+    }
+    use gio::prelude::AppInfoExt;
+    lookup_app(&n.desktop).map(|i| i.name().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| n.desktop.clone())
+}
+
+/// One row of Notification Center's column.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Unit {
+    /// a notification's own card
+    Card(Note),
+    /// an app's several, stacked (newest first): its group key
+    Stack(String, Vec<Note>),
+    /// an expanded stack's header (its cards follow)
+    Head(String, Vec<Note>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum UnitKey {
+    Card(u32),
+    Stack(String),
+    Head(String),
+}
+
+/// What a unit's widget was made from: made again when it changes. A
+/// card: its note (the same id replaced in place is a new one); a stack:
+/// its top card and how many edges peek; a header: its name.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Made {
+    Card(Note),
+    Stack(Note, usize),
+    Head(String),
+}
+
+impl Unit {
+    pub fn key(&self) -> UnitKey {
+        match self {
+            Unit::Card(n) => UnitKey::Card(n.id),
+            Unit::Stack(g, _) => UnitKey::Stack(g.clone()),
+            Unit::Head(g, _) => UnitKey::Head(g.clone()),
+        }
+    }
+
+    pub fn made(&self) -> Made {
+        match self {
+            Unit::Card(n) => Made::Card(n.clone()),
+            Unit::Stack(_, notes) => Made::Stack(notes[0].clone(), STACK_LAYERS.min(notes.len() - 1)),
+            Unit::Head(_, notes) => Made::Head(group_name(notes)),
+        }
+    }
+}
+
+impl Made {
+    /// When the note its "5m ago" shows came, if it shows one.
+    pub fn at(&self) -> Option<f64> {
+        match self {
+            Made::Card(n) | Made::Stack(n, _) => Some(n.at),
+            Made::Head(_) => None,
+        }
+    }
+}
+
+/// Notification Center's column for `notes` (newest first), as macOS
+/// groups it: each app's notifications together, where its newest one is,
+/// newest first. An app with one is a plain card; with more, a stack (the
+/// newest card, the next ones peeking under it) -- or, expanded (its key
+/// in `expanded`), a header and every card.
+pub fn layout(notes: &[Note], expanded: &HashSet<String>) -> Vec<Unit> {
+    let mut order: Vec<(String, Vec<Note>)> = Vec::new();
+    for n in notes {
+        let k = group_key(n);
+        match order.iter_mut().find(|(g, _)| *g == k) {
+            Some((_, g)) => g.push(n.clone()),
+            None => order.push((k, vec![n.clone()])),
+        }
+    }
+    let mut out = Vec::new();
+    for (k, g) in order {
+        if g.len() == 1 {
+            out.extend(g.into_iter().map(Unit::Card));
+        } else if expanded.contains(&k) {
+            out.push(Unit::Head(k, g.clone()));
+            out.extend(g.into_iter().map(Unit::Card));
+        } else {
+            out.push(Unit::Stack(k, g));
+        }
+    }
+    out
+}
+
 // -- a card's text -------------------------------------------------------------------------
 
 fn host_line() -> &'static Regex {

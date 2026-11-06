@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Game Bar: each widget's border around its modules is as wide as the gaps between them (8 px), as in macOS's Control Center; in the Python session it no longer sometimes opens without its glass when the menu bar is busy.
+- Notification Center: macOS-style glass -- the blurred desktop behind the whole column, fading out to the left, blurred more and more vivid -- and each app's notifications stacked into a group that opens on click (Show Less / Clear).
 - Screenshots: Super+Shift+3/4/5 and Print Screen now work while Mission Control is open. Shortcuts you changed in Settings carry over.
 - Rust preview session: the files and folders on the desktop show again -- none was drawn, so a new folder looked invisible.
 - Now Playing: when a player hands over its app's icon as the artwork (Chrome, for Netflix or YouTube), it's drawn smaller in the square instead of stretched over it.
