@@ -292,21 +292,119 @@ fn delete_all(files: &[gio::File], report: &dyn Fn(&gio::File, &glib::Error)) ->
 /// ("Items in the wastebasket may not be modified") -- going in to delete
 /// file by file, Empty Trash failed on every folder (Vini).
 pub fn erase_trashed(items: &[gio::File], erase: &dyn Fn(&gio::File) -> Result<(), glib::Error>, report: &dyn Fn(&gio::File, &glib::Error)) -> usize {
+    erase_steps(items, erase, report, &|_, _, _| {}, &gio::Cancellable::new())
+}
+
+/// Delete Immediately, in a thread (big folders), with the progress window
+/// (Vini: deleting something heavy showed nothing while it worked).
+pub fn delete_now(files: Vec<gio::File>, on_done: Option<Box<dyn FnOnce()>>, on_error: Option<Rc<dyn Fn(&gio::File, &glib::Error)>>) {
+    let title = files.first().map(|f| if files.len() == 1 { base(f) } else { String::new() }).unwrap_or_default();
+    in_thread_with_progress(
+        &tr!("Delete Immediately"),
+        &title,
+        move |report, step, cancel| {
+            erase_steps(&files, &|f| delete(f, Some(cancel)), report, step, cancel);
+        },
+        on_done,
+        on_error,
+    );
+}
+
+/// Erase `items` one by one, saying each step (done, total, the next one's
+/// name) and stopping when cancelled. The count erased.
+pub fn erase_steps(items: &[gio::File], erase: &dyn Fn(&gio::File) -> Result<(), glib::Error>, report: &dyn Fn(&gio::File, &glib::Error), step: &dyn Fn(u64, u64, String), cancel: &gio::Cancellable) -> usize {
+    let total = items.len() as u64;
     let mut n = 0;
-    for f in items {
+    for (i, f) in items.iter().enumerate() {
+        if cancel.is_cancelled() {
+            break;
+        }
+        step(i as u64, total, display_name_of(f));
         match erase(f) {
             Ok(()) => n += 1,
+            Err(e) if e.matches(gio::IOErrorEnum::Cancelled) => break,
             Err(e) => report(f, &e),
         }
     }
+    step(total, total, String::new());
     n
 }
 
-/// Delete Immediately, in a thread (big folders).
-pub fn delete_now(files: Vec<gio::File>, on_done: Option<Box<dyn FnOnce()>>, on_error: Option<Rc<dyn Fn(&gio::File, &glib::Error)>>) {
-    in_thread(move |report| {
-        delete_all(&files, report);
-    }, on_done, on_error);
+/// What the progress window says is being erased: its display name (a
+/// trashed item's is its own name, not trash:///'s escaped path).
+fn display_name_of(f: &gio::File) -> String {
+    f.query_info("standard::display-name", NOFOLLOW, no_cancel()).map(|i| i.display_name().to_string()).unwrap_or_else(|_| base(f))
+}
+
+/// in_thread with Sonata's progress window: `work` says its steps (done,
+/// total, the item at hand) and watches `cancel` (the window's stop). The
+/// window only shows past its delay: quick ones never flash it. One item
+/// (or none known yet): the bar pulses.
+pub fn in_thread_with_progress(
+    heading: &str,
+    title: &str,
+    work: impl FnOnce(&dyn Fn(&gio::File, &glib::Error), &dyn Fn(u64, u64, String), &gio::Cancellable) + Send + 'static,
+    on_done: Option<Box<dyn FnOnce()>>,
+    on_error: Option<Rc<dyn Fn(&gio::File, &glib::Error)>>,
+) {
+    enum M {
+        Err(gio::File, glib::Error),
+        Step(u64, u64, String),
+        Done,
+    }
+    let cancel = gio::Cancellable::new();
+    let (tx, rx) = mpsc::channel::<M>();
+    let c2 = cancel.clone();
+    std::thread::spawn(move || {
+        let (t1, t2) = (tx.clone(), tx.clone());
+        work(
+            &move |f: &gio::File, e: &glib::Error| {
+                let _ = t1.send(M::Err(f.clone(), e.clone()));
+            },
+            &move |done, total, name| {
+                let _ = t2.send(M::Step(done, total, name));
+            },
+            &c2,
+        );
+        let _ = tx.send(M::Done);
+    });
+    let c3 = cancel.clone();
+    let op = sonata_ui::progress::start(title, Some(Box::new(move || c3.cancel())), Some(heading));
+    let mut on_done = on_done;
+    let mut last = (0u64, 0u64);
+    glib::timeout_add_local(std::time::Duration::from_millis(30), move || loop {
+        match rx.try_recv() {
+            Ok(M::Err(f, e)) => {
+                if let Some(cb) = &on_error {
+                    if !e.matches(gio::IOErrorEnum::Cancelled) {
+                        cb(&f, &e);
+                    }
+                }
+            }
+            Ok(M::Step(done, total, name)) => {
+                last = (done, total);
+                if !name.is_empty() {
+                    op.set_detail(&name);
+                }
+                if total > 1 {
+                    op.bar.set_fraction(done as f64 / total as f64);
+                }
+            }
+            Ok(M::Done) | Err(mpsc::TryRecvError::Disconnected) => {
+                op.finish();
+                if let Some(d) = on_done.take() {
+                    d();
+                }
+                return glib::ControlFlow::Break;
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                if last.1 <= 1 {
+                    op.bar.pulse(); // one big item: no steps to count
+                }
+                return glib::ControlFlow::Continue;
+            }
+        }
+    });
 }
 
 pub fn home_trash() -> PathBuf {
@@ -347,14 +445,20 @@ pub fn clear_orphans() {
 pub fn empty_trash(on_done: Option<Box<dyn FnOnce()>>, on_error: Option<Rc<dyn Fn(&gio::File, &glib::Error)>>) {
     let erased = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let e2 = erased.clone();
-    in_thread(
-        move |report| {
+    // the progress window as Delete Immediately (Vini: emptying a heavy
+    // Trash showed nothing while it worked)
+    in_thread_with_progress(
+        &tr!("Empty Trash"),
+        "",
+        move |report, step, cancel| {
             let t = gio::File::for_uri(TRASH);
             let kids: Result<Vec<gio::File>, glib::Error> = t.enumerate_children("standard::name", NOFOLLOW, no_cancel()).map(|en| en.flatten().map(|i| t.child(i.name())).collect());
             match kids {
                 Ok(k) => {
-                    e2.store(erase_trashed(&k, &|f| f.delete(no_cancel()), report), std::sync::atomic::Ordering::SeqCst);
-                    clear_orphans();
+                    e2.store(erase_steps(&k, &|f| f.delete(Some(cancel)), report, step, cancel), std::sync::atomic::Ordering::SeqCst);
+                    if !cancel.is_cancelled() {
+                        clear_orphans();
+                    }
                 }
                 Err(e) => report(&t, &e),
             }
@@ -906,5 +1010,34 @@ mod trash_tests {
         let n = erase_trashed(&items, &erase, &|_, _| panic!("no error"));
         assert_eq!(n, 2);
         assert_eq!(*asked.borrow(), ["trash:///Pasta", "trash:///nota.txt"]); // the items, never their insides
+    }
+
+    /// Vini: emptying the Trash or deleting something heavy in Files showed
+    /// no progress at all. The erasing says each step (for the progress
+    /// window's bar and the item's name) and stops at the window's Stop.
+    #[test]
+    fn test_no_progress_while_deleting() {
+        let d = tempfile::tempdir().unwrap();
+        let items: Vec<gio::File> = ["a", "b", "c"].iter().map(|n| {
+            std::fs::write(d.path().join(n), "x").unwrap();
+            gio::File::for_path(d.path().join(n))
+        }).collect();
+        let steps = std::cell::RefCell::new(Vec::new());
+        let cancel = gio::Cancellable::new();
+        let n = erase_steps(&items, &|f| f.delete(gio::Cancellable::NONE), &|_, _| panic!("no error"), &|done, total, name| steps.borrow_mut().push((done, total, name)), &cancel);
+        assert_eq!(n, 3);
+        assert_eq!(*steps.borrow(), vec![(0, 3, "a".to_string()), (1, 3, "b".into()), (2, 3, "c".into()), (3, 3, String::new())]);
+        // Stop: nothing more erased after it
+        let more: Vec<gio::File> = ["d", "e"].iter().map(|n| {
+            std::fs::write(d.path().join(n), "x").unwrap();
+            gio::File::for_path(d.path().join(n))
+        }).collect();
+        let cancel = gio::Cancellable::new();
+        let n = erase_steps(&more, &|f| {
+            cancel.cancel(); // stopped while the first is erased
+            f.delete(gio::Cancellable::NONE)
+        }, &|_, _| {}, &|_, _, _| {}, &cancel);
+        assert_eq!(n, 1);
+        assert!(d.path().join("e").exists());
     }
 }
