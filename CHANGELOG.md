@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Now Playing: when a player hands over its app's icon as the artwork (Chrome, for Netflix or YouTube), it's drawn smaller in the square instead of stretched over it.
 - Mission Control: a click on a window brings it forward even when the mouse moved a little while clicking (it was taken for a drag and nothing happened). Needs Sonata's Wayfire rebuilt (tools/build-wayfire.sh).
 - Rust preview session: Mission Control shows the x that closes the window under the pointer again.
 - Rust preview session: the password prompt of a locked folder (Launchpad, Dock), a locked app or Files no longer freezes after you type the password -- OK, Return, Cancel and Esc did nothing while it covered the screen.

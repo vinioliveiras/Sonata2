@@ -1526,8 +1526,28 @@ def _device_menu(btn, title, list_fn, set_fn) -> None:
     system.run_async(list_fn, fill)
 
 
-_art_cache = {}                 # (url, size) -> texture, newest last; small and few (ART_KEEP)
+_art_cache = {}                 # (url, size) -> (texture, an icon?), newest last; small and few (ART_KEEP)
 ART_KEEP = 8
+
+
+def art_size(size: int, icon: bool) -> int:
+    """An app's icon handed over as the art (Chrome's for Netflix, YouTube...:
+    round, its corners clear) is drawn smaller in the square, like an icon,
+    not stretched over it as a cover (Vini: the Chrome icon far too big)."""
+    return size * 2 // 3 if icon else size
+
+
+def corners_clear(pb) -> bool:
+    """The picture's four corners see-through: an icon, not a cover."""
+    if not pb.get_has_alpha() or pb.get_n_channels() != 4 or pb.get_width() < 2 or pb.get_height() < 2:
+        return False
+    w, h, stride = pb.get_width(), pb.get_height(), pb.get_rowstride()
+    data = pb.read_pixel_bytes().get_data()
+
+    def alpha(x, y):
+        i = y * stride + x * 4 + 3
+        return data[i] if i < len(data) else 255
+    return all(alpha(x, y) < 16 for x, y in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)))
 
 
 def _load_art(url: str, image: Gtk.Image, size: int) -> None:
@@ -1539,8 +1559,9 @@ def _load_art(url: str, image: Gtk.Image, size: int) -> None:
     key = (url, size)
     if key in _art_cache:
         _art_cache[key] = _art_cache.pop(key)      # most recently used last
-        image.set_pixel_size(size)
-        image.set_from_paintable(_art_cache[key])
+        tex, icon = _art_cache[key]
+        image.set_pixel_size(art_size(size, icon))
+        image.set_from_paintable(tex)
         return
     px = size * 2                                   # sharp on HiDPI, not a full-size cover in memory
 
@@ -1569,10 +1590,11 @@ def _load_art(url: str, image: Gtk.Image, size: int) -> None:
         if pb is None:
             return
         tex = Gdk.Texture.new_for_pixbuf(pb)
-        _art_cache[key] = tex
+        icon = corners_clear(pb)
+        _art_cache[key] = (tex, icon)
         while len(_art_cache) > ART_KEEP:
             _art_cache.pop(next(iter(_art_cache)))
-        image.set_pixel_size(size)
+        image.set_pixel_size(art_size(size, icon))
         image.set_from_paintable(tex)
     system.run_async(work, done)
 

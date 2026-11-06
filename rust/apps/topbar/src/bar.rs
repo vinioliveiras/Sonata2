@@ -1869,7 +1869,7 @@ fn open_recent(uri: &str) {
 const ART_KEEP: usize = 8;
 
 thread_local! {
-    static ART: RefCell<Vec<((String, i32), gdk::Texture)>> = RefCell::default();
+    static ART: RefCell<Vec<((String, i32), (gdk::Texture, bool))>> = RefCell::default();
 }
 
 /// Album art (mpris:artUrl: file:// or http[s]://) into `image`.
@@ -1888,8 +1888,8 @@ fn load_art(url: &str, image: &gtk::Image, size: i32) {
         a.push(e); // most recently used last
         Some(t)
     });
-    if let Some(t) = hit {
-        image.set_pixel_size(size);
+    if let Some((t, icon)) = hit {
+        image.set_pixel_size(art_size(size, icon));
         image.set_paintable(Some(&t));
         return;
     }
@@ -1904,17 +1904,36 @@ fn load_art(url: &str, image: &gtk::Image, size: i32) {
             let Ok(pb) = gtk::gdk_pixbuf::Pixbuf::from_stream_at_scale(&stream, px, px, true, gio::Cancellable::NONE) else { return };
             #[allow(deprecated)]
             let tex = gdk::Texture::for_pixbuf(&pb);
+            let icon = corners_clear(&pb);
             ART.with(|a| {
                 let mut a = a.borrow_mut();
-                a.push((key, tex.clone()));
+                a.push((key, (tex.clone(), icon)));
                 while a.len() > ART_KEEP {
                     a.remove(0);
                 }
             });
-            img.set_pixel_size(size);
+            img.set_pixel_size(art_size(size, icon));
             img.set_paintable(Some(&tex));
         },
     );
+}
+
+/// An app's icon handed over as the art (Chrome's for Netflix, YouTube...:
+/// round, its corners clear) is drawn smaller in the square, like an icon,
+/// not stretched over it as a cover (Vini: the Chrome icon far too big).
+pub fn art_size(size: i32, icon: bool) -> i32 {
+    if icon { size * 2 / 3 } else { size }
+}
+
+/// The picture's four corners see-through: an icon, not a cover.
+pub fn corners_clear(pb: &gtk::gdk_pixbuf::Pixbuf) -> bool {
+    if !pb.has_alpha() || pb.n_channels() != 4 || pb.width() < 2 || pb.height() < 2 {
+        return false;
+    }
+    let (w, h, stride) = (pb.width() as usize, pb.height() as usize, pb.rowstride() as usize);
+    let bytes = pb.read_pixel_bytes();
+    let alpha = |x: usize, y: usize| bytes.get(y * stride + x * 4 + 3).copied().unwrap_or(255);
+    [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)].iter().all(|&(x, y)| alpha(x, y) < 16)
 }
 
 /// Big Sur Now Playing: artwork, title, artist, previous / play-pause /
@@ -1984,5 +2003,29 @@ pub fn now_playing_module(p: &crate::mpris::Players, header: bool) -> gtk::Box {
     });
     bx.append(&row);
     kit::module(&[bx.upcast_ref()], 8)
+}
+
+#[cfg(test)]
+mod art_tests {
+    use super::*;
+    use gtk::gdk_pixbuf::{Colorspace, Pixbuf};
+
+    /// Vini: Netflix in Chrome showed Chrome's icon stretched over the whole
+    /// Now Playing square -- Chrome hands its round icon over as the art.
+    /// Clear corners: drawn smaller, as an icon; a cover keeps the square.
+    #[test]
+    fn test_chrome_icon_too_big_in_now_playing() {
+        let icon = Pixbuf::new(Colorspace::Rgb, true, 8, 64, 64).unwrap();
+        icon.fill(0x00000000); // see-through
+        icon.new_subpixbuf(8, 8, 48, 48).fill(0x3080ffff); // the round part, opaque
+        assert!(corners_clear(&icon));
+        assert_eq!(art_size(36, corners_clear(&icon)), 24);
+        let cover = Pixbuf::new(Colorspace::Rgb, true, 8, 64, 64).unwrap();
+        cover.fill(0x202020ff);
+        assert!(!corners_clear(&cover));
+        assert_eq!(art_size(36, corners_clear(&cover)), 36);
+        let jpeg = Pixbuf::new(Colorspace::Rgb, false, 8, 64, 64).unwrap(); // no alpha at all
+        assert!(!corners_clear(&jpeg));
+    }
 }
 
