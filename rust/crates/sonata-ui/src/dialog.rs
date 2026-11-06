@@ -20,6 +20,8 @@ pub(crate) fn register_css() {
 }
 
 /// The alert's own width, fixed (the wrapped text can't make it shake).
+/// three buttons or more (alert_width)
+pub const ALERT_WIDE: i32 = 480;
 const ALERT_WIDTH: i32 = 372;
 
 /// Long unbroken words (file names) get break chances every few letters:
@@ -110,6 +112,13 @@ fn alert_full<F: Fn(&str, bool) + 'static>(
     alert_opts(heading, body, responses, &opts, on_response, parent)
 }
 
+/// An alert's width: wider with three or more buttons, so they sit side
+/// by side (Vini: Files' "already exists" -- Keep Both, Stop, Replace --
+/// had them one under the other at the narrow width, longer in Portuguese).
+pub fn alert_width(responses: usize) -> i32 {
+    if responses >= 3 { ALERT_WIDE } else { ALERT_WIDTH }
+}
+
 fn alert_opts<F: Fn(&str, bool) + 'static>(
     heading: &str,
     body: &str,
@@ -126,7 +135,11 @@ fn alert_opts<F: Fn(&str, bool) + 'static>(
     });
     dlg.add_css_class("sonata-alert");
     if (adw::major_version(), adw::minor_version()) >= (1, 6) {
-        dlg.set_content_width(ALERT_WIDTH); // (segfaults with libadwaita 1.5.0)
+        dlg.set_content_width(alert_width(responses.len())); // (segfaults with libadwaita 1.5.0)
+        // its buttons side by side, as macOS's, whenever they fit
+        if dlg.find_property("prefer-wide-layout").is_some() {
+            dlg.set_property("prefer-wide-layout", true);
+        }
     }
     let mut default: Option<&str> = None;
     for (rid, text, style) in responses {
@@ -329,3 +342,15 @@ mod tests {
         assert_eq!(breakable("“04iuiyBZ61YPzdVS4GfRYKM-19.webp” can't"), "“04iuiyB\u{200b}Z61YPzdV\u{200b}S4GfRYKM\u{200b}-19.webp\u{200b}” can't");
     }
 }
+
+#[cfg(test)]
+mod width_tests {
+    /// Vini: Files' "An item named ... already exists" had Keep Both, Stop
+    /// and Replace one under the other: three buttons get the wide alert.
+    #[test]
+    fn test_conflict_buttons_stacked() {
+        assert_eq!(super::alert_width(2), super::ALERT_WIDTH);
+        assert!(super::alert_width(3) >= 460);
+    }
+}
+

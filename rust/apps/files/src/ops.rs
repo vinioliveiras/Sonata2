@@ -962,6 +962,40 @@ mod tests {
         }
     }
 
+    /// Vini: Replace with "Apply to All" ticked, and the next copy of the
+    /// item didn't ask again -- the answer belongs to that one operation.
+    #[test]
+    fn test_apply_to_all_remembered_by_the_next_copy() {
+        let d = tempfile::tempdir().unwrap();
+        let p = |s: &str| d.path().join(s);
+        let f = |s: &str| gio::File::for_path(p(s));
+        std::fs::create_dir(p("dst")).unwrap();
+        std::fs::write(p("a.txt"), "new").unwrap();
+        std::fs::write(p("dst/a.txt"), "old").unwrap();
+        let asked = |answer: &str| {
+            let (tx, rx) = mpsc::channel();
+            let texts = Texts { contains_moving: "x".into(), contains_copying: "x".into() };
+            let w = Worker { sources: vec![f("a.txt")], dest: f("dst"), mv: false, duplicate: false, cancel: gio::Cancellable::new(), tx, total: 0, done_bytes: 0, last_ui: std::time::Instant::now(), apply_all: None, record: Vec::new(), texts };
+            std::thread::spawn(move || w.run());
+            let mut n = 0;
+            loop {
+                match rx.recv().unwrap() {
+                    Msg::Done(..) => return n,
+                    Msg::Ask(_, _, reply) => {
+                        n += 1;
+                        let _ = reply.send(answer.into());
+                    }
+                    Msg::Progress(..) => {}
+                }
+            }
+        };
+        assert_eq!(asked("replace|1"), 1);
+        assert_eq!(std::fs::read_to_string(p("dst/a.txt")).unwrap(), "new");
+        assert_eq!(asked("stop|0"), 1, "the next copy asked again"); // the same file again
+        std::fs::write(p("a.txt"), "newer").unwrap();
+        assert_eq!(asked("stop|0"), 1, "and with another content");
+    }
+
     #[test]
     fn copy_move_duplicate_and_same_place_is_silent() {
         let d = tempfile::tempdir().unwrap();
