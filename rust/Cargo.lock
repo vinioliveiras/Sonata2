@@ -1981,6 +1981,7 @@ dependencies = [
  "sonata-i18n",
  "sonata-mission",
  "sonata-notifications",
+ "sonata-sessionui",
  "sonata-shell",
  "sonata-system",
  "sonata-tray",
