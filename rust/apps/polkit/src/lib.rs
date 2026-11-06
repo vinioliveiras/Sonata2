@@ -332,11 +332,9 @@ fn register(app: &gtk::Application) -> Option<Rc<Agent>> {
         eprintln!("sonata2-rs polkit: no login session found");
         return None;
     };
-    let details = glib::VariantDict::new(None);
-    details.insert_value("session-id", &sid.to_variant());
-    let subject = ("unix-session", details.end());
+    let subject = session_subject(&sid);
     let locale = ["LC_ALL", "LC_MESSAGES", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty())).unwrap_or_else(|| "C".into());
-    let args = glib::Variant::tuple_from_iter([subject.to_variant(), locale.to_variant(), OBJECT_PATH.to_variant()]);
+    let args = glib::Variant::tuple_from_iter([subject, locale.to_variant(), OBJECT_PATH.to_variant()]);
     if let Err(e) = agent.bus.call_sync(Some(AUTHORITY.0), AUTHORITY.1, AUTHORITY.2, "RegisterAuthenticationAgent", Some(&args), None, gio::DBusCallFlags::NONE, 5000, gio::Cancellable::NONE) {
         eprintln!("sonata2-rs polkit: couldn't register: {}", e.message());
         return None;
@@ -345,6 +343,15 @@ fn register(app: &gtk::Application) -> Option<Rc<Agent>> {
         println!("sonata2-rs polkit: registered for session {sid}");
     }
     Some(agent)
+}
+
+/// polkit's Subject for a login session: (sa{sv}). The details as a
+/// tuple's second member went out boxed, (sv), and polkit refused the
+/// registration -- the Rust session had no password prompt at all.
+pub fn session_subject(sid: &str) -> glib::Variant {
+    let details = glib::VariantDict::new(None);
+    details.insert_value("session-id", &sid.to_variant());
+    glib::Variant::tuple_from_iter(["unix-session".to_variant(), details.end()])
 }
 
 /// `sonata2-rs polkit`: Sonata's password prompt for system actions.
@@ -369,6 +376,18 @@ pub fn run(_args: &[String]) -> glib::ExitCode {
 
 #[cfg(test)]
 mod tests {
+
+    /// Vini, in the Rust session: paru's pkexec said "Error creating
+    /// textual authentication agent" -- Sonata's agent had been refused by
+    /// polkit ("((sv)ss)" for "((sa{sv})ss)") and was gone.
+    #[test]
+    fn test_password_prompt_refused_by_polkit() {
+        let subject = super::session_subject("2");
+        assert_eq!(subject.type_().as_str(), "(sa{sv})");
+        let args = glib::Variant::tuple_from_iter([subject, "C".to_variant(), "/x".to_variant()]);
+        assert_eq!(args.type_().as_str(), "((sa{sv})ss)");
+    }
+
     use super::*;
 
     #[test]
