@@ -699,7 +699,10 @@ fn app_button(dock: &Dock, tile: &Rc<Tile>, key: &str, p: &Rc<Panel>) -> gtk::Bu
     });
     src.connect_drag_cancel(|_, _, _| true); // no snap back into a closed panel
     let (w, t, pw, k) = (dock.weak(), Rc::downgrade(tile), Rc::downgrade(p), key.to_string());
-    src.connect_drag_end(move |_, _, _| {
+    src.connect_drag_end(move |_, _, deleted| {
+        if crate::dock::debug_on() {
+            eprintln!("dock: panel drag end (deleted {deleted}): dock {}, folder tile {}, panel {}", w.upgrade().is_some(), t.upgrade().is_some(), pw.upgrade().is_some());
+        }
         if let (Some(d), Some(t), Some(p)) = (w.upgrade(), t.upgrade(), pw.upgrade()) {
             if p.dragging_out.get() {
                 hold_open(&p, false); // closed now, the drag over

@@ -691,6 +691,24 @@ glib::wrapper! {
 
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 
+
+/// Sonata's debug logging on (SONATA_DEBUG=1 or the debug-logging flag):
+/// the Dock says what a drag did (dock.log), to follow one that misbehaves.
+/// Whether a drag under way keeps a new one from starting: one already
+/// dropped is over, whatever its end did (a drop that merged its tile into a
+/// folder never ran its end) -- it must not block the next forever.
+fn blocks_new_drag(current: Option<&Drag>) -> bool {
+    current.is_some_and(|d| !d.dropped)
+}
+
+pub(crate) fn debug_on() -> bool {
+    verbose()
+}
+
+fn verbose() -> bool {
+    std::env::var("SONATA_DEBUG").as_deref() == Ok("1") || glib::user_config_dir().join("sonata2").join("debug-logging").exists()
+}
+
 impl DockIcon {
     pub fn new(gicon: Option<&gio::Icon>, size: i32) -> Self {
         let w: Self = glib::Object::builder().property("css-classes", vec!["dock-icon".to_string()]).build();
@@ -2255,8 +2273,14 @@ impl Dock {
         });
         let (w, t) = (self.weak(), Rc::downgrade(&tile));
         src.connect_drag_end(move |_, _, delete| {
-            if let (Some(d), Some(t)) = (w.upgrade(), t.upgrade()) {
-                d.drag_end(delete, &t);
+            let Some(d) = w.upgrade() else { return };
+            match t.upgrade() {
+                Some(t) => d.drag_end(delete, &t),
+                // its tile went with the drop (dropped on an app: into a new
+                // folder): the drag is still over -- left set, every later
+                // drag was refused (Vini: an app in a Dock folder couldn't
+                // be picked up at all)
+                None => d.drag_gone(),
             }
         });
         tile.button.add_controller(src);
@@ -2919,12 +2943,20 @@ impl Dock {
         let Some(f) = self.folder(fkey) else { return false };
         let apps = folder_apps(&f);
         let Some(index) = apps.iter().position(|a| a == key) else { return false };
-        if self.drag.borrow().is_some() {
+        if blocks_new_drag(self.drag.borrow().as_ref()) {
             return false;
         }
         self.remove_from_folder(fkey, key, false);
-        let Some(tile) = self.tiles.borrow().get(key).cloned() else { return false };
+        let Some(tile) = self.tiles.borrow().get(key).cloned() else {
+            if verbose() {
+                eprintln!("dock: {key} out of {fkey}: no tile");
+            }
+            return false;
+        };
         self.drag_begin(drag, &tile);
+        if verbose() {
+            eprintln!("dock: {key} dragged out of {fkey} (index {index})");
+        }
         if let Some(d) = self.drag.borrow_mut().as_mut() {
             d.left = true;
             d.from_folder = Some(fkey.into());
@@ -2936,6 +2968,9 @@ impl Dock {
 
     pub fn folder_app_drag_end(&self, fkey: &str, key: &str) {
         let ours = self.drag.borrow().as_ref().is_some_and(|d| d.from_folder.as_deref() == Some(fkey));
+        if verbose() {
+            eprintln!("dock: {key} drag from {fkey} ended: ours {ours}, dropped {:?}", self.drag.borrow().as_ref().map(|d| (d.dropped, d.target.as_ref().and_then(|t| t.key()))));
+        }
         if !ours {
             return; // (its begin was refused)
         }
@@ -3402,6 +3437,9 @@ impl Dock {
     }
 
     fn drag_drop(&self, x: f64, y: f64) -> bool {
+        if verbose() {
+            eprintln!("dock: drop at {x:.0},{y:.0}: {:?}", self.drag.borrow().as_ref().map(|d| (d.key.clone(), d.target.as_ref().and_then(|t| t.key()), d.trash)));
+        }
         let (key, target, trash) = {
             let mut d = self.drag.borrow_mut();
             let Some(d) = d.as_mut() else { return false };
@@ -3524,6 +3562,13 @@ impl Dock {
         }
         let surface = self.plate.native()?.surface()?;
         self.plate.display().monitor_at_surface(&surface)
+    }
+
+    /// A drag whose tile is gone (merged into a folder by the drop): only
+    /// its state let go of.
+    fn drag_gone(&self) {
+        self.hold_over(None);
+        self.drag.replace(None);
     }
 
     fn drag_end(&self, delete: bool, tile: &Rc<Tile>) {
@@ -4836,6 +4881,24 @@ fn leave_on_signal(callback: impl Fn() + 'static) {
 
 #[cfg(test)]
 mod tests {
+
+    /// Vini: an app in a Dock folder couldn't be picked up at all. Making
+    /// the folder (one app dropped on another) merged the dragged tile, so
+    /// its drag never ended and every later drag was refused. A drag
+    /// already dropped no longer blocks a new one.
+    #[test]
+    fn test_folder_app_could_not_be_picked_up() {
+        assert!(!super::blocks_new_drag(None));
+        let mut d = super::Drag::default();
+        assert!(super::blocks_new_drag(Some(&d))); // one really under way
+        d.dropped = true;
+        assert!(!super::blocks_new_drag(Some(&d)));
+        // and a tile drag's end runs even with its tile gone
+        let src = include_str!("dock.rs");
+        let end = &src[src.find("src.connect_drag_end(move |_, _, delete|").unwrap()..];
+        assert!(end[..end.find("tile.button.add_controller(src)").unwrap()].contains("None => d.drag_gone()"));
+    }
+
     use super::*;
 
     fn s(v: &[&str]) -> Vec<String> {

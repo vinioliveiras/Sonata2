@@ -3,6 +3,9 @@
 ## Unreleased
 
 - About This Computer looks and works like Big Sur's About This Mac: tabs in the title bar (Overview, Displays, Storage, Support). Overview shows "Sonata 2", its version, the computer, processor, memory, graphics and system, with System Report… (Task Manager) and Software Update…; Displays shows each display with its size, resolution, refresh rate and scale; Storage shows each disk's free space with a usage bar and Manage… (Disk Manager); Support links to the guide, what's new, the license, Report a Problem… (Feedback) and known problems.
+- Menu bar: Wi-Fi, Search and Control Center no longer turn dark after minimizing or maximizing an app or switching windows.
+- Dock: an app in a folder can be dragged out again -- after making a folder, no app in it could be picked up.
+- Apps: a folder's menu has Ungroup, like the Dock's folders (a locked folder asks for the password first); its apps take its place.
 - **Sonata is Rust only.** The Python Sonata is gone: `./install.sh` (and Software Update) builds Sonata with cargo and installs it as `sonata2`, and "Sonata" on the login screen is the Rust desktop -- the "Sonata (Rust preview)" entry goes. Updating from the Python Sonata is an upgrade: your settings (`~/.config/sonata2`), your apps' data, keys, layouts, web apps and saved passwords stay; what the preview kept apart is merged in (the newer file wins); the old install is moved to `~/.local/share/sonata2-backups`. Rust (cargo) is needed to install and update: without it, or when the build fails, nothing changes.
 - Window buttons drawn by Wayfire no longer go invisible when Sonata was built in another folder: an installed Sonata always uses its own pictures.
 - Rust preview session: the menu bar's status panels (Wi-Fi, Bluetooth, battery...) open centred under their icon again.

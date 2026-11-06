@@ -651,6 +651,30 @@ impl Pad {
         self.render();
     }
 
+    /// The folder's apps back on the page where it was (its menu's Ungroup);
+    /// a locked folder only once the password is right.
+    pub fn ungroup_folder(self: &Rc<Self>, f: &Folder) {
+        if logic::is_secure(f) && !self.unlocked.borrow().contains(&logic::folder_key(f)) {
+            let (w, f2) = (Rc::downgrade(self), f.clone());
+            self.ask_password(f, Some(Box::new(move || {
+                if let Some(p) = w.upgrade() {
+                    p.do_ungroup(&f2);
+                }
+            })));
+            return;
+        }
+        self.do_ungroup(f);
+    }
+
+    fn do_ungroup(self: &Rc<Self>, f: &Folder) {
+        self.close_folder();
+        if self.model.borrow_mut().ungroup(f) {
+            self.unlocked.borrow_mut().remove(&logic::folder_key(f));
+            self.save();
+            self.render();
+        }
+    }
+
     /// The Hidden folder -- and a folder locked with Lock Folder -- opens
     /// only with the user's password (PAM, like the lock screen); it stays
     /// open until Launchpad closes. then: instead of opening it (Unlock
@@ -1367,6 +1391,7 @@ impl Pad {
         let mut sections = vec![vec![MItem::new(&tr!("Open"), open)]];
         let w = Rc::downgrade(self);
         if let Some(f) = tile.folder() {
+            let f_menu = f.clone(); // (Ungroup's: the lock item takes `f`)
             if !is_hidden_folder(&f) {
                 // (not Hidden: it's always behind the password)
                 let item = if logic::is_secure(&f) {
@@ -1387,6 +1412,15 @@ impl Pad {
                     })
                 };
                 sections.push(vec![item]);
+                // Ungroup, as the Dock's folders have (Vini); a locked one asks
+                // for the password first (its apps would show)
+                let label = if logic::is_secure(&f_menu) { tr!("Ungroup…") } else { tr!("Ungroup") };
+                let (w, f2) = (Rc::downgrade(self), f_menu);
+                sections.push(vec![MItem::new(&label, move || {
+                    if let Some(p) = w.upgrade() {
+                        p.ungroup_folder(&f2);
+                    }
+                })]);
             }
         } else if let Some(app) = tile.app() {
             if in_hidden {
