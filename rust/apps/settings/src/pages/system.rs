@@ -389,13 +389,21 @@ fn pointer_size_row(ctx: &Ctx) -> adw::ComboRow {
     }, "")
 }
 
+/// Wayfire's window open / close effect: the plain fade with Reduce motion,
+/// else sonata-resize's bounce ("sonata-pop", config/wayfire.ini).
+pub fn window_animation(reduce_motion: bool) -> &'static str {
+    if reduce_motion { "fade" } else { "sonata-pop" }
+}
+
 pub fn page_accessibility(ctx: &Ctx) -> Vec<adw::PreferencesGroup> {
     let disp = group(&tr!("Display"), "");
     let anim = prefs_write::get(IFACE, "enable-animations");
     disp.add(&switch_row(&tr!("Reduce motion"), anim == "false", |on| {
         prefs_write::set(IFACE, "enable-animations", if on { "false" } else { "true" });
-        run_async(|| sonata_backend::wfconfig::set("animate", "open_animation", "fade"), |_| ());
-        run_async(|| sonata_backend::wfconfig::set("animate", "close_animation", "fade"), |_| ());
+        // reduced: the plain fade; back on: the windows' bounce (it wrote fade both ways)
+        let anim = window_animation(on);
+        run_async(move || sonata_backend::wfconfig::set("animate", "open_animation", anim), |_| ());
+        run_async(move || sonata_backend::wfconfig::set("animate", "close_animation", anim), |_| ());
     }, ""));
     let app = sonata_tweaks::frame::appearance();
     let w = Rc::downgrade(ctx);
@@ -465,6 +473,14 @@ pub fn permissions_group(ctx: &Ctx) -> Vec<adw::PreferencesGroup> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reduce motion wrote Wayfire's fade both ways: turned off again, the
+    /// windows never got their bounce back.
+    #[test]
+    fn test_reduce_motion_off_kept_the_fade() {
+        assert_eq!(window_animation(true), "fade");
+        assert_eq!(window_animation(false), "sonata-pop");
+    }
 
     #[test]
     fn test_default_shows_date_in_24_hours() {

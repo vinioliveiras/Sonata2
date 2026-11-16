@@ -38,6 +38,8 @@
 #include <wayfire/scene-render.hpp>
 #include <wayfire/scene-operations.hpp>
 #include <wayfire/opengl.hpp>
+#include <wayfire/plugins/animate/animate.hpp>
+#include <wayfire/plugins/common/shared-core-data.hpp>
 #include <wayfire/core.hpp>
 #include "wayfire/geometry.hpp"
 #include "wayfire/plugins/common/input-grab.hpp"
@@ -755,7 +757,120 @@ static void remove_size_watch(wayfire_toplevel_view v)
     }
 }
 
-static constexpr int ZOOM_MS = 250;
+static constexpr int ZOOM_MS = 320;                  // (the bounce at the end needs a little longer)
+static constexpr double ZOOM_OVERSHOOT_PX = 10;      // the farthest the frame goes past where it lands
+
+/* Zoom's curve (Vini: macOS Golden Gate's windows "bounce" a little as they
+ * open and as they're zoomed): ease out, past the end and back -- "back"
+ * easing. lerp_bounce keeps the overshoot to a few pixels, whatever the
+ * distance: a maximize is ~1000 px, a 7% overshoot there flew far past the
+ * screen's edges. */
+static double ease_out_back(double t)
+{
+    const double c1 = 1.2, c3 = c1 + 1;
+    const double u  = t - 1;
+    return 1 + c3 * u * u * u + c1 * u * u;
+}
+
+static constexpr double BACK_PEAK = 0.0529;          // ease_out_back's highest point past 1
+
+static double lerp_bounce(double a, double b, double t)
+{
+    double e = ease_out_back(std::clamp(t, 0.0, 1.0));
+    if (e <= 1)
+    {
+        return a + (b - a) * e;
+    }
+
+    // past b: the same bump, scaled to at most ZOOM_OVERSHOOT_PX (cut off
+    // instead, the frame sat stuck past its place, then snapped back)
+    double reach = std::min(ZOOM_OVERSHOOT_PX, std::abs(b - a) * 0.08);
+    return b + (b > a ? 1 : -1) * reach * std::min(1.0, (e - 1) / BACK_PEAK);
+}
+
+/* "sonata-pop", an effect for Wayfire's animate plugin (config/wayfire.ini:
+ * open_animation / close_animation). Vini: macOS Golden Gate's windows open
+ * with a little bounce. Opening: from POP_FROM of its size and clear, the
+ * window fades in quickly while it grows a little past its size
+ * (~POP_FROM + overshoot) and settles back, a damped spring. Closing: a quick
+ * shrink and fade, no bounce, in the first CLOSE_PART of the time. */
+static constexpr int POP_MS = 360;
+static constexpr double POP_FROM = 0.92;
+static constexpr double POP_FADE_PART = 0.35;       // fully opaque by here
+static constexpr double CLOSE_PART = 0.5;
+
+static double pop_scale(double t)
+{
+    if (t >= 1)
+    {
+        return 1;
+    }
+
+    // 1 - A e^(-k t) cos(w t): from POP_FROM, past 1 (~1.02 at t ~0.4), settles
+    const double A = 1 - POP_FROM, k = 3.5, w = 2.4 * M_PI;
+    return 1 - A * std::exp(-k * t) * std::cos(w * t);
+}
+
+class sonata_pop_t : public wf::animate::animation_base_t
+{
+    wayfire_view view;
+    wf::animation::simple_animation_t progress;
+    std::string name;
+    bool hiding = false;
+
+  public:
+    void init(wayfire_view v, wf::animation_description_t dur, wf::animate::animation_type type) override
+    {
+        view = v;
+        hiding = type & WF_ANIMATE_HIDING_ANIMATION;
+        dur.easing = wf::animation::smoothing::linear;    // (the curves are ours)
+        progress = wf::animation::simple_animation_t(wf::create_option<wf::animation_description_t>(dur));
+        progress.animate(0, 1);
+        name = "sonata-pop-" + std::to_string(type);
+        view->get_transformed_node()->add_transformer(
+            std::make_shared<wf::scene::view_2d_transformer_t>(view), wf::TRANSFORMER_HIGHLEVEL, name);
+    }
+
+    bool step() override
+    {
+        auto tr = view->get_transformed_node()->get_transformer<wf::scene::view_2d_transformer_t>(name);
+        if (!tr)
+        {
+            return false;
+        }
+
+        double t = progress;
+        double scale, alpha;
+        if (hiding)
+        {
+            double c = std::min(1.0, t / CLOSE_PART);
+            double e = c * c;                              // ease in: it leaves quickly
+            scale = 1 - (1 - POP_FROM) * 0.6 * e;
+            alpha = 1 - e;
+        } else
+        {
+            scale = pop_scale(t);
+            alpha = std::min(1.0, t / POP_FADE_PART);
+        }
+
+        tr->scale_x = tr->scale_y = scale;
+        tr->alpha = alpha;
+        return progress.running() && !(hiding && t >= CLOSE_PART);
+    }
+
+    void reverse() override
+    {
+        hiding = !hiding;                                  // (closed while still opening, or back)
+        progress.animate(0, 1);
+    }
+
+    ~sonata_pop_t()
+    {
+        view->get_transformed_node()->rem_transformer(name);
+    }
+};
+
+static int pop_registered = 0;                       // (one plugin per display: registered once)
 static constexpr int DEAD_ZONE = 3;                  // px: less is a click, not a resize
 static constexpr int EDGE_IN = 4;                    // px inside the window's edge that resize it
 static constexpr int CORNER = 14;                    // px along an edge from a corner: the corner
@@ -915,7 +1030,8 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
     wf::geometry_t zoom_from, zoom_hint, zoom_seen;     // zoom_seen: where it started, as seen
     int zoom_tiled = -1;                                 // the tiling it goes to
     wf::animation::simple_animation_t zoom{wf::create_option(ZOOM_MS),
-        wf::animation::smoothing::circle};
+        wf::animation::smoothing::linear};               // (the curve: lerp_bounce)
+    wf::shared_data::ref_ptr_t<wf::animate::animate_effects_registry_t> effects;
     wf::effect_hook_t zoom_hook = [=] () { zoom_step(); };
 
     /* Vini: out of full screen (a video in Chrome), a maximized window
@@ -1064,6 +1180,17 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         };
 
         output->connect(&on_resize_request);
+        if (pop_registered++ == 0)
+        {
+            effects->register_effect("sonata-pop", wf::animate::effect_description_t{
+                .generator = [] { return std::make_unique<sonata_pop_t>(); },
+                .default_duration = [] () -> std::optional<wf::animation_description_t>
+                {
+                    return wf::animation_description_t{POP_MS, wf::animation::smoothing::linear, "linear"};
+                },
+            });
+        }
+
         LOGI("sonata-resize: ready on ", output->to_string(), ", live=", (bool)live);
         output->connect(&on_view_mapped);
         output->connect(&on_fullscreen);
@@ -1545,6 +1672,11 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
 
     void fini() override
     {
+        if (--pop_registered == 0)
+        {
+            effects->unregister_effect("sonata-pop");    // (a window still animating keeps its own)
+        }
+
         watch_grabbed_focus(false);
         uncount_resize();
         if (input_grab->is_grabbed())
@@ -1645,9 +1777,9 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
             // from the window as seen to the window as it will be seen (tiled: no shadow)
             auto a = zoom_seen, b = visible(zooming, to, zoom_tiled);
             ghost->set({
-                (int)std::round(a.x + (b.x - a.x) * t), (int)std::round(a.y + (b.y - a.y) * t),
-                std::max(1, (int)std::round(a.width + (b.width - a.width) * t)),
-                std::max(1, (int)std::round(a.height + (b.height - a.height) * t))});
+                (int)std::round(lerp_bounce(a.x, b.x, t)), (int)std::round(lerp_bounce(a.y, b.y, t)),
+                std::max(1, (int)std::round(lerp_bounce(a.width, b.width, t))),
+                std::max(1, (int)std::round(lerp_bounce(a.height, b.height, t)))});
         }
 
         if (!zoom.running())

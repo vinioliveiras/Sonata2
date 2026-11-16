@@ -721,6 +721,30 @@ outer_margin = 28
         assert_eq!(migrate_always_bindings(ini), ini, "nothing to move");
     }
 
+    /// Vini: macOS Golden Gate's windows open with a little bounce -- Sonata's
+    /// only faded in. They open and close with sonata-resize's "sonata-pop"
+    /// now; a session without that plugin gets Wayfire's fade back, not no
+    /// animation at all (an unknown effect is "none").
+    #[test]
+    fn test_windows_opened_without_a_bounce() {
+        let ini = include_str!("../../../../config/wayfire.ini");
+        let animate: Vec<&str> = ini.lines().map(str::trim).filter(|l| l.starts_with("open_animation") || l.starts_with("close_animation")).collect();
+        assert_eq!(animate, ["open_animation = sonata-pop", "close_animation = sonata-pop"]);
+        let script = include_str!("../../../../tools/wayfire-config.sh");
+        let line = script.lines().find(|l| l.contains("sonata-pop") && l.trim_start().starts_with("sed")).expect("the fallback");
+        let expr = line.split('\'').nth(1).unwrap();
+        let dir = std::env::temp_dir().join(format!("sonata-pop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("wayfire.ini");
+        std::fs::write(&f, ini).unwrap();
+        let ok = std::process::Command::new("sed").args(["-i", "-E", expr]).arg(&f).status().unwrap();
+        assert!(ok.success());
+        let out = std::fs::read_to_string(&f).unwrap();
+        assert!(out.contains("\nopen_animation = fade\n") && out.contains("\nclose_animation = fade\n"), "no plugin: fade");
+        assert!(!out.contains("sonata-pop\n"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     const KEPT_SHOTS: &str = "[command]
 binding_launchpad = <super> | KEY_F4
 # binding_screenshot = <super> KEY_X

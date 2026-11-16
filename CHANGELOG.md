@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Windows open with a little bounce, as on macOS Golden Gate: they fade in from slightly smaller, grow a touch past their size and settle back (360 ms). Closing, they shrink a little and fade out quickly. Zooming a window (maximize and back) ends with the same small bounce, its frame going a few pixels past its place and settling. Settings > Accessibility > Reduce motion turns both into the plain fade, and turning it off brings the bounce back (it used to leave the fade on). Takes effect after updating, at the next login.
 ## 0.23.0-alpha -- 2026-11-06
 
 Sonata is Rust only now. The whole desktop -- Dock, Launchpad, the menu

@@ -34,6 +34,9 @@ fi
 sresize="${XDG_DATA_HOME:-$HOME/.local/share}/wayfire/plugin-manager/install/lib/wayfire/libsonata-resize.so"
 if [ -f "$sresize" ]; then
     sed -i -E '/^plugins *=/ s/(^| )resize( |$)/\1sonata-resize\2/' "$out"
+else
+    # its "sonata-pop" window animation isn't there either: Wayfire's fade
+    sed -i -E 's/^((open|close)_animation *= *)sonata-pop *$/\1fade/' "$out"
 fi
 # Privileged protocols (screen capture, window control, clipboard, virtual
 # input, overlays) only for Sonata and the portal: sonata-privacy, once built
