@@ -530,6 +530,7 @@ pub fn login_frame_step(text: &str, frame: &LoginFrame, _here: &str) -> String {
     t = migrate_mission_control(&t, SCALE_MARGIN);
     // the screenshot shortcuts work in Mission Control too: always_binding_ keys
     t = migrate_always_bindings(&t);
+    t = window_effects(&t);
     // X11 apps get Sonata's look from its XSETTINGS manager; a script of the user's stays
     // (the Python Sonata's own line -- `env PYTHONPATH=... python3 -m
     // sonata2.xsettings`, kept in an edited wayfire.ini -- is Sonata's, not
@@ -537,6 +538,27 @@ pub fn login_frame_step(text: &str, frame: &LoginFrame, _here: &str) -> String {
     let own = line_values(&t, "xwayland_startup_script").any(|v| v.trim_start_matches(' ').chars().next().is_some_and(|c| !py_space(c)) && !is_sonatas_xsettings(v));
     if !own {
         t = set_in(&t, "core", "xwayland_startup_script", Some("sonata2-rs xsettings"));
+    }
+    t
+}
+
+/// The windows' animations: sonata-resize's own effects when that plugin is
+/// loaded -- its bounce ("sonata-pop") and its genie ("sonata-genie": Vini,
+/// Wayfire's squeezimize drew nothing once ported to Vulkan, and Settings
+/// saved "squeezimize" for Genie before) -- else Wayfire's own, as an
+/// effect Wayfire doesn't know is no animation at all.
+pub fn window_effects(text: &str) -> String {
+    let ours = line_values(text, "plugins").next().is_some_and(|p| p.split(py_space).any(|w| w == "sonata-resize"));
+    let mut t = text.to_string();
+    for key in ["open_animation", "close_animation", "minimize_animation"] {
+        let Some(v) = line_values(&t, key).next().map(|v| py_strip(v).to_string()) else { continue };
+        let new = match (ours, v.as_str()) {
+            (true, "squeezimize") => "sonata-genie",
+            (false, "sonata-genie") => "squeezimize",
+            (false, "sonata-pop") => "fade",
+            _ => continue,
+        };
+        t = set_in(&t, "animate", key, Some(new));
     }
     t
 }
@@ -600,7 +622,8 @@ pub fn overrides_step_file(out: &std::path::Path, overrides: &std::path::Path) -
     // too (Settings reads and writes always_binding_ now)
     rewrite(overrides, migrate_always_bindings)?;
     let o = String::from_utf8(std::fs::read(overrides)?).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    rewrite(out, |t| apply_overrides(t, &o))
+    // (an effect Settings saved before Sonata had its own: brought up to date too)
+    rewrite(out, |t| window_effects(&apply_overrides(t, &o)))
 }
 
 /// `sonata2-rs wayfire-config frame <out.ini> <sonata folder>` and
@@ -719,6 +742,37 @@ outer_margin = 28
         }
         assert!(keys.contains(&"binding_draw"), "not a capture: stays as it was");
         assert_eq!(migrate_always_bindings(ini), ini, "nothing to move");
+    }
+
+    /// Vini: macOS Golden Gate's windows open with a little bounce -- Sonata's
+    /// only faded in. They open and close with sonata-resize's "sonata-pop"
+    /// now; a session without that plugin gets Wayfire's fade back, not no
+    /// animation at all (an unknown effect is "none").
+    #[test]
+    fn test_windows_opened_without_a_bounce() {
+        let ini = include_str!("../../../../config/wayfire.ini");
+        let animate: Vec<&str> = ini.lines().map(str::trim).filter(|l| l.ends_with("_animation = sonata-pop")).collect();
+        assert_eq!(animate, ["open_animation = sonata-pop", "close_animation = sonata-pop"]);
+        let ours = format!("[core]\nplugins = animate sonata-resize\n{ini}");
+        assert_eq!(window_effects(&ours), ours, "with the plugin: as shipped");
+        let theirs = window_effects(&format!("[core]\nplugins = animate resize\n{ini}"));
+        assert!(theirs.contains("\nopen_animation = fade\n") && theirs.contains("\nclose_animation = fade\n"));
+        assert!(theirs.contains("\nminimize_animation = squeezimize\n"));
+    }
+
+    /// Vini: no genie when minimizing or restoring any window. Wayfire's
+    /// squeezimize, ported to Vulkan, fetched the window's picture inside its
+    /// GLES pass and every frame failed (GL_INVALID_FRAMEBUFFER_OPERATION);
+    /// the Claude app's window drew nothing at all. Genie is sonata-resize's
+    /// "sonata-genie" -- also where Settings saved "squeezimize" before.
+    #[test]
+    fn test_genie_drew_nothing() {
+        let ini = include_str!("../../../../config/wayfire.ini");
+        assert!(ini.lines().any(|l| l.trim() == "minimize_animation = sonata-genie"));
+        let saved = "[core]\nplugins = animate sonata-resize\n[animate]\nminimize_animation = squeezimize\n";
+        assert!(window_effects(saved).contains("minimize_animation = sonata-genie\n"));
+        let scale = "[core]\nplugins = animate sonata-resize\n[animate]\nminimize_animation = zoom\n";
+        assert_eq!(window_effects(scale), scale, "Scale stays Wayfire's zoom");
     }
 
     const KEPT_SHOTS: &str = "[command]

@@ -1664,7 +1664,7 @@ mod tests {
     fn test_reset_desktop_puts_back_the_top_edge_double_click() {
         let opts = desktop_reset_options();
         assert!(opts.contains(&("sonata-resize", "double_click", "toggle-maximize".to_string())));
-        assert!(opts.contains(&("animate", "minimize_animation", "squeezimize".to_string())));
+        assert!(opts.contains(&("animate", "minimize_animation", "sonata-genie".to_string())));
     }
 
     /// Reset Menu Bar wrote "Taller menu bar" back on but the menu bar
