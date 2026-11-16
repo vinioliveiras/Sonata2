@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Genie effect works again when minimizing and restoring any window. Today's Wayfire update (its effects ported to Vulkan) broke Wayfire's genie on OpenGL: every frame failed to draw, so windows just vanished and reappeared. Sonata now has its own genie, the pre-Vulkan version with that fixed and with the window's texture type respected (the Claude app's window drew nothing). It's used when Sonata's Wayfire plugin is installed; a Genie choice saved in Settings before is moved to it at login.
 - Windows open with a little bounce, as on macOS Golden Gate: they fade in from slightly smaller, grow a touch past their size and settle back (360 ms). Closing, they shrink a little and fade out quickly. Zooming a window (maximize and back) ends with the same small bounce, its frame going a few pixels past its place and settling. Settings > Accessibility > Reduce motion turns both into the plain fade, and turning it off brings the bounce back (it used to leave the fade on). Takes effect after updating, at the next login.
 ## 0.23.0-alpha -- 2026-11-06
 

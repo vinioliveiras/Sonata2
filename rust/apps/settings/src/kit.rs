@@ -308,7 +308,7 @@ pub fn speed(v: &str) -> f64 {
 /// Settings' minimize effect -> Wayfire's animate/minimize_animation.
 pub fn minimize_animation(effect: &str) -> &'static str {
     if effect == "genie" {
-        "squeezimize"
+        "sonata-genie"                 // sonata-resize's: Wayfire's squeezimize drew nothing on GL
     } else {
         "zoom"
     }
@@ -468,7 +468,7 @@ mod tests {
                 assert_eq!((shows_date(&f), is_24h(&f)), (date, h24), "{f}");
             }
         }
-        assert_eq!(minimize_animation("genie"), "squeezimize");
+        assert_eq!(minimize_animation("genie"), "sonata-genie");
         assert_eq!(minimize_animation("scale"), "zoom");
     }
 }

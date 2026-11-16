@@ -40,6 +40,7 @@
 #include <wayfire/opengl.hpp>
 #include <wayfire/plugins/animate/animate.hpp>
 #include <wayfire/plugins/common/shared-core-data.hpp>
+#include "sonata-genie.hpp"
 #include <wayfire/core.hpp>
 #include "wayfire/geometry.hpp"
 #include "wayfire/plugins/common/input-grab.hpp"
@@ -1189,6 +1190,15 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
                     return wf::animation_description_t{POP_MS, wf::animation::smoothing::linear, "linear"};
                 },
             });
+            // the genie (sonata-genie.hpp): Wayfire's own broke with its Vulkan port
+            effects->register_effect("sonata-genie", wf::animate::effect_description_t{
+                .generator = [] { return std::make_unique<wf::sonata_genie::sonata_genie_animation>(); },
+                .default_duration = [] () -> std::optional<wf::animation_description_t>
+                {
+                    wf::option_wrapper_t<wf::animation_description_t> d{"animate/squeezimize_duration"};
+                    return d.value();
+                },
+            });
         }
 
         LOGI("sonata-resize: ready on ", output->to_string(), ", live=", (bool)live);
@@ -1675,6 +1685,7 @@ class wayfire_resize : public wf::per_output_plugin_instance_t, public wf::point
         if (--pop_registered == 0)
         {
             effects->unregister_effect("sonata-pop");    // (a window still animating keeps its own)
+            effects->unregister_effect("sonata-genie");
         }
 
         watch_grabbed_focus(false);
